@@ -87,6 +87,66 @@ describe('session.record', () => {
     });
   });
 
+  it('defaults track to canonical when omitted', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const parsed = sessionRecord.args.parse({
+        slug: 'sample-initiative',
+        session_id: 'default-track',
+        started: STARTED,
+        ended: ENDED,
+        body: 'hi\n',
+      });
+      const result = await sessionRecord.run(parsed, makeCtx(activeRoot));
+      const raw = await fs.readFile(result.path, 'utf8');
+      expect(raw).toContain('track: canonical');
+    });
+  });
+
+  it('reads body from --body-file when --body is omitted', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const bodyPath = path.join(activeRoot, 'body.md');
+      await fs.writeFile(bodyPath, 'from-file body\n- bullet\n', 'utf8');
+      const parsed = sessionRecord.args.parse({
+        slug: 'sample-initiative',
+        session_id: 'body-from-file',
+        started: STARTED,
+        ended: ENDED,
+        track: 'canonical',
+        body_file: bodyPath,
+      });
+      const result = await sessionRecord.run(parsed, makeCtx(activeRoot));
+      const raw = await fs.readFile(result.path, 'utf8');
+      expect(raw).toContain('from-file body');
+      expect(raw).toContain('- bullet');
+    });
+  });
+
+  it('rejects when neither --body nor --body-file is provided', () => {
+    expect(() =>
+      sessionRecord.args.parse({
+        slug: 'sample-initiative',
+        session_id: 'no-body',
+        started: STARTED,
+        ended: ENDED,
+        track: 'canonical',
+      }),
+    ).toThrow(/Exactly one of --body or --body-file/);
+  });
+
+  it('rejects when both --body and --body-file are provided', () => {
+    expect(() =>
+      sessionRecord.args.parse({
+        slug: 'sample-initiative',
+        session_id: 'both-body',
+        started: STARTED,
+        ended: ENDED,
+        track: 'canonical',
+        body: 'inline',
+        body_file: '/tmp/whatever.md',
+      }),
+    ).toThrow(/mutually exclusive/);
+  });
+
   it('rejects ended < started', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       await expect(
