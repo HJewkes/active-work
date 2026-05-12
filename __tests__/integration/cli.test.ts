@@ -8,7 +8,31 @@ import envPaths from 'env-paths';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const CLI_BIN = path.join(REPO_ROOT, 'dist', 'cli.js');
+const DIST_BIN = path.join(REPO_ROOT, 'dist', 'cli.js');
+const SRC_BIN = path.join(REPO_ROOT, 'src', 'cli.ts');
+const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+
+interface Runner {
+  command: string;
+  baseArgs: string[];
+}
+
+/**
+ * Pick the cheapest way to invoke the CLI: a pre-built `dist/cli.js`
+ * when present, else tsx running the source file. This keeps `pnpm test`
+ * green in CI even when the build step hasn't run yet.
+ */
+function pickRunner(): Runner {
+  if (existsSync(DIST_BIN)) {
+    return { command: process.execPath, baseArgs: [DIST_BIN] };
+  }
+  if (existsSync(TSX_BIN) && existsSync(SRC_BIN)) {
+    return { command: TSX_BIN, baseArgs: [SRC_BIN] };
+  }
+  throw new Error(
+    `No CLI runner available. Looked for ${DIST_BIN} and ${TSX_BIN}.`,
+  );
+}
 
 /**
  * Locate the directory where `appendUsage` writes — derived the same way
@@ -33,11 +57,13 @@ interface RunResult {
   stderr: string;
 }
 
+let runner: Runner;
+
 function runCli(
   args: string[],
   env: Record<string, string> = {},
 ): RunResult {
-  const result = spawnSync(process.execPath, [CLI_BIN, ...args], {
+  const result = spawnSync(runner.command, [...runner.baseArgs, ...args], {
     encoding: 'utf8',
     env: { ...process.env, NO_COLOR: '1', ...env },
   });
@@ -50,11 +76,7 @@ function runCli(
 
 describe('cli integration', () => {
   beforeAll(() => {
-    if (!existsSync(CLI_BIN)) {
-      throw new Error(
-        `dist/cli.js missing at ${CLI_BIN}. Run \`pnpm build\` before integration tests.`,
-      );
-    }
+    runner = pickRunner();
   });
 
   let activeRoot: string;
