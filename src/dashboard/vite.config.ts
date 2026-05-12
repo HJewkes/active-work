@@ -1,10 +1,22 @@
-// Placeholder vite config — Wave 5.1 replaces this with the real config.
-// Kept here so `pnpm build:dashboard` doesn't fail before Wave 5.1 lands.
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { viteSingleFile } from 'vite-plugin-singlefile';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig({
-  root: __dirname,
+  root: here,
+  plugins: [react(), viteSingleFile()],
+  resolve: {
+    alias: {
+      'react-native': 'react-native-web',
+    },
+    extensions: ['.web.tsx', '.web.ts', '.tsx', '.ts', '.web.js', '.js'],
+  },
   build: {
-    outDir: '../../dist/dashboard',
+    outDir: path.resolve(here, '..', '..', 'dist', 'dashboard'),
     emptyOutDir: true,
     target: 'es2020',
   },
