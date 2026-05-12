@@ -6,6 +6,7 @@ export default defineWorkspace([
       name: 'unit',
       include: ['__tests__/**/*.test.ts'],
       exclude: ['__tests__/integration/**'],
+      globalSetup: ['./__tests__/setup/global-setup.ts'],
       pool: 'threads',
       poolOptions: {
         threads: {

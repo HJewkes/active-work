@@ -1,0 +1,11 @@
+prs:
+  - number: 42
+    repo: HJewkes/sample
+    title: Sample PR
+    status: open
+    last_checked: 2026-05-10T16:00:00Z
+branches:
+  - repo: ~/code/sample
+    name: feat/sample
+    last_commit: 2026-05-10
+stashes: []
