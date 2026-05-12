@@ -28,7 +28,11 @@
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "dev": "tsx src/cli.ts",
-    "build": "tsup",
+    "build": "tsup && pnpm build:dashboard",
+    "build:cli": "tsup",
+    "build:dashboard": "vite build --config src/dashboard/vite.config.ts",
+    "postinstall": "node scripts/postinstall.js",
+    "preuninstall": "node scripts/preuninstall.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
