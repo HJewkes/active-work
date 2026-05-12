@@ -1,0 +1,58 @@
+{
+  "name": "@hjewkes/active-work",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Durable workspace state for engineering work — CLI, MCP, and Claude skill for tracking initiatives across sessions",
+  "license": "MIT",
+  "author": "Henry Jewkes",
+  "homepage": "https://github.com/HJewkes/active-work",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HJewkes/active-work.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HJewkes/active-work/issues"
+  },
+  "bin": {
+    "aw": "dist/cli.js",
+    "active-work": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skill",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
+    "format": "prettier --write \"src/**/*.ts\" \"__tests__/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/node": "^22.10.5",
+    "@vitest/coverage-v8": "^3.0.5",
+    "eslint": "^9.20.0",
+    "prettier": "^3.4.2",
+    "tsup": "^8.3.6",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.1",
+    "vitest": "^3.0.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.env
+.env.local
+
+# Project-specific
+.active-work-test/
+*.bak
+*.tmp.*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
