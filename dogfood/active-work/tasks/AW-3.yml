@@ -1,0 +1,10 @@
+id: AW-3
+title: WebSocket file-event broadcasts from daemon to dashboard
+priority: 3
+severity: low
+estimate: 5
+done_when: Editing brief.md outside the dashboard shows live in /ui within ~1s
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null

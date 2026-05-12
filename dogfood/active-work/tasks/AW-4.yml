@@ -1,0 +1,10 @@
+id: AW-4
+title: "aw doctor: health-check command (verify deps, daemon, MCP registration,
+  skill install)"
+priority: 4
+severity: medium
+estimate: 3
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null

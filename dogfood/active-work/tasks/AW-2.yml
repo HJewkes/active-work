@@ -1,0 +1,9 @@
+id: AW-2
+title: Add launchd plist install/uninstall to setup wizard (macOS)
+priority: 2
+severity: medium
+estimate: 3
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null
