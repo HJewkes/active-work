@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import YAML from 'yaml';
 import type { ZodType } from 'zod';
 import { atomicWrite } from './fs-atomic.js';
+import { coerceDates } from './coerce-dates.js';
 
 /**
  * Read and parse a YAML file, validating its contents against `schema`.
@@ -19,7 +20,8 @@ export async function readYaml<T>(filePath: string, schema: ZodType<T>): Promise
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(`Failed to parse YAML at ${filePath}: ${reason}`);
   }
-  const result = schema.safeParse(parsed);
+  const coerced = coerceDates(parsed);
+  const result = schema.safeParse(coerced);
   if (!result.success) {
     throw new Error(`Schema validation failed for ${filePath}: ${result.error.message}`);
   }
