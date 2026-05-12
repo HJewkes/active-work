@@ -67,6 +67,10 @@ import mcpRestart from './mcp-restart.js';
 import mcpStatus from './mcp-status.js';
 import mcpLogs from './mcp-logs.js';
 
+// Setup / uninstall
+import setup from './setup.js';
+import uninstall from './uninstall.js';
+
 const ALL_COMMANDS: AnyCommand[] = [
   // lifecycle
   cmdNew,
@@ -117,6 +121,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   mcpRestart,
   mcpStatus,
   mcpLogs,
+  // setup / uninstall
+  setup,
+  uninstall,
 ];
 
 for (const cmd of ALL_COMMANDS) {
