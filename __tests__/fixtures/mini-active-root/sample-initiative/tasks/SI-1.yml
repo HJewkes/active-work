@@ -1,0 +1,14 @@
+id: SI-1
+title: First sample task
+priority: 1
+severity: high
+estimate: 3
+done_when: It compiles
+status: open
+tags:
+  - example
+notes: |
+  Some blocking note here.
+created: 2026-05-09
+updated: 2026-05-10
+done_at: null
