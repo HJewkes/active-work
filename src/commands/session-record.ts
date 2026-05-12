@@ -7,14 +7,34 @@ import { writeFrontmatter } from '../utils/gray-matter-io.js';
 import { ValidationError } from '../errors.js';
 import { defineCommand } from '../registry/index.js';
 
-const ArgsSchema = z.object({
-  slug: z.string().min(1),
-  session_id: z.string().min(1),
-  started: z.string().min(1),
-  ended: z.string().min(1),
-  track: z.enum(['canonical', 'sidecar']),
-  body: z.string(),
-});
+const ArgsSchema = z
+  .object({
+    slug: z.string().min(1),
+    session_id: z.string().min(1),
+    started: z.string().min(1),
+    ended: z.string().min(1),
+    track: z.enum(['canonical', 'sidecar']).default('canonical'),
+    body: z.string().optional(),
+    body_file: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasBody = value.body !== undefined;
+    const hasFile = value.body_file !== undefined;
+    if (!hasBody && !hasFile) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['body'],
+        message: 'Exactly one of --body or --body-file is required',
+      });
+    }
+    if (hasBody && hasFile) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['body'],
+        message: '--body and --body-file are mutually exclusive',
+      });
+    }
+  });
 
 const ResultSchema = z.object({
   path: z.string(),
@@ -111,6 +131,8 @@ export default defineCommand({
       baseName,
     );
 
+    const body = args.body ?? (await fs.readFile(args.body_file!, 'utf8'));
+
     await writeFrontmatter(
       fullPath,
       {
@@ -119,7 +141,7 @@ export default defineCommand({
         ended: args.ended,
         track: args.track,
       },
-      args.body,
+      body,
       SessionFrontmatterSchema,
     );
 
