@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import type { ZodSchema, ZodTypeAny } from 'zod';
 import { registry } from './registry/index.js';
@@ -331,11 +333,19 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-const isDirectRun =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith('/cli.js') === true ||
-  process.argv[1]?.endsWith('/cli.ts') === true;
+function isDirectRun(): boolean {
+  const argvPath = process.argv[1];
+  if (!argvPath) return false;
+  // Resolve symlinks (e.g. global bin shims like `aw`/`active-work` that
+  // point at dist/cli.js) so the comparison matches when invoked through
+  // any name on PATH.
+  try {
+    return realpathSync(argvPath) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
 
-if (isDirectRun) {
+if (isDirectRun()) {
   void main(process.argv);
 }
