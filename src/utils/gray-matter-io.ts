@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import matter from 'gray-matter';
 import type { ZodType } from 'zod';
 import { atomicWrite } from './fs-atomic.js';
+import { coerceDates } from './coerce-dates.js';
 
 export interface FrontmatterFile<T> {
   frontmatter: T;
@@ -21,7 +22,8 @@ export async function readFrontmatter<T>(
 ): Promise<FrontmatterFile<T>> {
   const raw = await fs.readFile(filePath, 'utf8');
   const parsed = matter(raw);
-  const result = schema.safeParse(parsed.data);
+  const coerced = coerceDates(parsed.data);
+  const result = schema.safeParse(coerced);
   if (!result.success) {
     throw new Error(
       `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
@@ -41,8 +43,9 @@ export async function readRawFrontmatter(
 ): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
   const raw = await fs.readFile(filePath, 'utf8');
   const parsed = matter(raw);
+  const coerced = coerceDates(parsed.data) as Record<string, unknown>;
   return {
-    frontmatter: { ...(parsed.data as Record<string, unknown>) },
+    frontmatter: { ...coerced },
     body: parsed.content,
   };
 }
