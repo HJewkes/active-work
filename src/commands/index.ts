@@ -61,7 +61,11 @@ import open from './open.js';
 import edit from './edit.js';
 
 // MCP server
-import mcpServe from './mcp.js';
+import mcpServe from './mcp-serve.js';
+import mcpStop from './mcp-stop.js';
+import mcpRestart from './mcp-restart.js';
+import mcpStatus from './mcp-status.js';
+import mcpLogs from './mcp-logs.js';
 
 const ALL_COMMANDS: AnyCommand[] = [
   // lifecycle
@@ -109,6 +113,10 @@ const ALL_COMMANDS: AnyCommand[] = [
   edit,
   // mcp server
   mcpServe,
+  mcpStop,
+  mcpRestart,
+  mcpStatus,
+  mcpLogs,
 ];
 
 for (const cmd of ALL_COMMANDS) {
