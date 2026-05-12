@@ -60,6 +60,9 @@ import open from './open.js';
 // Editor
 import edit from './edit.js';
 
+// MCP server
+import mcpServe from './mcp.js';
+
 const ALL_COMMANDS: AnyCommand[] = [
   // lifecycle
   cmdNew,
@@ -104,6 +107,8 @@ const ALL_COMMANDS: AnyCommand[] = [
   open,
   // editor
   edit,
+  // mcp server
+  mcpServe,
 ];
 
 for (const cmd of ALL_COMMANDS) {
