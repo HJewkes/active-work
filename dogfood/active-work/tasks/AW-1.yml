@@ -1,0 +1,10 @@
+id: AW-1
+title: "Add Linux support: systemd unit for daemon supervision"
+priority: 1
+severity: medium
+estimate: 5
+done_when: aw setup configures systemd on Linux; smoke-tested on Ubuntu 24.04
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null

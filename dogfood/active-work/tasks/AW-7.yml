@@ -1,0 +1,9 @@
+id: AW-7
+title: Read-write dashboard (mark tasks done from /ui, reorder via drag)
+priority: 7
+severity: low
+estimate: 8
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null

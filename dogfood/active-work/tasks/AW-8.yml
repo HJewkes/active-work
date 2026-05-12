@@ -1,0 +1,9 @@
+id: AW-8
+title: Auto-archive done tasks older than N days during bootstrap
+priority: 8
+severity: low
+estimate: 2
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null

@@ -1,0 +1,11 @@
+id: AW-5
+title: Multi-machine git-backed sync wrapper (aw sync)
+priority: 5
+severity: low
+estimate: 8
+done_when: aw sync = git pull --rebase && git push from inside the active root;
+  conflicts surface clearly
+status: open
+created: 2026-05-12
+updated: 2026-05-12
+done_at: null
