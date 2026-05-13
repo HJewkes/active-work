@@ -14,6 +14,7 @@ import {
   stepRegisterMcp,
   stepStartDaemon,
   stepIngestion,
+  stepSupervision,
   type StepPaths,
 } from '../src/setup/steps.js';
 
@@ -287,6 +288,94 @@ describe('stepStartDaemon', () => {
     const result = await stepStartDaemon({ prompts });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.done).toBe(false);
+  });
+});
+
+describe('stepSupervision', () => {
+  const ORIGINAL_PLATFORM = process.platform;
+  function setPlatform(p: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  }
+  function restorePlatform(): void {
+    Object.defineProperty(process, 'platform', {
+      value: ORIGINAL_PLATFORM,
+      configurable: true,
+    });
+  }
+  afterEach(() => restorePlatform());
+
+  it('no-ops on non-linux platforms', async () => {
+    setPlatform('darwin');
+    const result = await stepSupervision({ yes: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/Linux/);
+    }
+  });
+
+  it('respects a cancel/no answer on linux', async () => {
+    setPlatform('linux');
+    const prompts = {
+      confirm: vi.fn(async () => false),
+      isCancel: vi.fn(() => false),
+    } as unknown as typeof clackPrompts;
+    const result = await stepSupervision({ prompts });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/skipped/i);
+    }
+  });
+});
+
+describe('stepStartDaemon (linux supervision detection)', () => {
+  const ORIGINAL_PLATFORM = process.platform;
+  function setPlatform(p: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: p, configurable: true });
+  }
+  function restorePlatform(): void {
+    Object.defineProperty(process, 'platform', {
+      value: ORIGINAL_PLATFORM,
+      configurable: true,
+    });
+  }
+  afterEach(() => restorePlatform());
+
+  it('skips the manual spawn when `systemctl is-active` exits 0', async () => {
+    setPlatform('linux');
+    const fakeSpawn = vi.fn((cmd: string, args: string[]) => {
+      void cmd;
+      const handlers: Record<string, ((arg?: unknown) => void)[]> = {};
+      const child = {
+        stderr: { on: () => undefined },
+        on: (event: string, cb: (arg?: unknown) => void) => {
+          handlers[event] ??= [];
+          handlers[event]!.push(cb);
+        },
+      };
+      queueMicrotask(() => {
+        // Only the is-active probe is expected; reply 0 to signal active.
+        if (args.includes('is-active')) {
+          handlers.close?.forEach((cb) => cb(0));
+        } else {
+          handlers.close?.forEach((cb) => cb(0));
+        }
+      });
+      return child as unknown as ReturnType<typeof nodeSpawn>;
+    });
+    const result = await stepStartDaemon({
+      spawn: fakeSpawn as unknown as typeof nodeSpawn,
+      yes: true,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/systemd/);
+    }
+    // Only the is-active probe should have been invoked — no execPath spawn.
+    expect(fakeSpawn).toHaveBeenCalledTimes(1);
+    expect(fakeSpawn.mock.calls[0]?.[0]).toBe('systemctl');
   });
 });
 
