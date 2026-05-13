@@ -39,6 +39,9 @@ import sessionsBrowser from './sessions-browser.js';
 import artifactAddBranch from './artifact-add-branch.js';
 import artifactAddStash from './artifact-add-stash.js';
 import artifactList from './artifact-list.js';
+import artifactNote from './artifact-note.js';
+import artifactPrune from './artifact-prune.js';
+import artifactStatus from './artifact-status.js';
 import sourceAdd from './source-add.js';
 
 // Worktree / cross-initiative reads
@@ -98,6 +101,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   artifactAddBranch,
   artifactAddStash,
   artifactList,
+  artifactStatus,
+  artifactPrune,
+  artifactNote,
   // worktree / cross-initiative
   worktreeSetDefault,
   audit,

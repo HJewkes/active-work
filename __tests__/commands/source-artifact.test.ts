@@ -1,13 +1,23 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import sourceAddCmd, { slugifyLabel } from '../../src/commands/source-add.js';
 import artifactAddBranchCmd from '../../src/commands/artifact-add-branch.js';
 import artifactAddStashCmd from '../../src/commands/artifact-add-stash.js';
 import artifactListCmd from '../../src/commands/artifact-list.js';
+import artifactNoteCmd from '../../src/commands/artifact-note.js';
+import artifactPruneCmd from '../../src/commands/artifact-prune.js';
+import artifactStatusCmd from '../../src/commands/artifact-status.js';
+import {
+  resetRunners,
+  setGitRunner,
+  setGhRunner,
+  type CommandRunner,
+} from '../../src/utils/git-gh.js';
 import { ArtifactsSchema } from '../../src/schemas/artifacts.js';
 import { readYaml } from '../../src/utils/yaml-io.js';
+import { UsageError } from '../../src/errors.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SLUG = 'sample-initiative';
@@ -282,6 +292,151 @@ describe('artifact.list', () => {
   });
 });
 
+describe('artifact.note', () => {
+  it('updates the note on an existing branch', async () => {
+    await withTempActiveRoot(async (root) => {
+      const res = await artifactNoteCmd.run(
+        {
+          slug: SLUG,
+          repo: '~/code/sample',
+          name: 'feat/sample',
+          note: 'updated context',
+        },
+        ctx,
+      );
+      expect(res.branch.note).toBe('updated context');
+      const data = await readArtifacts(root);
+      expect(data.branches[0]!.note).toBe('updated context');
+    });
+  });
+
+  it('throws UsageError when the branch is untracked', async () => {
+    await withTempActiveRoot(async () => {
+      await expect(
+        artifactNoteCmd.run(
+          {
+            slug: SLUG,
+            repo: '~/code/sample',
+            name: 'feat/does-not-exist',
+            note: 'x',
+          },
+          ctx,
+        ),
+      ).rejects.toBeInstanceOf(UsageError);
+    });
+  });
+});
+
+describe('artifact.status', () => {
+  afterEach(() => {
+    resetRunners();
+  });
+
+  it('reports present + ahead/behind + PR for live branches', async () => {
+    await withTempActiveRoot(async () => {
+      const gitRunner: CommandRunner = async (_bin, args) => {
+        if (args.includes('rev-parse') && args.includes('--verify')) {
+          return { code: 0, stdout: 'deadbeef\n', stderr: '' };
+        }
+        if (args.includes('log')) {
+          return { code: 0, stdout: '2026-05-12T10:00:00+00:00\n', stderr: '' };
+        }
+        if (args.includes('rev-list')) {
+          return { code: 0, stdout: '1\t4\n', stderr: '' };
+        }
+        if (args.includes('remote') && args.includes('get-url')) {
+          return {
+            code: 0,
+            stdout: 'git@github.com:HJewkes/sample.git\n',
+            stderr: '',
+          };
+        }
+        return { code: 1, stdout: '', stderr: 'unhandled' };
+      };
+      const ghRunner: CommandRunner = async () => ({
+        code: 0,
+        stdout: JSON.stringify([
+          {
+            number: 17,
+            state: 'OPEN',
+            title: 'Sample PR',
+            url: 'https://github.com/HJewkes/sample/pull/17',
+            statusCheckRollup: [{ conclusion: 'SUCCESS' }, { conclusion: 'SUCCESS' }],
+          },
+        ]),
+        stderr: '',
+      });
+      setGitRunner(gitRunner);
+      setGhRunner(ghRunner);
+      const res = await artifactStatusCmd.run({ slug: SLUG }, ctx);
+      expect(res.branches).toHaveLength(1);
+      const b = res.branches[0]!;
+      expect(b.present).toBe(true);
+      expect(b.ahead).toBe(4);
+      expect(b.behind).toBe(1);
+      expect(b.pr?.number).toBe(17);
+      expect(b.pr?.checks).toMatch(/pass/);
+    });
+  });
+
+  it('captures per-branch errors without throwing', async () => {
+    await withTempActiveRoot(async () => {
+      const failing: CommandRunner = async () => ({
+        code: 1,
+        stdout: '',
+        stderr: 'boom',
+      });
+      setGitRunner(failing);
+      setGhRunner(failing);
+      const res = await artifactStatusCmd.run({ slug: SLUG }, ctx);
+      expect(res.branches).toHaveLength(1);
+      expect(res.branches[0]!.present).toBe(false);
+      expect(res.branches[0]!.pr).toBeNull();
+    });
+  });
+});
+
+describe('artifact.prune', () => {
+  afterEach(() => {
+    resetRunners();
+  });
+
+  it('lists pruning candidates as a dry-run by default and does not write', async () => {
+    await withTempActiveRoot(async (root) => {
+      setGitRunner(async () => ({ code: 1, stdout: '', stderr: 'no such ref' }));
+      const before = await readArtifacts(root);
+      const res = await artifactPruneCmd.run({ slug: SLUG }, ctx);
+      expect(res.applied).toBe(false);
+      expect(res.pruned).toHaveLength(1);
+      expect(res.pruned[0]!.name).toBe('feat/sample');
+      const after = await readArtifacts(root);
+      expect(after.branches.length).toBe(before.branches.length);
+    });
+  });
+
+  it('removes missing branches when --apply', async () => {
+    await withTempActiveRoot(async (root) => {
+      setGitRunner(async () => ({ code: 1, stdout: '', stderr: 'no such ref' }));
+      const res = await artifactPruneCmd.run({ slug: SLUG, apply: true }, ctx);
+      expect(res.applied).toBe(true);
+      expect(res.pruned).toHaveLength(1);
+      const after = await readArtifacts(root);
+      expect(after.branches).toHaveLength(0);
+    });
+  });
+
+  it('keeps branches that exist', async () => {
+    await withTempActiveRoot(async (root) => {
+      setGitRunner(async () => ({ code: 0, stdout: 'deadbeef\n', stderr: '' }));
+      const res = await artifactPruneCmd.run({ slug: SLUG, apply: true }, ctx);
+      expect(res.applied).toBe(false);
+      expect(res.pruned).toHaveLength(0);
+      const after = await readArtifacts(root);
+      expect(after.branches).toHaveLength(1);
+    });
+  });
+});
+
 describe('command metadata', () => {
   it('source.add positional and required option flags', () => {
     expect(sourceAddCmd.name).toBe('source.add');
@@ -293,6 +448,9 @@ describe('command metadata', () => {
     expect(artifactAddBranchCmd.name).toBe('artifact.add-branch');
     expect(artifactAddStashCmd.name).toBe('artifact.add-stash');
     expect(artifactListCmd.name).toBe('artifact.list');
+    expect(artifactStatusCmd.name).toBe('artifact.status');
+    expect(artifactPruneCmd.name).toBe('artifact.prune');
+    expect(artifactNoteCmd.name).toBe('artifact.note');
   });
 });
 
