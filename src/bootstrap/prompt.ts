@@ -9,8 +9,18 @@ import {
   SessionFrontmatterSchema,
   type SessionFrontmatter,
 } from '../schemas/session.js';
-import { ArtifactsSchema, type Artifacts } from '../schemas/artifacts.js';
+import {
+  ArtifactsSchema,
+  type Artifacts,
+  type BranchEntry,
+} from '../schemas/artifacts.js';
 import { readYaml } from '../utils/yaml-io.js';
+import {
+  getGhRunner,
+  getGitRunner,
+  resolveLocalRepoPath,
+  resolveOrgRepo,
+} from '../utils/git-gh.js';
 import { today, nowIso } from '../utils/today.js';
 import { NotFoundError } from '../errors.js';
 import YAML from 'yaml';
@@ -25,6 +35,27 @@ const RECENT_THRESHOLD_DAYS = 14;
 const MS_PER_HOUR = 1000 * 60 * 60;
 const MS_PER_DAY = MS_PER_HOUR * 24;
 
+export interface LiveBranchStatus {
+  repo: string;
+  name: string;
+  note?: string;
+  present: boolean;
+  last_commit_iso: string | null;
+  ahead: number | null;
+  behind: number | null;
+  pr: {
+    number: number;
+    state: string;
+    title: string;
+    url: string;
+    checks?: string;
+  } | null;
+}
+
+export type LiveStatusFetcher = (
+  branches: BranchEntry[],
+) => Promise<LiveBranchStatus[]>;
+
 export interface BootstrapInput {
   /** Active root directory. Used to resolve the initiative dir. */
   activeRoot: string;
@@ -35,6 +66,19 @@ export interface BootstrapInput {
   topNTasks?: number;
   /** Window for the "recently done" section. Defaults to 14 days. */
   recentlyDoneDays?: number;
+  /**
+   * When `true` (default), the bootstrap pulls live branch/PR state via
+   * `git` + `gh`. When `false`, only the static `artifacts.yml` data is
+   * rendered — useful for offline contexts and fast-path test runs.
+   */
+  includeLiveStatus?: boolean;
+  /**
+   * Optional fetcher override (DI). Defaults to a built-in walker that
+   * shells out via the shared `git`/`gh` runners. The walker is bounded
+   * (~10 branches) and swallows per-branch errors; render falls back to
+   * static when the whole fetch throws.
+   */
+  liveStatusFetcher?: LiveStatusFetcher;
 }
 
 export interface BootstrapMetadata {
@@ -256,23 +300,234 @@ function renderRecentlyDone(
   return { body, count: done.length };
 }
 
-function renderArtifacts(artifacts: Artifacts): { body: string | null } {
+const LIVE_RENDER_LIMIT = 10;
+
+function renderStaticBranchLine(branch: BranchEntry): string {
+  const head = `- ${branch.name} (${branch.repo})`;
+  return branch.note ? `${head} — ${branch.note}` : head;
+}
+
+function renderLiveBranchLine(status: LiveBranchStatus): string {
+  const parts: string[] = [`- ${status.name} (${status.repo})`];
+  if (!status.present) {
+    parts.push('[missing locally]');
+  } else if (status.ahead !== null && status.behind !== null) {
+    parts.push(`+${status.ahead}/-${status.behind}`);
+  }
+  if (status.pr) {
+    const checks = status.pr.checks ? ` ${status.pr.checks}` : '';
+    parts.push(`PR #${status.pr.number} ${status.pr.state}${checks}`);
+  }
+  let line = parts.join(' ');
+  if (status.note) line += ` — ${status.note}`;
+  return line;
+}
+
+function renderStashes(artifacts: Artifacts): string | null {
+  if (artifacts.stashes.length === 0) return null;
+  return artifacts.stashes
+    .map((s) => `- ${s.repo}: ${s.label}${s.sha ? ` (${s.sha.slice(0, 12)})` : ''}`)
+    .join('\n');
+}
+
+function renderStaticArtifacts(artifacts: Artifacts): string | null {
   const sections: string[] = [];
   if (artifacts.branches.length > 0) {
-    const lines = artifacts.branches
-      .map((b) => (b.note ? `${b.name} (${b.repo}) — ${b.note}` : `${b.name} (${b.repo})`))
-      .join('\n- ');
-    sections.push(`Branches:\n- ${lines}`);
+    const branchLines = artifacts.branches.map(renderStaticBranchLine).join('\n');
+    sections.push(`Branches:\n${branchLines}`);
   }
-  if (artifacts.stashes.length > 0) {
-    const lines = artifacts.stashes
-      .map((s) => `${s.repo}: ${s.label}${s.sha ? ` (${s.sha.slice(0, 12)})` : ''}`)
-      .join('\n- ');
-    sections.push(`Stashes:\n- ${lines}`);
+  const stashBody = renderStashes(artifacts);
+  if (stashBody) sections.push(`Stashes:\n${stashBody}`);
+  return sections.length > 0 ? sections.join('\n\n') : null;
+}
+
+function renderLiveArtifacts(
+  artifacts: Artifacts,
+  statuses: LiveBranchStatus[],
+): string | null {
+  const sections: string[] = [];
+  if (statuses.length > 0) {
+    const shown = statuses.slice(0, LIVE_RENDER_LIMIT);
+    const lines = shown.map(renderLiveBranchLine).join('\n');
+    const overflow = statuses.length - shown.length;
+    const suffix = overflow > 0 ? `\n(+${overflow} more)` : '';
+    sections.push(`Branches (live):\n${lines}${suffix}`);
+  } else if (artifacts.branches.length > 0) {
+    const branchLines = artifacts.branches.map(renderStaticBranchLine).join('\n');
+    sections.push(`Branches:\n${branchLines}`);
   }
-  return {
-    body: sections.length > 0 ? sections.join('\n\n') : null,
+  const stashBody = renderStashes(artifacts);
+  if (stashBody) sections.push(`Stashes:\n${stashBody}`);
+  return sections.length > 0 ? sections.join('\n\n') : null;
+}
+
+/**
+ * Default fetcher used when the caller doesn't supply one. Mirrors the
+ * read logic in `artifact.status` but is bounded in parallelism and
+ * swallows per-branch errors silently — bootstrap never throws on artifact
+ * issues.
+ */
+async function defaultLiveStatusFetcher(
+  branches: BranchEntry[],
+): Promise<LiveBranchStatus[]> {
+  const results: LiveBranchStatus[] = [];
+  const limit = Math.min(branches.length, LIVE_RENDER_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    results.push(await fetchOne(branches[i]!));
+  }
+  return results;
+}
+
+async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
+  const out: LiveBranchStatus = {
+    repo: branch.repo,
+    name: branch.name,
+    ...(branch.note ? { note: branch.note } : {}),
+    present: false,
+    last_commit_iso: null,
+    ahead: null,
+    behind: null,
+    pr: null,
   };
+  const repoPath = resolveLocalRepoPath(branch.repo);
+  const git = getGitRunner();
+  const gh = getGhRunner();
+
+  if (repoPath) {
+    try {
+      const exists = await git('git', [
+        '-C',
+        repoPath,
+        'rev-parse',
+        '--verify',
+        `refs/heads/${branch.name}`,
+      ]);
+      out.present = exists.code === 0;
+    } catch {
+      // leave present=false
+    }
+    if (out.present) {
+      try {
+        const lc = await git('git', [
+          '-C',
+          repoPath,
+          'log',
+          '-1',
+          '--format=%cI',
+          branch.name,
+        ]);
+        if (lc.code === 0) {
+          const s = lc.stdout.trim();
+          out.last_commit_iso = s.length > 0 ? s : null;
+        }
+      } catch {
+        // skip
+      }
+      for (const base of ['main', 'master']) {
+        try {
+          const verify = await git('git', [
+            '-C',
+            repoPath,
+            'rev-parse',
+            '--verify',
+            `refs/remotes/origin/${base}`,
+          ]);
+          if (verify.code !== 0) continue;
+          const counts = await git('git', [
+            '-C',
+            repoPath,
+            'rev-list',
+            '--left-right',
+            '--count',
+            `origin/${base}...${branch.name}`,
+          ]);
+          if (counts.code === 0) {
+            const parts = counts.stdout.trim().split(/\s+/);
+            if (parts.length === 2) {
+              const b = Number(parts[0]);
+              const a = Number(parts[1]);
+              if (Number.isFinite(a) && Number.isFinite(b)) {
+                out.ahead = a;
+                out.behind = b;
+              }
+            }
+          }
+          break;
+        } catch {
+          // continue / give up
+        }
+      }
+    }
+  }
+
+  try {
+    const orgRepo = await resolveOrgRepo(branch.repo);
+    if (orgRepo) {
+      const res = await gh('gh', [
+        'pr',
+        'list',
+        '--head',
+        branch.name,
+        '--repo',
+        orgRepo,
+        '--json',
+        'number,state,title,url,statusCheckRollup',
+        '--limit',
+        '1',
+      ]);
+      if (res.code === 0) {
+        const parsed = JSON.parse(res.stdout) as Array<{
+          number?: number;
+          state?: string;
+          title?: string;
+          url?: string;
+          statusCheckRollup?: Array<{ conclusion?: string; state?: string }>;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const first = parsed[0]!;
+          if (
+            typeof first.number === 'number' &&
+            typeof first.state === 'string' &&
+            typeof first.title === 'string' &&
+            typeof first.url === 'string'
+          ) {
+            const rollup = first.statusCheckRollup ?? [];
+            let pass = 0;
+            let fail = 0;
+            let pending = 0;
+            for (const entry of rollup) {
+              const tag = (entry.conclusion ?? entry.state ?? '').toUpperCase();
+              if (tag === 'SUCCESS') pass++;
+              else if (
+                tag === 'FAILURE' ||
+                tag === 'CANCELLED' ||
+                tag === 'TIMED_OUT'
+              )
+                fail++;
+              else pending++;
+            }
+            let checks: string | undefined;
+            if (rollup.length > 0) {
+              if (fail > 0) checks = `fail (${fail}/${rollup.length})`;
+              else if (pending > 0) checks = `pending (${pending}/${rollup.length})`;
+              else checks = `pass (${pass}/${rollup.length})`;
+            }
+            out.pr = {
+              number: first.number,
+              state: first.state,
+              title: first.title,
+              url: first.url,
+              ...(checks ? { checks } : {}),
+            };
+          }
+        }
+      }
+    }
+  } catch {
+    // PR lookup is best-effort; leave out.pr as null.
+  }
+
+  return out;
 }
 
 function endedDate(iso: string): string {
@@ -310,6 +565,8 @@ export async function assembleBootstrap(
     now = new Date(),
     topNTasks = DEFAULT_TOP_N_TASKS,
     recentlyDoneDays = DEFAULT_RECENTLY_DONE_DAYS,
+    includeLiveStatus = true,
+    liveStatusFetcher,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -332,7 +589,19 @@ export async function assembleBootstrap(
     recentlyDoneDays,
     now,
   );
-  const { body: artifactsBody } = renderArtifacts(artifacts);
+  let artifactsBody: string | null = null;
+  if (!includeLiveStatus || artifacts.branches.length === 0) {
+    artifactsBody = renderStaticArtifacts(artifacts);
+  } else {
+    const fetcher = liveStatusFetcher ?? defaultLiveStatusFetcher;
+    try {
+      const statuses = await fetcher(artifacts.branches);
+      artifactsBody = renderLiveArtifacts(artifacts, statuses);
+    } catch {
+      // Live fetch failed entirely — degrade to static rendering.
+      artifactsBody = renderStaticArtifacts(artifacts);
+    }
+  }
 
   const timeSinceHuman = latestSession
     ? formatTimeSince(new Date(latestSession.frontmatter.ended), now)

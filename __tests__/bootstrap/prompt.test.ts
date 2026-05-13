@@ -4,11 +4,14 @@ import { describe, expect, it } from 'vitest';
 import {
   assembleBootstrap,
   formatTimeSince,
+  type LiveStatusFetcher,
 } from '../../src/bootstrap/prompt.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SAMPLE_SLUG = 'sample-initiative';
 const FIXTURE_NOW = new Date('2026-05-12T16:00:00Z');
+
+const offlineOpts = { includeLiveStatus: false } as const;
 
 describe('assembleBootstrap', () => {
   it('returns a prompt that includes the slug and brief title', async () => {
@@ -17,6 +20,7 @@ describe('assembleBootstrap', () => {
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       expect(prompt).toContain('`sample-initiative`');
       expect(prompt).toContain('Sample Initiative');
@@ -31,6 +35,7 @@ describe('assembleBootstrap', () => {
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       expect(metadata.last_session?.filename).toBe(
         '2026-05-10-1430-fixture001.md',
@@ -51,6 +56,7 @@ describe('assembleBootstrap', () => {
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       expect(prompt).toContain('No previous sessions recorded.');
       expect(metadata.last_session).toBeUndefined();
@@ -78,6 +84,7 @@ describe('assembleBootstrap', () => {
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       const si1Idx = prompt.indexOf('[SI-1]');
       const si3Idx = prompt.indexOf('[SI-3]');
@@ -95,6 +102,7 @@ describe('assembleBootstrap', () => {
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
         recentlyDoneDays: 1,
+        ...offlineOpts,
       });
       expect(prompt).not.toContain('# Recently done');
       expect(metadata.recently_done_count).toBe(0);
@@ -108,6 +116,7 @@ describe('assembleBootstrap', () => {
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
         recentlyDoneDays: 14,
+        ...offlineOpts,
       });
       expect(prompt).toContain('# Recently done (last 14 days)');
       expect(prompt).toContain('[SI-2]');
@@ -115,17 +124,110 @@ describe('assembleBootstrap', () => {
     });
   });
 
-  it('renders tracked branches with their notes', async () => {
+  it('renders tracked branches statically when live status is disabled', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const { prompt } = await assembleBootstrap({
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       expect(prompt).toContain('# Open artifacts');
       expect(prompt).toContain('Branches:');
       expect(prompt).toContain('feat/sample (~/code/sample)');
       expect(prompt).toContain('scaffolding for sample initiative');
+      expect(prompt).not.toContain('Branches (live):');
+      expect(prompt).not.toContain('PR #');
+    });
+  });
+
+  it('renders live branch status via the injected fetcher', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const fetcher: LiveStatusFetcher = async (branches) =>
+        branches.map((b) => ({
+          repo: b.repo,
+          name: b.name,
+          note: b.note,
+          present: true,
+          last_commit_iso: '2026-05-12T10:00:00Z',
+          ahead: 3,
+          behind: 1,
+          pr: {
+            number: 99,
+            state: 'OPEN',
+            title: 'Some PR',
+            url: 'https://example.test/pr/99',
+            checks: 'pass (5/5)',
+          },
+        }));
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        includeLiveStatus: true,
+        liveStatusFetcher: fetcher,
+      });
+      expect(prompt).toContain('Branches (live):');
+      expect(prompt).toContain('feat/sample');
+      expect(prompt).toContain('+3/-1');
+      expect(prompt).toContain('PR #99 OPEN pass (5/5)');
+    });
+  });
+
+  it('degrades to static rendering when the live fetcher throws', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const fetcher: LiveStatusFetcher = async () => {
+        throw new Error('gh unreachable');
+      };
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        includeLiveStatus: true,
+        liveStatusFetcher: fetcher,
+      });
+      expect(prompt).toContain('Branches:');
+      expect(prompt).toContain('feat/sample (~/code/sample)');
+      expect(prompt).not.toContain('Branches (live):');
+    });
+  });
+
+  it('truncates the live branch list and reports overflow', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const artifactsPath = path.join(activeRoot, SAMPLE_SLUG, 'artifacts.yml');
+      const lines: string[] = ['branches:'];
+      for (let i = 0; i < 12; i++) {
+        lines.push(`  - repo: ~/code/sample`);
+        lines.push(`    name: feat/b-${i}`);
+      }
+      lines.push('stashes: []');
+      lines.push('');
+      await fs.writeFile(artifactsPath, lines.join('\n'));
+
+      const fetcher: LiveStatusFetcher = async (branches) =>
+        branches.map((b) => ({
+          repo: b.repo,
+          name: b.name,
+          note: b.note,
+          present: true,
+          last_commit_iso: null,
+          ahead: 0,
+          behind: 0,
+          pr: null,
+        }));
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        includeLiveStatus: true,
+        liveStatusFetcher: fetcher,
+      });
+      expect(prompt).toContain('Branches (live):');
+      expect(prompt).toContain('feat/b-9');
+      expect(prompt).toContain('(+2 more)');
+      const idxMore = prompt.indexOf('(+2 more)');
+      const idxLast = prompt.indexOf('feat/b-11');
+      expect(idxLast === -1 || idxLast > idxMore).toBe(true);
     });
   });
 
@@ -135,6 +237,7 @@ describe('assembleBootstrap', () => {
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
+        ...offlineOpts,
       });
       expect(prompt).toContain('# Context');
       expect(prompt).toContain('- Today: ');

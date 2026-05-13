@@ -17,6 +17,7 @@ import {
 
 const ArgsSchema = z.object({
   slug: z.string().min(1).optional(),
+  offline: z.boolean().optional(),
 });
 
 const InitiativeSummarySchema = z.object({
@@ -166,7 +167,13 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
   result: ResultSchema,
   cli: {
     positional: ['slug'],
-    usage: 'active-work open [slug]',
+    options: {
+      offline: {
+        long: '--offline',
+        description: 'Skip the live `gh`/`git` artifact lookup; render artifacts statically.',
+      },
+    },
+    usage: 'active-work open [slug] [--offline]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -186,6 +193,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
     const { prompt, metadata } = await assembleBootstrap({
       activeRoot,
       slug,
+      includeLiveStatus: !args.offline,
     });
     const result: OpenResult & { metadata: BootstrapMetadata } = {
       slug,
