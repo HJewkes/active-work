@@ -332,11 +332,4 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-const isDirectRun =
-  import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith('/cli.js') === true ||
-  process.argv[1]?.endsWith('/cli.ts') === true;
-
-if (isDirectRun) {
-  void main(process.argv);
-}
+void main(process.argv);
