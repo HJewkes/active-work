@@ -42,7 +42,7 @@ describe('withTempActiveRoot', () => {
         join(dir, '.schema-version'),
         'utf8',
       ).trim();
-      expect(schemaVersion).toBe('1');
+      expect(schemaVersion).toBe('2');
 
       const initiatives = readdirSync(dir).filter((n) => !n.startsWith('.'));
       expect(initiatives).toContain('sample-initiative');
