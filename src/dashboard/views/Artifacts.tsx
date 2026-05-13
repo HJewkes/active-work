@@ -4,13 +4,9 @@ import { fetchArtifacts } from '../utils/api.js';
 import type {
   ArtifactsResult,
   BranchEntry,
-  PrEntry,
   StashEntry,
 } from '../types.js';
 
-interface PrRow extends PrEntry {
-  slug: string;
-}
 interface BranchRow extends BranchEntry {
   slug: string;
 }
@@ -37,14 +33,10 @@ export function ArtifactsView(): React.JSX.Element {
   }, []);
 
   const flattened = useMemo(() => {
-    if (!data) return { prs: [], branches: [], stashes: [] };
-    const prs: PrRow[] = [];
+    if (!data) return { branches: [], stashes: [] };
     const branches: BranchRow[] = [];
     const stashes: StashRow[] = [];
     for (const item of data.items) {
-      for (const pr of item.artifacts.prs) {
-        prs.push({ ...pr, slug: item.slug });
-      }
       for (const br of item.artifacts.branches) {
         branches.push({ ...br, slug: item.slug });
       }
@@ -52,10 +44,8 @@ export function ArtifactsView(): React.JSX.Element {
         stashes.push({ ...st, slug: item.slug });
       }
     }
-    const openPrs = prs.filter((p) => p.status === 'open');
-    branches.sort((a, b) => b.last_commit.localeCompare(a.last_commit));
-    stashes.sort((a, b) => b.created.localeCompare(a.created));
-    return { prs: openPrs, branches, stashes };
+    branches.sort((a, b) => a.name.localeCompare(b.name));
+    return { branches, stashes };
   }, [data]);
 
   if (err) {
@@ -86,24 +76,7 @@ export function ArtifactsView(): React.JSX.Element {
         Artifacts
       </h1>
 
-      <Section title={`Open PRs (${flattened.prs.length})`}>
-        {flattened.prs.length === 0 ? (
-          <Empty text="No open PRs tracked." />
-        ) : (
-          flattened.prs.map((pr) => (
-            <Row key={`${pr.slug}/${pr.repo}#${pr.number}`}>
-              <Mono color={palette.textTertiary}>{pr.slug}</Mono>
-              <Mono color={palette.brand}>
-                {pr.repo}#{pr.number}
-              </Mono>
-              <span style={{ color: palette.textPrimary }}>{pr.title}</span>
-              <Mono color={palette.textTertiary}>{pr.last_checked}</Mono>
-            </Row>
-          ))
-        )}
-      </Section>
-
-      <Section title={`Recent Branches (${flattened.branches.length})`}>
+      <Section title={`Tracked Branches (${flattened.branches.length})`}>
         {flattened.branches.length === 0 ? (
           <Empty text="No tracked branches." />
         ) : (
@@ -113,8 +86,7 @@ export function ArtifactsView(): React.JSX.Element {
               <Mono color={palette.teal}>
                 {br.repo}/{br.name}
               </Mono>
-              <span />
-              <Mono color={palette.textTertiary}>{br.last_commit}</Mono>
+              <span style={{ color: palette.textPrimary }}>{br.note ?? ''}</span>
             </Row>
           ))
         )}
@@ -128,8 +100,7 @@ export function ArtifactsView(): React.JSX.Element {
             <Row key={`${st.slug}/${st.repo}/${i}`}>
               <Mono color={palette.textTertiary}>{st.slug}</Mono>
               <Mono color={palette.amber}>{st.repo}</Mono>
-              <span style={{ color: palette.textPrimary }}>{st.message}</span>
-              <Mono color={palette.textTertiary}>{st.created}</Mono>
+              <span style={{ color: palette.textPrimary }}>{st.label}</span>
             </Row>
           ))
         )}
@@ -171,7 +142,7 @@ function Row({ children }: { children: React.ReactNode }): React.JSX.Element {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '120px 220px 1fr 130px',
+        gridTemplateColumns: '120px 240px 1fr',
         alignItems: 'center',
         gap: sp[6],
         padding: `${sp[6]}px ${sp[8]}px`,

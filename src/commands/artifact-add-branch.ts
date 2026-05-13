@@ -4,14 +4,13 @@ import { ArtifactsSchema } from '../schemas/artifacts.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
-import { today } from '../utils/today.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
   repo: z.string().min(1),
   name: z.string().min(1),
-  last_commit: z.string().optional(),
+  note: z.string().optional(),
 });
 
 const ResultSchema = z.object({
@@ -19,7 +18,7 @@ const ResultSchema = z.object({
   branch: z.object({
     repo: z.string(),
     name: z.string(),
-    last_commit: z.string(),
+    note: z.string().optional(),
   }),
 });
 
@@ -36,25 +35,38 @@ export default defineCommand<Args, Result>({
     options: {
       repo: { long: '--repo', description: 'Repo path or org/repo', required: true },
       name: { long: '--name', description: 'Branch name', required: true },
-      last_commit: { long: '--last-commit', description: 'Last commit date YYYY-MM-DD' },
+      note: { long: '--note', description: 'Why this branch is worth tracking' },
     },
   },
   async run(args) {
     const artifactsPath = path.join(getInitiativeDir(args.slug), 'artifacts.yml');
-    const last_commit = args.last_commit ?? today();
     return withFileLock(getLockPath(args.slug), async () => {
       const current = await readYaml(artifactsPath, ArtifactsSchema);
-      const entry = { repo: args.repo, name: args.name, last_commit };
+      const entry = {
+        repo: args.repo,
+        name: args.name,
+        ...(args.note ? { note: args.note } : {}),
+      };
       const idx = current.branches.findIndex(
         (b) => b.repo === args.repo && b.name === args.name,
       );
       if (idx >= 0) {
-        current.branches[idx] = entry;
+        // Preserve the prior note unless the caller supplied a new one.
+        const prior = current.branches[idx]!;
+        current.branches[idx] = {
+          repo: args.repo,
+          name: args.name,
+          ...(args.note !== undefined
+            ? { note: args.note }
+            : prior.note !== undefined
+              ? { note: prior.note }
+              : {}),
+        };
       } else {
         current.branches.push(entry);
       }
       await writeYaml(artifactsPath, current, ArtifactsSchema);
-      return { slug: args.slug, branch: entry };
+      return { slug: args.slug, branch: current.branches[idx >= 0 ? idx : current.branches.length - 1]! };
     });
   },
 });

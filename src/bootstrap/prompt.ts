@@ -44,7 +44,6 @@ export interface BootstrapMetadata {
   time_since_last_session_human?: string;
   open_task_count: number;
   recently_done_count: number;
-  open_pr_count: number;
   bootstrap_at: string;
 }
 
@@ -161,7 +160,7 @@ async function loadArtifacts(initiativeDir: string): Promise<Artifacts> {
   try {
     return await readYaml(artifactsPath, ArtifactsSchema);
   } catch {
-    return { prs: [], branches: [], stashes: [] };
+    return { branches: [], stashes: [] };
   }
 }
 
@@ -257,30 +256,22 @@ function renderRecentlyDone(
   return { body, count: done.length };
 }
 
-function renderArtifacts(artifacts: Artifacts): { body: string | null; openPrCount: number } {
-  const openPrs = artifacts.prs.filter((p) => p.status === 'open');
+function renderArtifacts(artifacts: Artifacts): { body: string | null } {
   const sections: string[] = [];
-  if (openPrs.length > 0) {
-    const prLines = openPrs
-      .map((p) => `#${p.number} (${p.repo}) ${p.title}`)
-      .join(', ');
-    sections.push(`PRs: ${prLines}`);
-  }
   if (artifacts.branches.length > 0) {
     const lines = artifacts.branches
-      .map((b) => `${b.name} (${b.repo})`)
-      .join(', ');
-    sections.push(`Branches: ${lines}`);
+      .map((b) => (b.note ? `${b.name} (${b.repo}) — ${b.note}` : `${b.name} (${b.repo})`))
+      .join('\n- ');
+    sections.push(`Branches:\n- ${lines}`);
   }
   if (artifacts.stashes.length > 0) {
     const lines = artifacts.stashes
-      .map((s) => `${s.repo}: ${s.message}`)
-      .join(', ');
-    sections.push(`Stashes: ${lines}`);
+      .map((s) => `${s.repo}: ${s.label}${s.sha ? ` (${s.sha.slice(0, 12)})` : ''}`)
+      .join('\n- ');
+    sections.push(`Stashes:\n- ${lines}`);
   }
   return {
-    body: sections.length > 0 ? sections.join('\n') : null,
-    openPrCount: openPrs.length,
+    body: sections.length > 0 ? sections.join('\n\n') : null,
   };
 }
 
@@ -341,7 +332,7 @@ export async function assembleBootstrap(
     recentlyDoneDays,
     now,
   );
-  const { body: artifactsBody, openPrCount } = renderArtifacts(artifacts);
+  const { body: artifactsBody } = renderArtifacts(artifacts);
 
   const timeSinceHuman = latestSession
     ? formatTimeSince(new Date(latestSession.frontmatter.ended), now)
@@ -394,7 +385,6 @@ export async function assembleBootstrap(
     brief_title: brief.title,
     open_task_count: openTaskCount,
     recently_done_count: recentlyDoneCount,
-    open_pr_count: openPrCount,
     bootstrap_at: bootstrapAt,
   };
   if (latestSession) {

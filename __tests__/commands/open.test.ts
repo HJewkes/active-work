@@ -86,7 +86,7 @@ describe('open command', () => {
         );
         await fs.writeFile(
           path.join(dir, 'artifacts.yml'),
-          'prs: []\nbranches: []\nstashes: []\n',
+          'branches: []\nstashes: []\n',
         );
       };
       await make(
@@ -183,7 +183,7 @@ describe('open command', () => {
       );
       await fs.writeFile(
         path.join(dir, 'artifacts.yml'),
-        'prs: []\nbranches: []\nstashes: []\n',
+        'branches: []\nstashes: []\n',
       );
 
       await expect(

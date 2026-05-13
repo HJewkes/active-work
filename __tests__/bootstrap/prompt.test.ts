@@ -42,7 +42,6 @@ describe('assembleBootstrap', () => {
 
   it('falls back when no sessions exist', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      // Remove the lone canonical session
       const sessionsDir = path.join(activeRoot, SAMPLE_SLUG, 'sessions');
       const entries = await fs.readdir(sessionsDir);
       for (const file of entries) {
@@ -61,8 +60,6 @@ describe('assembleBootstrap', () => {
 
   it('lists open tasks sorted by priority', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      // Add a higher-priority task (priority 0 is rejected; smaller = higher).
-      // Existing SI-1 is priority 1 / open; SI-2 is done; add SI-3 priority 1 (tie).
       const tasksDir = path.join(activeRoot, SAMPLE_SLUG, 'tasks');
       await fs.writeFile(
         path.join(tasksDir, 'SI-3.yml'),
@@ -93,7 +90,6 @@ describe('assembleBootstrap', () => {
 
   it('omits the recently-done section when no done tasks fall in the window', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      // SI-2 is done at 2026-05-10. With a now of 2026-05-12 + window=1d, it falls out.
       const { prompt, metadata } = await assembleBootstrap({
         activeRoot,
         slug: SAMPLE_SLUG,
@@ -119,16 +115,17 @@ describe('assembleBootstrap', () => {
     });
   });
 
-  it('pulls open PRs from artifacts.yml into the artifacts section', async () => {
+  it('renders tracked branches with their notes', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const { prompt, metadata } = await assembleBootstrap({
+      const { prompt } = await assembleBootstrap({
         activeRoot,
         slug: SAMPLE_SLUG,
         now: FIXTURE_NOW,
       });
       expect(prompt).toContain('# Open artifacts');
-      expect(prompt).toContain('#42 (HJewkes/sample) Sample PR');
-      expect(metadata.open_pr_count).toBe(1);
+      expect(prompt).toContain('Branches:');
+      expect(prompt).toContain('feat/sample (~/code/sample)');
+      expect(prompt).toContain('scaffolding for sample initiative');
     });
   });
 

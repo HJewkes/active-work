@@ -1,17 +1,11 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import sourceAddCmd, { slugifyLabel } from '../../src/commands/source-add.js';
-import artifactAddPrCmd from '../../src/commands/artifact-add-pr.js';
 import artifactAddBranchCmd from '../../src/commands/artifact-add-branch.js';
 import artifactAddStashCmd from '../../src/commands/artifact-add-stash.js';
 import artifactListCmd from '../../src/commands/artifact-list.js';
-import artifactCheckCmd, {
-  mapGhState,
-  resetGhFetcher,
-  setGhFetcher,
-} from '../../src/commands/artifact-check.js';
 import { ArtifactsSchema } from '../../src/schemas/artifacts.js';
 import { readYaml } from '../../src/utils/yaml-io.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
@@ -24,7 +18,9 @@ function initiativeDir(root: string): string {
   return path.join(root, SLUG);
 }
 
-async function readArtifacts(root: string): Promise<ReturnType<typeof readYaml>> {
+async function readArtifacts(
+  root: string,
+): Promise<ReturnType<typeof readYaml<typeof ArtifactsSchema._type>>> {
   return readYaml(path.join(initiativeDir(root), 'artifacts.yml'), ArtifactsSchema);
 }
 
@@ -197,91 +193,58 @@ describe('source.add', () => {
   });
 });
 
-describe('artifact.add-pr', () => {
-  it('appends a new PR', async () => {
-    await withTempActiveRoot(async (root) => {
-      const res = await artifactAddPrCmd.run(
-        {
-          slug: SLUG,
-          number: 100,
-          repo: 'HJewkes/other',
-          title: 'Another PR',
-        },
-        ctx,
-      );
-      expect(res.pr.status).toBe('open');
-      const data = await readArtifacts(root);
-      expect(data.prs).toHaveLength(2);
-      const target = data.prs.find((p) => p.number === 100);
-      expect(target?.repo).toBe('HJewkes/other');
-      expect(target?.last_checked).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    });
-  });
-
-  it('upserts an existing PR by (repo, number)', async () => {
-    await withTempActiveRoot(async (root) => {
-      await artifactAddPrCmd.run(
-        {
-          slug: SLUG,
-          number: 42,
-          repo: 'HJewkes/sample',
-          title: 'Updated Title',
-          status: 'merged',
-        },
-        ctx,
-      );
-      const data = await readArtifacts(root);
-      expect(data.prs).toHaveLength(1);
-      expect(data.prs[0]!.title).toBe('Updated Title');
-      expect(data.prs[0]!.status).toBe('merged');
-    });
-  });
-});
-
 describe('artifact.add-branch', () => {
-  it('upserts by (repo, name)', async () => {
+  it('upserts by (repo, name) and accepts an optional note', async () => {
     await withTempActiveRoot(async (root) => {
       await artifactAddBranchCmd.run(
         {
           slug: SLUG,
           repo: '~/code/sample',
           name: 'feat/sample',
-          last_commit: '2026-05-12',
+          note: 'rewritten note',
         },
         ctx,
       );
       const data = await readArtifacts(root);
       expect(data.branches).toHaveLength(1);
-      expect(data.branches[0]!.last_commit).toBe('2026-05-12');
+      expect(data.branches[0]!.note).toBe('rewritten note');
 
       await artifactAddBranchCmd.run(
-        {
-          slug: SLUG,
-          repo: '~/code/sample',
-          name: 'feat/another',
-        },
+        { slug: SLUG, repo: '~/code/sample', name: 'feat/another' },
         ctx,
       );
       const after = await readArtifacts(root);
       expect(after.branches).toHaveLength(2);
     });
   });
+
+  it('preserves an existing note when re-adding the same branch without --note', async () => {
+    await withTempActiveRoot(async (root) => {
+      await artifactAddBranchCmd.run(
+        { slug: SLUG, repo: '~/code/sample', name: 'feat/sample' },
+        ctx,
+      );
+      const data = await readArtifacts(root);
+      expect(data.branches[0]!.note).toBe('scaffolding for sample initiative');
+    });
+  });
 });
 
 describe('artifact.add-stash', () => {
-  it('appends and allows duplicates', async () => {
+  it('appends with label and allows duplicates', async () => {
     await withTempActiveRoot(async (root) => {
       await artifactAddStashCmd.run(
-        { slug: SLUG, repo: '~/code/sample', message: 'WIP' },
+        { slug: SLUG, repo: '~/code/sample', label: 'WIP' },
         ctx,
       );
       await artifactAddStashCmd.run(
-        { slug: SLUG, repo: '~/code/sample', message: 'WIP' },
+        { slug: SLUG, repo: '~/code/sample', label: 'WIP', sha: 'abc123' },
         ctx,
       );
       const data = await readArtifacts(root);
       expect(data.stashes).toHaveLength(2);
-      expect(data.stashes.every((s) => s.message === 'WIP')).toBe(true);
+      expect(data.stashes.every((s) => s.label === 'WIP')).toBe(true);
+      expect(data.stashes[1]!.sha).toBe('abc123');
     });
   });
 });
@@ -292,7 +255,7 @@ describe('artifact.list', () => {
       const res = await artifactListCmd.run({ slug: SLUG }, ctx);
       expect(res.items).toHaveLength(1);
       expect(res.items[0]!.slug).toBe(SLUG);
-      expect(res.items[0]!.artifacts.prs).toHaveLength(1);
+      expect(res.items[0]!.artifacts.branches).toHaveLength(1);
     });
   });
 
@@ -303,7 +266,7 @@ describe('artifact.list', () => {
       await fs.mkdir(secondDir, { recursive: true });
       await fs.writeFile(
         path.join(secondDir, 'artifacts.yml'),
-        'prs: []\nbranches: []\nstashes: []\n',
+        'branches: []\nstashes: []\n',
         'utf8',
       );
       const res = await artifactListCmd.run({ all_initiatives: true }, ctx);
@@ -319,65 +282,6 @@ describe('artifact.list', () => {
   });
 });
 
-describe('mapGhState', () => {
-  it('maps known states', () => {
-    expect(mapGhState('OPEN')).toBe('open');
-    expect(mapGhState('MERGED')).toBe('merged');
-    expect(mapGhState('CLOSED')).toBe('closed');
-  });
-
-  it('throws on unknown state', () => {
-    expect(() => mapGhState('DRAFT')).toThrow(/Unknown gh PR state/);
-  });
-});
-
-describe('artifact.check', () => {
-  afterEach(() => {
-    resetGhFetcher();
-  });
-
-  it('refreshes PR statuses and stamps last_checked', async () => {
-    await withTempActiveRoot(async (root) => {
-      setGhFetcher(async () => ({ state: 'MERGED' }));
-      const before = await readArtifacts(root);
-      const beforeStamp = before.prs[0]!.last_checked;
-
-      const res = await artifactCheckCmd.run({ slug: SLUG }, ctx);
-      expect(res.updated).toHaveLength(1);
-      expect(res.updated[0]!.status).toBe('merged');
-      expect(res.updated[0]!.status_changed).toBe(true);
-      expect(res.errors).toHaveLength(0);
-
-      const after = await readArtifacts(root);
-      expect(after.prs[0]!.status).toBe('merged');
-      expect(after.prs[0]!.last_checked).not.toBe(beforeStamp);
-    });
-  });
-
-  it('reports status_changed=false when state unchanged', async () => {
-    await withTempActiveRoot(async () => {
-      setGhFetcher(async () => ({ state: 'OPEN' }));
-      const res = await artifactCheckCmd.run({ slug: SLUG }, ctx);
-      expect(res.updated[0]!.status_changed).toBe(false);
-    });
-  });
-
-  it('captures per-PR errors when gh fetch fails', async () => {
-    await withTempActiveRoot(async (root) => {
-      setGhFetcher(async () => {
-        throw new Error('gh not found');
-      });
-      const res = await artifactCheckCmd.run({ slug: SLUG }, ctx);
-      expect(res.updated).toHaveLength(0);
-      expect(res.errors).toHaveLength(1);
-      expect(res.errors[0]!.error).toMatch(/gh not found/);
-      // Still writes the file (which keeps existing prs intact).
-      const after = await readArtifacts(root);
-      expect(after.prs).toHaveLength(1);
-    });
-  });
-});
-
 describe('command metadata', () => {
   it('source.add positional and required option flags', () => {
     expect(sourceAddCmd.name).toBe('source.add');
@@ -385,14 +289,11 @@ describe('command metadata', () => {
     expect(sourceAddCmd.cli?.options?.type?.required).toBe(true);
   });
 
-  it('artifact command names are namespaced', () => {
-    expect(artifactAddPrCmd.name).toBe('artifact.add-pr');
+  it('artifact CRUD command names are namespaced', () => {
     expect(artifactAddBranchCmd.name).toBe('artifact.add-branch');
     expect(artifactAddStashCmd.name).toBe('artifact.add-stash');
     expect(artifactListCmd.name).toBe('artifact.list');
-    expect(artifactCheckCmd.name).toBe('artifact.check');
   });
 });
 
-// Silence unused warning for beforeEach if not used; vitest still imports it.
 beforeEach(() => {});

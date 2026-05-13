@@ -122,7 +122,7 @@ export default defineCommand({
 
     await writeYaml(
       path.join(dir, 'artifacts.yml'),
-      { prs: [], branches: [], stashes: [] },
+      { branches: [], stashes: [] },
       ArtifactsSchema,
     );
 

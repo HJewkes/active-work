@@ -45,7 +45,6 @@ const OpenResultSchema = z.object({
     time_since_last_session_human: z.string().optional(),
     open_task_count: z.number().int().nonnegative(),
     recently_done_count: z.number().int().nonnegative(),
-    open_pr_count: z.number().int().nonnegative(),
     bootstrap_at: z.string(),
   }),
 });

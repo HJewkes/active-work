@@ -62,30 +62,25 @@ export interface TasksResult {
 
 // ---------------------------------------------------------------------------
 // artifact.list (cross-initiative artifacts)
+//
+// AW-15: PRs were removed from the persisted schema. PR state is now derived
+// live via `gh` from `artifact.status`. The dashboard only sees what
+// `artifacts.yml` actually stores: branches + stashes.
 // ---------------------------------------------------------------------------
-
-export interface PrEntry {
-  number: number;
-  repo: string;
-  title: string;
-  status: 'open' | 'merged' | 'closed';
-  last_checked: string;
-}
 
 export interface BranchEntry {
   repo: string;
   name: string;
-  last_commit: string;
+  note?: string;
 }
 
 export interface StashEntry {
   repo: string;
-  message: string;
-  created: string;
+  label: string;
+  sha?: string;
 }
 
 export interface ArtifactsBundle {
-  prs: PrEntry[];
   branches: BranchEntry[];
   stashes: StashEntry[];
 }

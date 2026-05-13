@@ -4,22 +4,21 @@ import { ArtifactsSchema } from '../schemas/artifacts.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
-import { today } from '../utils/today.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
   repo: z.string().min(1),
-  message: z.string(),
-  created: z.string().optional(),
+  label: z.string().min(1),
+  sha: z.string().optional(),
 });
 
 const ResultSchema = z.object({
   slug: z.string(),
   stash: z.object({
     repo: z.string(),
-    message: z.string(),
-    created: z.string(),
+    label: z.string(),
+    sha: z.string().optional(),
   }),
 });
 
@@ -35,16 +34,19 @@ export default defineCommand<Args, Result>({
     positional: ['slug'],
     options: {
       repo: { long: '--repo', description: 'Repo path', required: true },
-      message: { long: '--message', description: 'Stash message', required: true },
-      created: { long: '--created', description: 'Created date YYYY-MM-DD' },
+      label: { long: '--label', description: 'Stash label', required: true },
+      sha: { long: '--sha', description: 'Stash SHA, if known' },
     },
   },
   async run(args) {
     const artifactsPath = path.join(getInitiativeDir(args.slug), 'artifacts.yml');
-    const created = args.created ?? today();
     return withFileLock(getLockPath(args.slug), async () => {
       const current = await readYaml(artifactsPath, ArtifactsSchema);
-      const entry = { repo: args.repo, message: args.message, created };
+      const entry = {
+        repo: args.repo,
+        label: args.label,
+        ...(args.sha ? { sha: args.sha } : {}),
+      };
       current.stashes.push(entry);
       await writeYaml(artifactsPath, current, ArtifactsSchema);
       return { slug: args.slug, stash: entry };
