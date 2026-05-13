@@ -55,7 +55,7 @@ Schema shapes live under `src/schemas/`:
 | `brief.ts` | `BriefFrontmatterSchema` — state, rank, title, ship_target, owner, task_prefix, worktrees |
 | `task.ts` | `TaskSchema` — id, title, priority, severity, estimate, status, tags, notes |
 | `session.ts` | `SessionFrontmatterSchema` — session_id, started, ended, track |
-| `artifacts.ts` | `ArtifactsSchema` — `{ prs, branches, stashes }` |
+| `artifacts.ts` | `ArtifactsSchema` — `{ branches, stashes }` (PR state is derived live via `gh` from `artifact.status`) |
 | `state.ts` | `.schema-version` reader |
 
 Conditional refinements ride along with the base schema: `state: 'focused'` requires a `rank`; `state: 'paused'` requires both `paused_since` and `restart_trigger`. The validating writers in `src/utils/gray-matter-io.ts` and `src/utils/yaml-io.ts` reject any write that fails these rules, so the on-disk tree is always coherent.
