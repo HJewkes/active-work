@@ -3,7 +3,7 @@ import { defineCommand } from '../registry/index.js';
 import { runDiscovery } from '../discover/index.js';
 
 /**
- * `aw discover` — orchestrates every configured discovery source and emits
+ * `active-work discover` — orchestrates every configured discovery source and emits
  * a flat list of hits. Always non-interactive; Claude is the primary
  * caller, and a human can pipe to a picker.
  */

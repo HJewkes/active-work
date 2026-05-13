@@ -17,7 +17,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 | `src/migrations/` | Schema migrations keyed by `from` version. |
 | `src/lint/` | Per-artifact lint rules (warn-only). |
 | `src/templates/` | Mustache templates for scaffolding new initiatives. |
-| `src/bootstrap/` | Bootstrap prompt assembly used by `aw open`. |
+| `src/bootstrap/` | Bootstrap prompt assembly used by `active-work open`. |
 | `src/discover/` | Discovery sources (gh, git, projects, Claude sessions). |
 | `skill/` | This skill. Copied into `~/.claude/skills/active-work/` by `scripts/postinstall.js`. |
 | `scripts/` | npm lifecycle hooks: `postinstall.js`, `preuninstall.js`. |
@@ -50,7 +50,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 - `/mcp` — MCP-over-HTTP transport
 - `/ui` — bundled dashboard SPA
 
-The same daemon process can also speak MCP-over-stdio when invoked as `aw mcp serve --stdio`.
+The same daemon process can also speak MCP-over-stdio when invoked as `active-work mcp serve --stdio`.
 
 ## Skill content
 

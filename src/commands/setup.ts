@@ -4,7 +4,7 @@ import { runSetup } from '../setup/steps.js';
 import { color } from '../utils/color.js';
 
 /**
- * `aw setup` — interactive wizard that walks a fresh machine to a working state.
+ * `active-work setup` — interactive wizard that walks a fresh machine to a working state.
  *
  * Each step runs in sequence and short-circuits on the first hard failure.
  * `--yes` skips interactive prompts (assumes no for daemon start / ingestion).

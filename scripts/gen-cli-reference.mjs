@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generate `docs/cli-reference.md` by walking `aw --help` and capturing
+ * Generate `docs/cli-reference.md` by walking `active-work --help` and capturing
  * `--help` output for every leaf sub-command.
  *
  * Usage:
@@ -33,7 +33,7 @@ function runHelp(args) {
   if (result.status !== 0 && result.status !== null) {
     // commander exits 0 for help; treat anything else as a soft warning.
     process.stderr.write(
-      `warn: \`aw ${args.join(' ')} --help\` exited ${result.status}\n${result.stderr}\n`,
+      `warn: \`active-work ${args.join(' ')} --help\` exited ${result.status}\n${result.stderr}\n`,
     );
   }
   return (result.stdout || '').trimEnd();
@@ -105,7 +105,7 @@ function enumerateLeaves(prefix = []) {
 function renderReference() {
   const header = `# CLI reference
 
-Generated from \`aw --help\` and individual command \`--help\` outputs.
+Generated from \`active-work --help\` and individual command \`--help\` outputs.
 Re-run \`node scripts/gen-cli-reference.mjs\` to refresh after the CLI
 surface changes.
 
@@ -113,7 +113,7 @@ surface changes.
 
   const rootHelp = runHelp([]);
   const sections = [
-    `## aw\n\nTop-level help. Run \`aw <command> --help\` for command-specific options.\n\n\`\`\`\n${rootHelp}\n\`\`\`\n`,
+    `## active-work\n\nTop-level help. Run \`active-work <command> --help\` for command-specific options.\n\n\`\`\`\n${rootHelp}\n\`\`\`\n`,
   ];
 
   const leaves = enumerateLeaves();
@@ -123,7 +123,7 @@ surface changes.
   for (const leaf of leaves) {
     const path = leaf.join(' ');
     const help = runHelp(leaf);
-    sections.push(`## aw ${path}\n\n\`\`\`\n${help}\n\`\`\`\n`);
+    sections.push(`## active-work ${path}\n\n\`\`\`\n${help}\n\`\`\`\n`);
   }
 
   return header + sections.join('\n');

@@ -1,15 +1,15 @@
 # CLI reference
 
-Generated from `aw --help` and individual command `--help` outputs.
+Generated from `active-work --help` and individual command `--help` outputs.
 Re-run `node scripts/gen-cli-reference.mjs` to refresh after the CLI
 surface changes.
 
-## aw
+## active-work
 
-Top-level help. Run `aw <command> --help` for command-specific options.
+Top-level help. Run `active-work <command> --help` for command-specific options.
 
 ```
-Usage: aw [options] [command]
+Usage: active-work [options] [command]
 
 active-work CLI — durable workspace state for engineering work
 
@@ -71,13 +71,14 @@ Commands:
   worktree                      worktree commands
   help [command]                display help for command
 
-Run `aw <command> --help` for command-specific options.
+Run `active-work <command> --help` for command-specific options.
+Tip: `aw [slug]` launches Claude with the bootstrap prompt.
 ```
 
-## aw archive
+## active-work archive
 
 ```
-Usage: aw archive [options] <slug> <domain>
+Usage: active-work archive [options] <slug> <domain>
 
 Move an initiative out of active root into <archiveRoot>/<domain>/archive/.
 
@@ -89,10 +90,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw artifact add-branch
+## active-work artifact add-branch
 
 ```
-Usage: aw artifact add-branch [options] <slug>
+Usage: active-work artifact add-branch [options] <slug>
 
 Append or upsert a branch entry in artifacts.yml.
 
@@ -106,10 +107,10 @@ Options:
   -h, --help             display help for command
 ```
 
-## aw artifact add-pr
+## active-work artifact add-pr
 
 ```
-Usage: aw artifact add-pr [options] <slug>
+Usage: active-work artifact add-pr [options] <slug>
 
 Append or upsert a PR entry in artifacts.yml.
 
@@ -124,10 +125,10 @@ Options:
   -h, --help        display help for command
 ```
 
-## aw artifact add-stash
+## active-work artifact add-stash
 
 ```
-Usage: aw artifact add-stash [options] <slug>
+Usage: active-work artifact add-stash [options] <slug>
 
 Append a stash entry to artifacts.yml.
 
@@ -141,10 +142,10 @@ Options:
   -h, --help         display help for command
 ```
 
-## aw artifact check
+## active-work artifact check
 
 ```
-Usage: aw artifact check [options] <slug>
+Usage: active-work artifact check [options] <slug>
 
 Refresh PR statuses in artifacts.yml via `gh pr view`.
 
@@ -155,10 +156,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw artifact list
+## active-work artifact list
 
 ```
-Usage: aw artifact list [options] [slug]
+Usage: active-work artifact list [options] [slug]
 
 List artifacts for a slug or across all initiatives.
 
@@ -170,10 +171,10 @@ Options:
   -h, --help         display help for command
 ```
 
-## aw audit
+## active-work audit
 
 ```
-Usage: aw audit [options]
+Usage: active-work audit [options]
 
 Cross-initiative summary: lists every initiative, parse failures, and worktree
 path conflicts.
@@ -182,10 +183,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw discover
+## active-work discover
 
 ```
-Usage: aw discover [options]
+Usage: active-work discover [options]
 
 Scan configured sources (gh PRs, local git, projects root, Claude sessions) and
 emit unfiltered discovery hits.
@@ -197,10 +198,10 @@ Options:
   -h, --help               display help for command
 ```
 
-## aw drop
+## active-work drop
 
 ```
-Usage: aw drop [options] <ref>
+Usage: active-work drop [options] <ref>
 
 Mark a discover hit as dropped so future discovers suppress it.
 
@@ -212,10 +213,10 @@ Options:
   -h, --help        display help for command
 ```
 
-## aw edit
+## active-work edit
 
 ```
-Usage: aw edit [options] <slug> <target>
+Usage: active-work edit [options] <slug> <target>
 
 Open the operator's editor on brief.md or handoff.md.
 
@@ -227,10 +228,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw focus
+## active-work focus
 
 ```
-Usage: aw focus [options] <slug>
+Usage: active-work focus [options] <slug>
 
 Promote an initiative into the focused list at a given rank.
 
@@ -242,10 +243,10 @@ Options:
   -h, --help      display help for command
 ```
 
-## aw fold
+## active-work fold
 
 ```
-Usage: aw fold [options] <ref>
+Usage: active-work fold [options] <ref>
 
 Mark a discover hit as folded into an existing initiative.
 
@@ -258,10 +259,10 @@ Options:
   -h, --help      display help for command
 ```
 
-## aw list
+## active-work list
 
 ```
-Usage: aw list [options]
+Usage: active-work list [options]
 
 List every initiative grouped by state. Replaces the legacy INDEX.md dump.
 
@@ -269,10 +270,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw mcp logs
+## active-work mcp logs
 
 ```
-Usage: aw mcp logs [options]
+Usage: active-work mcp logs [options]
 
 Return the last N lines of the daemon log (default 50).
 
@@ -281,10 +282,10 @@ Options:
   -h, --help       display help for command
 ```
 
-## aw mcp restart
+## active-work mcp restart
 
 ```
-Usage: aw mcp restart [options]
+Usage: active-work mcp restart [options]
 
 Restart the MCP HTTP daemon (stop, then spawn a fresh detached instance).
 
@@ -294,10 +295,10 @@ Options:
   -h, --help      display help for command
 ```
 
-## aw mcp serve
+## active-work mcp serve
 
 ```
-Usage: aw mcp serve [options]
+Usage: active-work mcp serve [options]
 
 Start the MCP server. --stdio for stdio mode; --detach to fork the HTTP daemon;
 otherwise runs the HTTP daemon in the foreground.
@@ -309,10 +310,10 @@ Options:
   -h, --help      display help for command
 ```
 
-## aw mcp status
+## active-work mcp status
 
 ```
-Usage: aw mcp status [options]
+Usage: active-work mcp status [options]
 
 Report the MCP HTTP daemon status (pid, port, version, uptime).
 
@@ -320,10 +321,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw mcp stop
+## active-work mcp stop
 
 ```
-Usage: aw mcp stop [options]
+Usage: active-work mcp stop [options]
 
 Stop the running MCP HTTP daemon (sends SIGTERM, waits for exit).
 
@@ -331,10 +332,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw new
+## active-work new
 
 ```
-Usage: aw new [options] <slug>
+Usage: active-work new [options] <slug>
 
 Scaffold a new initiative directory.
 
@@ -349,10 +350,10 @@ Options:
   -h, --help             display help for command
 ```
 
-## aw open
+## active-work open
 
 ```
-Usage: aw open [options] [slug]
+Usage: active-work open [options] [slug]
 
 Bootstrap a Claude session for an initiative. Without a slug, returns the picker
 list of known initiatives.
@@ -364,10 +365,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw paths
+## active-work paths
 
 ```
-Usage: aw paths [options] <slug>
+Usage: active-work paths [options] <slug>
 
 Print all artifact paths for an initiative.
 
@@ -378,10 +379,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw pause
+## active-work pause
 
 ```
-Usage: aw pause [options] <slug>
+Usage: active-work pause [options] <slug>
 
 Mark an initiative as paused with required restart metadata.
 
@@ -394,10 +395,10 @@ Options:
   -h, --help                 display help for command
 ```
 
-## aw rename
+## active-work rename
 
 ```
-Usage: aw rename [options] <old_slug> <new_slug>
+Usage: active-work rename [options] <old_slug> <new_slug>
 
 Rename an initiative slug (moves the directory; task_prefix unchanged).
 
@@ -409,10 +410,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw session list
+## active-work session list
 
 ```
-Usage: aw session list [options] <slug>
+Usage: active-work session list [options] <slug>
 
 List session summaries for an initiative, sorted by end time
 
@@ -424,10 +425,10 @@ Options:
   -h, --help       display help for command
 ```
 
-## aw session record
+## active-work session record
 
 ```
-Usage: aw session record [options] <slug>
+Usage: active-work session record [options] <slug>
 
 Write a session summary file under <slug>/sessions/
 
@@ -444,10 +445,10 @@ Options:
   -h, --help            display help for command
 ```
 
-## aw sessions
+## active-work sessions
 
 ```
-Usage: aw sessions [options]
+Usage: active-work sessions [options]
 
 Browse recent Claude sessions discovered under ~/.claude/projects.
 
@@ -457,10 +458,10 @@ Options:
   -h, --help        display help for command
 ```
 
-## aw set
+## active-work set
 
 ```
-Usage: aw set [options] <slug> <field> <value>
+Usage: active-work set [options] <slug> <field> <value>
 
 Set a single field on an initiative brief.md frontmatter.
 
@@ -473,10 +474,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw setup
+## active-work setup
 
 ```
-Usage: aw setup [options]
+Usage: active-work setup [options]
 
 Interactive wizard: verifies Node, scaffolds directories, registers the MCP
 server, and optionally starts the daemon and walks through ingestion.
@@ -487,10 +488,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw source add
+## active-work source add
 
 ```
-Usage: aw source add [options] <slug> <file>
+Usage: active-work source add [options] <slug> <file>
 
 Move a source file into <slug>/sources/ with a conventional filename.
 
@@ -508,10 +509,10 @@ Options:
   -h, --help           display help for command
 ```
 
-## aw task add
+## active-work task add
 
 ```
-Usage: aw task add [options] <slug>
+Usage: active-work task add [options] <slug>
 
 Create a new task in an initiative
 
@@ -529,10 +530,10 @@ Options:
   -h, --help           display help for command
 ```
 
-## aw task delete
+## active-work task delete
 
 ```
-Usage: aw task delete [options] <slug> <id>
+Usage: active-work task delete [options] <slug> <id>
 
 Hard delete a task file (prefer task.done in normal use)
 
@@ -544,10 +545,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw task done
+## active-work task done
 
 ```
-Usage: aw task done [options] <slug> <id>
+Usage: active-work task done [options] <slug> <id>
 
 Mark a task as done
 
@@ -559,10 +560,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw task edit
+## active-work task edit
 
 ```
-Usage: aw task edit [options] <slug> <id> <field> <value>
+Usage: active-work task edit [options] <slug> <id> <field> <value>
 
 Edit a single field on a task
 
@@ -576,10 +577,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw task list
+## active-work task list
 
 ```
-Usage: aw task list [options] [slug]
+Usage: active-work task list [options] [slug]
 
 List tasks for an initiative or across all initiatives
 
@@ -594,10 +595,10 @@ Options:
   -h, --help          display help for command
 ```
 
-## aw task reorder
+## active-work task reorder
 
 ```
-Usage: aw task reorder [options] <slug> <id> <new_priority>
+Usage: active-work task reorder [options] <slug> <id> <new_priority>
 
 Move a task to a new priority and shift siblings down
 
@@ -610,10 +611,10 @@ Options:
   -h, --help    display help for command
 ```
 
-## aw touch
+## active-work touch
 
 ```
-Usage: aw touch [options] <slug>
+Usage: active-work touch [options] <slug>
 
 Stamp `updated: today()` on an initiative's brief.md.
 
@@ -624,10 +625,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw track
+## active-work track
 
 ```
-Usage: aw track [options] <ref>
+Usage: active-work track [options] <ref>
 
 Scaffold a new initiative from a discover hit.
 
@@ -643,10 +644,10 @@ Options:
   -h, --help             display help for command
 ```
 
-## aw unfocus
+## active-work unfocus
 
 ```
-Usage: aw unfocus [options] <slug>
+Usage: active-work unfocus [options] <slug>
 
 Demote a focused initiative to backburner and renumber survivors.
 
@@ -657,10 +658,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw uninstall
+## active-work uninstall
 
 ```
-Usage: aw uninstall [options]
+Usage: active-work uninstall [options]
 
 Reverse what setup did: remove the skill, stop the daemon, unregister MCP.
 Preserves the active root.
@@ -670,10 +671,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw unpause
+## active-work unpause
 
 ```
-Usage: aw unpause [options] <slug>
+Usage: active-work unpause [options] <slug>
 
 Move a paused initiative back to backburner.
 
@@ -684,10 +685,10 @@ Options:
   -h, --help  display help for command
 ```
 
-## aw worktree set-default
+## active-work worktree set-default
 
 ```
-Usage: aw worktree set-default [options] <slug> <label>
+Usage: active-work worktree set-default [options] <slug> <label>
 
 Mark the named worktree label as default for an initiative; clears default on
 other labels.

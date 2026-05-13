@@ -48,7 +48,7 @@ export default defineCommand({
   result: ResultSchema,
   cli: {
     positional: ['slug', 'field', 'value'],
-    usage: 'aw set <slug> <field> <value>',
+    usage: 'active-work set <slug> <field> <value>',
   },
   async run(args, ctx) {
     const dir = path.join(ctx.activeRoot, args.slug);

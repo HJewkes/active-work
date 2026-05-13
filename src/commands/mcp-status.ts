@@ -3,7 +3,7 @@ import { defineCommand } from '../registry/index.js';
 import { isProcessAlive, readPidFile } from '../server/lifecycle.js';
 
 /**
- * `aw mcp status` — report whether the daemon is running, plus a
+ * `active-work mcp status` — report whether the daemon is running, plus a
  * snapshot of `/health` if it answers.
  */
 

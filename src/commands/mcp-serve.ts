@@ -5,10 +5,10 @@ import { runMcpStdio } from '../server/mcp.js';
 import { runDaemon } from '../server/daemon.js';
 
 /**
- * `aw mcp serve` — start the MCP server.
+ * `active-work mcp serve` — start the MCP server.
  *
  * - `--stdio`: speak JSON-RPC over stdio (for `claude mcp add`).
- * - `--detach`: fork a child running `aw mcp serve` in the background.
+ * - `--detach`: fork a child running `active-work mcp serve` in the background.
  * - default: run the HTTP daemon in the foreground on `--port` (default 7400).
  */
 

@@ -74,7 +74,7 @@ export default defineCommand({
       owner: { long: '--owner', description: 'Owner / handle' },
       worktree: { long: '--worktree', description: 'Default worktree path' },
     },
-    usage: 'aw new <slug> --title <title> [--ship-target <t>] [--owner <o>] [--worktree <path>]',
+    usage: 'active-work new <slug> --title <title> [--ship-target <t>] [--owner <o>] [--worktree <path>]',
   },
   async run(args, ctx) {
     const slugCheck = validateSlug(args.slug);

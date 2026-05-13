@@ -166,7 +166,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
   result: ResultSchema,
   cli: {
     positional: ['slug'],
-    usage: 'aw open [slug]',
+    usage: 'active-work open [slug]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();

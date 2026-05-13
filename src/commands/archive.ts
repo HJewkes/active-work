@@ -42,7 +42,7 @@ export default defineCommand({
   result: ResultSchema,
   cli: {
     positional: ['slug', 'domain'],
-    usage: 'aw archive <slug> <domain>',
+    usage: 'active-work archive <slug> <domain>',
   },
   async run(args, ctx) {
     const from = path.resolve(path.join(ctx.activeRoot, args.slug));

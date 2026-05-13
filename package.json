@@ -14,8 +14,8 @@
     "url": "https://github.com/HJewkes/active-work/issues"
   },
   "bin": {
-    "aw": "dist/cli.js",
-    "active-work": "dist/cli.js"
+    "active-work": "dist/cli.js",
+    "aw": "dist/aw.js"
   },
   "files": [
     "dist",

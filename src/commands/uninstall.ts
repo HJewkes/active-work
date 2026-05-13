@@ -4,7 +4,7 @@ import { runUninstall } from '../setup/steps.js';
 import { color } from '../utils/color.js';
 
 /**
- * `aw uninstall` — reverse what setup did. Asks for confirmation before each
+ * `active-work uninstall` — reverse what setup did. Asks for confirmation before each
  * destructive action (or --yes to skip prompts). Does NOT touch the active
  * root: that's operator data, and removing it should be a deliberate act.
  */

@@ -35,7 +35,7 @@ export async function readFrontmatter<T>(
 /**
  * Read a markdown file's frontmatter without schema validation.
  *
- * Used by repair-style flows (e.g. `aw set`) that need to fix files whose
+ * Used by repair-style flows (e.g. `active-work set`) that need to fix files whose
  * frontmatter is currently invalid.
  */
 export async function readRawFrontmatter(

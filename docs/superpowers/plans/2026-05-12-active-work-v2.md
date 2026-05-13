@@ -4,7 +4,7 @@
 
 **Goal:** Build `@hjewkes/active-work` — a CLI + MCP server + Claude skill + minimal web dashboard that maintains durable per-initiative workspace state (brief, handoff, tasks, sessions, artifacts) so engineering work can be picked up cleanly across Claude Code sessions.
 
-**Architecture:** Single npm package ships CLI, MCP server, web dashboard, and skill. A shared **command registry** (zod-typed) is the single source of truth — the CLI dispatcher (commander) and MCP server both consume it; no parallel definitions. A long-running **daemon** (`aw mcp serve`) hosts MCP-over-HTTP, REST, WebSocket, and the dashboard at `http://127.0.0.1:<port>`. CLI commands are non-interactive by default (Claude is the primary caller); interactive UX is reserved for `aw open` (picker), `aw setup` (wizard), and explicit `--interactive` flags. Data lives as plain files under `$XDG_DATA_HOME/active-work/<slug>/` (brief.md with frontmatter + prose, handoff.md prose, tasks/\*.yml, sessions/\*.md, artifacts.yml, sources/). Concurrency via POSIX `flock` per-initiative.
+**Architecture:** Single npm package ships CLI, MCP server, web dashboard, and skill. A shared **command registry** (zod-typed) is the single source of truth — the CLI dispatcher (commander) and MCP server both consume it; no parallel definitions. A long-running **daemon** (`active-work mcp serve`) hosts MCP-over-HTTP, REST, WebSocket, and the dashboard at `http://127.0.0.1:<port>`. CLI commands are non-interactive by default (Claude is the primary caller); interactive UX is reserved for `active-work open` (picker), `active-work setup` (wizard), and explicit `--interactive` flags. Data lives as plain files under `$XDG_DATA_HOME/active-work/<slug>/` (brief.md with frontmatter + prose, handoff.md prose, tasks/\*.yml, sessions/\*.md, artifacts.yml, sources/). Concurrency via POSIX `flock` per-initiative.
 
 **Tech Stack:**
 - Runtime: Node 22+, ESM only
@@ -49,7 +49,7 @@ Every file mapped to its single responsibility. Implementations must match these
 | `.prettierrc` | Prettier config |
 | `.gitignore` | Standard node + project ignores (lock files for daemon, `.active-work-test/`, etc.) |
 | `.npmrc` | `ignore-workspace=true` if nested under a pnpm workspace; otherwise empty |
-| `README.md` | Install, quickstart, command reference (pointer to `aw help`) |
+| `README.md` | Install, quickstart, command reference (pointer to `active-work help`) |
 | `CLAUDE.md` | Repo-specific rules + architecture pointers |
 | `LICENSE` | MIT |
 | `.changeset/config.json` | Changesets config |
@@ -80,33 +80,33 @@ Every file mapped to its single responsibility. Implementations must match these
 | `src/registry/types.ts` | `Command<I, O>` interface; `CommandRegistry` type |
 | `src/registry/index.ts` | Builds the registry by importing all `src/commands/**/*.ts` modules |
 | `src/registry/json-envelope.ts` | `{ok, data, warnings}` / `{ok: false, error}` formatting |
-| `src/commands/new.ts` | `aw new <slug> --title ... --ship-target ... [--worktree ...]` |
-| `src/commands/set.ts` | `aw set <slug> <field> <value>` — frontmatter field setter |
-| `src/commands/focus.ts` | `aw focus <slug> [--rank N]` — re-rank focused initiatives |
-| `src/commands/unfocus.ts` | `aw unfocus <slug>` |
-| `src/commands/pause.ts` | `aw pause <slug> --since YYYY-MM-DD --restart-trigger "..."` |
-| `src/commands/unpause.ts` | `aw unpause <slug>` |
-| `src/commands/archive.ts` | `aw archive <slug> <domain>` |
-| `src/commands/rename.ts` | `aw rename <old-slug> <new-slug>` |
-| `src/commands/touch.ts` | `aw touch <slug>` — stamp `updated` date |
-| `src/commands/paths.ts` | `aw paths <slug>` — print all artifact paths |
-| `src/commands/audit.ts` | `aw audit` — across-initiative summary + lint |
-| `src/commands/list.ts` | `aw list` / `ls` — formatted dump (replaces INDEX.md) |
-| `src/commands/open.ts` | `aw open [slug]` — bootstrap; picker when no slug |
-| `src/commands/edit.ts` | `aw edit brief\|handoff <slug>` — opens `$EDITOR`, validates on save |
-| `src/commands/task.ts` | `aw task add/done/list/edit/reorder/delete` |
-| `src/commands/session.ts` | `aw session record/list` |
-| `src/commands/source-add.ts` | `aw source-add <slug> <file> --type ...` |
-| `src/commands/artifact.ts` | `aw artifact add-pr/add-branch/add-stash/list/check` |
-| `src/commands/worktree.ts` | `aw worktree set-default <slug> <label>` |
-| `src/commands/discover.ts` | `aw discover` — emit JSON list of hits |
-| `src/commands/fold.ts` | `aw fold <ref> --into <slug>` |
-| `src/commands/drop.ts` | `aw drop <ref>` |
-| `src/commands/track.ts` | `aw track <ref>` — scaffold initiative from a discover hit |
-| `src/commands/sessions-browser.ts` | `aw sessions` — ad-hoc Claude session browser |
-| `src/commands/setup.ts` | `aw setup [--update]` — interactive install/configure wizard |
-| `src/commands/uninstall.ts` | `aw uninstall` — undo what setup did |
-| `src/commands/mcp.ts` | `aw mcp serve\|stop\|restart\|status\|logs\|install-launchd` |
+| `src/commands/new.ts` | `active-work new <slug> --title ... --ship-target ... [--worktree ...]` |
+| `src/commands/set.ts` | `active-work set <slug> <field> <value>` — frontmatter field setter |
+| `src/commands/focus.ts` | `active-work focus <slug> [--rank N]` — re-rank focused initiatives |
+| `src/commands/unfocus.ts` | `active-work unfocus <slug>` |
+| `src/commands/pause.ts` | `active-work pause <slug> --since YYYY-MM-DD --restart-trigger "..."` |
+| `src/commands/unpause.ts` | `active-work unpause <slug>` |
+| `src/commands/archive.ts` | `active-work archive <slug> <domain>` |
+| `src/commands/rename.ts` | `active-work rename <old-slug> <new-slug>` |
+| `src/commands/touch.ts` | `active-work touch <slug>` — stamp `updated` date |
+| `src/commands/paths.ts` | `active-work paths <slug>` — print all artifact paths |
+| `src/commands/audit.ts` | `active-work audit` — across-initiative summary + lint |
+| `src/commands/list.ts` | `active-work list` / `ls` — formatted dump (replaces INDEX.md) |
+| `src/commands/open.ts` | `active-work open [slug]` — bootstrap; picker when no slug |
+| `src/commands/edit.ts` | `active-work edit brief\|handoff <slug>` — opens `$EDITOR`, validates on save |
+| `src/commands/task.ts` | `active-work task add/done/list/edit/reorder/delete` |
+| `src/commands/session.ts` | `active-work session record/list` |
+| `src/commands/source-add.ts` | `active-work source-add <slug> <file> --type ...` |
+| `src/commands/artifact.ts` | `active-work artifact add-pr/add-branch/add-stash/list/check` |
+| `src/commands/worktree.ts` | `active-work worktree set-default <slug> <label>` |
+| `src/commands/discover.ts` | `active-work discover` — emit JSON list of hits |
+| `src/commands/fold.ts` | `active-work fold <ref> --into <slug>` |
+| `src/commands/drop.ts` | `active-work drop <ref>` |
+| `src/commands/track.ts` | `active-work track <ref>` — scaffold initiative from a discover hit |
+| `src/commands/sessions-browser.ts` | `active-work sessions` — ad-hoc Claude session browser |
+| `src/commands/setup.ts` | `active-work setup [--update]` — interactive install/configure wizard |
+| `src/commands/uninstall.ts` | `active-work uninstall` — undo what setup did |
+| `src/commands/mcp.ts` | `active-work mcp serve\|stop\|restart\|status\|logs\|install-launchd` |
 | `src/server/index.ts` | Daemon process entry: starts HTTP + MCP + WS, writes PID file |
 | `src/server/http.ts` | hono app: REST endpoints mirroring registry, WS upgrade route |
 | `src/server/mcp.ts` | MCP-over-HTTP transport from `@modelcontextprotocol/sdk`; tool defs derived from registry |
@@ -183,7 +183,7 @@ Every file mapped to its single responsibility. Implementations must match these
 |---|---|
 | `docs/superpowers/plans/2026-05-12-active-work-v2.md` | This plan |
 | `docs/architecture.md` | Hand-written architecture overview |
-| `docs/cli-reference.md` | Auto-generated from registry via `aw help --markdown` |
+| `docs/cli-reference.md` | Auto-generated from registry via `active-work help --markdown` |
 
 ---
 
@@ -542,7 +542,7 @@ Each task implements one command (or family). All consume Wave 1 primitives and 
 **Files:** `src/server/mcp.ts` (initial stdio version), `src/commands/mcp.ts` (subcommand entry), `__tests__/integration/mcp.test.ts`
 
 **Behavior:**
-- `aw mcp serve --stdio` runs stdio-mode MCP server
+- `active-work mcp serve --stdio` runs stdio-mode MCP server
 - Tool definitions auto-derived from registry: name `active__<command>__<subcommand>`, description = registry description, inputSchema = registry args (zod→JSON Schema via `zod-to-json-schema`)
 - Tool calls invoke `run()` and return `JsonEnvelope`
 
@@ -556,7 +556,7 @@ Each task implements one command (or family). All consume Wave 1 primitives and 
 
 **Behavior:**
 - Read `<activeRoot>/.schema-version`; if absent, treat as v0
-- v0 → v1 migrator: no automatic transformation (we've decided fresh start), but log warning and refuse to operate until operator runs `aw setup --rebuild-from-v0` (this command is intentionally absent in v1; operator archives manually)
+- v0 → v1 migrator: no automatic transformation (we've decided fresh start), but log warning and refuse to operate until operator runs `active-work setup --rebuild-from-v0` (this command is intentionally absent in v1; operator archives manually)
 - For future v1+ migrations: in-place rewrite with `.pre-migration-v<N>.bak` backups
 
 **Tests:** version detection; backup writes; migration registry registration.
@@ -580,7 +580,7 @@ Sequential within the wave; one developer/agent owns it.
 4. Daemon entrypoint: spawn HTTP server on 127.0.0.1, port from config (default 7400), write PID to `$XDG_STATE_HOME/active-work/daemon.pid` and socket meta to `daemon.meta.json`
 5. Lifecycle (`mcp serve|stop|restart|status|logs`): stop reads PID, sends SIGTERM, removes pidfile; status checks pidfile + health endpoint; logs tails `daemon.log`
 6. `mcp install-launchd` writes `~/Library/LaunchAgents/com.hjewkes.active-work.plist`, runs `launchctl load`. `mcp uninstall-launchd` reverses
-7. Daemon version check: CLI talks to daemon, if version mismatch, CLI sends `POST /admin/shutdown`, restarts (`spawn aw mcp serve --detach`)
+7. Daemon version check: CLI talks to daemon, if version mismatch, CLI sends `POST /admin/shutdown`, restarts (`spawn active-work mcp serve --detach`)
 8. Logging: pino to stderr + `$XDG_STATE_HOME/active-work/daemon.log` (rotating by size, keep last 5)
 
 **Tests:** start daemon, hit health, hit one RPC, hit WS, verify broadcast on file write; stop daemon.
@@ -611,8 +611,8 @@ Sequential within the wave; one developer/agent owns it.
 
 **Behavior:**
 - SKILL.md frontmatter: name `active-work`, description listing trigger phrases (work/initiative/handoff/audit/discover/wrap-up/etc.)
-- Rules: edits route through CLI; mixed edit policy; bootstrap from `aw open <slug>`; session capture at session end
-- References: onboarding (use `aw setup`), auditing-existing-work (drives discover/triage), cli-dev (developer reference)
+- Rules: edits route through CLI; mixed edit policy; bootstrap from `active-work open <slug>`; session capture at session end
+- References: onboarding (use `active-work setup`), auditing-existing-work (drives discover/triage), cli-dev (developer reference)
 - postinstall.js: copies skill/ tree into `~/.claude/skills/active-work/` if `~/.claude` exists (silent skip otherwise)
 - preuninstall.js: removes `~/.claude/skills/active-work/`
 
@@ -622,25 +622,25 @@ Sequential within the wave; one developer/agent owns it.
 
 ## Wave 6 — Setup wizard + release (sequential)
 
-### Task 6.1: `aw setup` and `aw uninstall`
+### Task 6.1: `active-work setup` and `active-work uninstall`
 
 **Files:** `src/commands/setup.ts`, `src/commands/uninstall.ts`, `__tests__/commands/setup.test.ts`
 
-**Behavior of `aw setup`:**
+**Behavior of `active-work setup`:**
 1. Verify node ≥ 22
 2. Create `<activeRoot>` and `<stateRoot>` if missing
 3. Write `.schema-version` (1)
 4. Write user config stub at `$XDG_CONFIG_HOME/active-work/config.json` if absent (interactive prompt)
 5. Symlink skill into `~/.claude/skills/active-work/` (or postinstall already did it)
-6. Register MCP server: `claude mcp add --user @hjewkes/active-work -- aw mcp serve --stdio` (or write `.mcp.json` if `claude` isn't available, with operator confirmation)
+6. Register MCP server: `claude mcp add --user @hjewkes/active-work -- active-work mcp serve --stdio` (or write `.mcp.json` if `claude` isn't available, with operator confirmation)
 7. Offer to install launchd plist (interactive prompt)
 8. Start daemon
 9. Offer ingestion: spawn `claude` at `<activeRoot>` with a discovery walkthrough prompt (interactive prompt)
 10. Print summary + next steps
 
-**Behavior of `aw setup --update`:** re-run idempotently, skipping completed steps, picking up new defaults.
+**Behavior of `active-work setup --update`:** re-run idempotently, skipping completed steps, picking up new defaults.
 
-**Behavior of `aw uninstall`:** reverse — unregister MCP, remove plist, remove skill symlink. Leave `<activeRoot>` untouched (operator removes manually after confirmation).
+**Behavior of `active-work uninstall`:** reverse — unregister MCP, remove plist, remove skill symlink. Leave `<activeRoot>` untouched (operator removes manually after confirmation).
 
 **Tests:** dry-run mode; idempotency.
 
@@ -668,7 +668,7 @@ Sequential within the wave; one developer/agent owns it.
 **Files:** `__tests__/integration/end-to-end.test.ts`, `__tests__/integration/discover.test.ts`
 
 **Behaviors:**
-- Full lifecycle test: `aw new` → `aw task add` → `aw task done` → `aw archive`
+- Full lifecycle test: `active-work new` → `active-work task add` → `active-work task done` → `active-work archive`
 - Discover with mocked `gh` and `git` subprocesses
 - Daemon round-trip: start, RPC, WS subscription, file edit, event observed, stop
 
@@ -681,7 +681,7 @@ Sequential within the wave; one developer/agent owns it.
 **Behaviors:**
 - README: full install guide, quickstart (your first initiative), commands table, troubleshooting
 - architecture.md: data model diagrams, daemon vs CLI flow, lifecycle states
-- cli-reference.md: generated via `aw help --markdown > docs/cli-reference.md` (script in package.json)
+- cli-reference.md: generated via `active-work help --markdown > docs/cli-reference.md` (script in package.json)
 
 **Commit:** `docs: README + architecture + auto-generated CLI reference`
 
@@ -691,7 +691,7 @@ Sequential within the wave; one developer/agent owns it.
 
 **Behaviors:**
 - Use the new tool to scaffold an `active-work` initiative for the project itself
-- First tasks: post-v0.1 wishlist (e.g., add Linux support, add `aw doctor`, etc.)
+- First tasks: post-v0.1 wishlist (e.g., add Linux support, add `active-work doctor`, etc.)
 
 **Commit:** `chore: dogfood — scaffold active-work initiative for the project`
 
@@ -801,7 +801,7 @@ Explicitly deferred:
 - Cross-machine sync (manual git on `<activeRoot>` if operator wants it)
 - v0 → v1 auto-migration (fresh start)
 - Telemetry beyond local `usage.jsonl`
-- `aw doctor` health-check command
+- `active-work doctor` health-check command
 - Web UI auth (localhost-only)
 - depends_on between initiatives
 - `kind` enum, `health` enum, separate `priority` field

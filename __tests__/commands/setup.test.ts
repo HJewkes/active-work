@@ -14,7 +14,7 @@ function ctxFor(activeRoot: string) {
   };
 }
 
-describe('aw setup', () => {
+describe('active-work setup', () => {
   let tempBase: string;
   let originalActiveRoot: string | undefined;
   let hadActiveRoot = false;
@@ -90,7 +90,7 @@ describe('aw setup', () => {
   });
 });
 
-describe('aw uninstall', () => {
+describe('active-work uninstall', () => {
   let tempBase: string;
   let fakeHome: string;
   let originalActiveRoot: string | undefined;

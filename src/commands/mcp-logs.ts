@@ -5,7 +5,7 @@ import { defineCommand } from '../registry/index.js';
 import { getStateRoot } from '../utils/paths.js';
 
 /**
- * `aw mcp logs` — return the tail of `daemon.log`.
+ * `active-work mcp logs` — return the tail of `daemon.log`.
  *
  * No `--follow` support in v0; callers that need streaming can `tail -f`
  * the file directly.

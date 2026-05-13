@@ -98,7 +98,7 @@ describe('cli integration', () => {
   it('prints help and exits 0 for --help', () => {
     const res = runCli(['--help']);
     expect(res.status).toBe(0);
-    expect(res.stdout).toMatch(/Usage:\s+aw/);
+    expect(res.stdout).toMatch(/Usage:\s+active-work/);
     expect(res.stdout).toMatch(/active-work CLI/);
   });
 
@@ -113,7 +113,7 @@ describe('cli integration', () => {
     expect(res.stderr).toMatch(/--title/);
   });
 
-  it('aw new creates an initiative dir and prints success envelope in --json', async () => {
+  it('active-work new creates an initiative dir and prints success envelope in --json', async () => {
     const res = runCli(
       ['--json', 'new', 'my-test-slug', '--title', 'Test', '--ship-target', '2026-Q3'],
       { ACTIVE_ROOT: activeRoot },
@@ -132,7 +132,7 @@ describe('cli integration', () => {
     expect(stat.isDirectory()).toBe(true);
   });
 
-  it('aw list --json returns a valid success envelope', () => {
+  it('active-work list --json returns a valid success envelope', () => {
     const res = runCli(['--json', 'list'], { ACTIVE_ROOT: activeRoot });
     expect(res.status).toBe(0);
     const parsed = JSON.parse(res.stdout) as {

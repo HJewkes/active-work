@@ -140,7 +140,7 @@ export async function runEdit(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new ValidationError(
-        `Brief frontmatter is invalid after editing. Re-run \`aw edit ${args.slug} brief\` to fix.\n${message}`,
+        `Brief frontmatter is invalid after editing. Re-run \`active-work edit ${args.slug} brief\` to fix.\n${message}`,
         { cause: err },
       );
     }
@@ -165,7 +165,7 @@ const edit = defineCommand<Args, Result>({
   result: ResultSchema,
   cli: {
     positional: ['slug', 'target'],
-    usage: 'aw edit <slug> <brief|handoff>',
+    usage: 'active-work edit <slug> <brief|handoff>',
   },
   async run(args) {
     return runEdit(args);

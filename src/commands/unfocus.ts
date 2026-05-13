@@ -36,7 +36,7 @@ export default defineCommand<Args, Result>({
   result: ResultSchema,
   cli: {
     positional: ['slug'],
-    usage: 'aw unfocus <slug>',
+    usage: 'active-work unfocus <slug>',
   },
   async run({ slug }) {
     const briefs = await loadAllBriefs();

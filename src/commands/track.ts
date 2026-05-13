@@ -14,12 +14,12 @@ import { stringify as yamlStringify } from 'yaml';
 import { appendTriagedLog } from '../discover/triaged-log.js';
 
 /**
- * `aw track <ref> --slug <slug>` — scaffold a fresh initiative from a
+ * `active-work track <ref> --slug <slug>` — scaffold a fresh initiative from a
  * discover hit. The original `ref` is preserved in the brief body so
  * future readers can trace where the initiative came from.
  *
  * This deliberately re-implements directory scaffolding inline rather
- * than importing `aw new`; the parallel-work split means `new` lives on a
+ * than importing `active-work new`; the parallel-work split means `new` lives on a
  * branch this one can't reach.
  */
 

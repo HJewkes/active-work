@@ -288,13 +288,14 @@ function buildProgram(): Command {
   // throw a `CommanderError` instead of calling `process.exit` directly.
   program.exitOverride();
   program
-    .name('aw')
+    .name('active-work')
     .description('active-work CLI — durable workspace state for engineering work')
     .version('0.1.0')
     .option('--json', 'emit machine-readable JSON envelope on stdout')
     .addHelpText(
       'after',
-      '\nRun `aw <command> --help` for command-specific options.\n',
+      '\nRun `active-work <command> --help` for command-specific options.\n' +
+        'Tip: `aw [slug]` launches Claude with the bootstrap prompt.\n',
     );
 
   // Sort commands so help output is stable.

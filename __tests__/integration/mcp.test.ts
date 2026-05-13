@@ -4,7 +4,7 @@
  * Spawns a child process running the MCP server, hands it stdio, drives a
  * `tools/list` request through an MCP `Client`, and asserts a sensible
  * response. We spawn via `tsx -e` so this test is independent of Wave 3.1's
- * CLI work (the eventual public entrypoint is `aw mcp serve --stdio`).
+ * CLI work (the eventual public entrypoint is `active-work mcp serve --stdio`).
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';

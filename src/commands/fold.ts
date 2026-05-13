@@ -10,7 +10,7 @@ import { nowIso } from '../utils/today.js';
 import { appendTriagedLog } from '../discover/triaged-log.js';
 
 /**
- * `aw fold <ref> --into <slug>` — record that a discover hit has been
+ * `active-work fold <ref> --into <slug>` — record that a discover hit has been
  * absorbed by an existing initiative.
  *
  * Side effects:

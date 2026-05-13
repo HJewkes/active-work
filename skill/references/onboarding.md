@@ -1,6 +1,6 @@
 # Onboarding — first-time `active-work` setup
 
-This walkthrough takes a brand-new machine to a working `aw` install with the Claude Code skill available.
+This walkthrough takes a brand-new machine to a working `active-work` install with the Claude Code skill available.
 
 ## 1. Verify prerequisites
 
@@ -21,7 +21,7 @@ npm install -g @hjewkes/active-work
 pnpm add -g @hjewkes/active-work
 ```
 
-The package ships the CLI binary (`aw`, with `active-work` as a long-form alias), the MCP server, the dashboard bundle, and the Claude skill content.
+The package ships the CLI binary (`active-work`), a thin Claude-session launcher (`aw <slug>`), the MCP server, the dashboard bundle, and the Claude skill content.
 
 ## 3. Postinstall hook copies the skill
 
@@ -34,9 +34,9 @@ ls ~/.claude/skills/active-work/
 # expect: SKILL.md  references/
 ```
 
-## 4. Run `aw setup`
+## 4. Run `active-work setup`
 
-`aw setup` (Wave 6) is the interactive wizard that initializes data roots, registers the MCP server with Claude Code, and offers to install the daemon launchd plist. **It is not yet implemented.** Until it lands, you can prepare the data root manually:
+`active-work setup` (Wave 6) is the interactive wizard that initializes data roots, registers the MCP server with Claude Code, and offers to install the daemon launchd plist. **It is not yet implemented.** Until it lands, you can prepare the data root manually:
 
 ```bash
 mkdir -p "${XDG_DATA_HOME:-$HOME/Library/Application Support}/active-work"
@@ -47,26 +47,26 @@ mkdir -p "${XDG_DATA_HOME:-$HOME/Library/Application Support}/active-work"
 Register the MCP server with Claude Code manually for now:
 
 ```bash
-claude mcp add --user @hjewkes/active-work -- aw mcp serve --stdio
+claude mcp add --user @hjewkes/active-work -- active-work mcp serve --stdio
 ```
 
 ## 5. Verify the install
 
 ```bash
-aw --help          # prints the command surface
-aw mcp status      # reports daemon state
+active-work --help          # prints the command surface
+active-work mcp status      # reports daemon state
 ```
 
-`aw mcp status` will report "not running" until you start the daemon (next step).
+`active-work mcp status` will report "not running" until you start the daemon (next step).
 
 ## 6. Optional — start the daemon
 
 The daemon hosts MCP-over-HTTP, the REST API, the WebSocket live feed, and the dashboard.
 
 ```bash
-aw mcp serve --detach
+active-work mcp serve --detach
 ```
 
-Then visit `http://127.0.0.1:7400/ui` to see the dashboard. Stop it with `aw mcp stop`.
+Then visit `http://127.0.0.1:7400/ui` to see the dashboard. Stop it with `active-work mcp stop`.
 
 You're done. Open Claude Code in any directory and ask "what am I working on?" — the `active-work` skill should engage and surface your initiatives.

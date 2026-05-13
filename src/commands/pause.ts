@@ -56,7 +56,7 @@ export default defineCommand<Args, Result>({
         required: true,
       },
     },
-    usage: 'aw pause <slug> --since YYYY-MM-DD --restart-trigger "..."',
+    usage: 'active-work pause <slug> --since YYYY-MM-DD --restart-trigger "..."',
   },
   async run({ slug, since, restart_trigger }) {
     const briefs = await loadAllBriefs();

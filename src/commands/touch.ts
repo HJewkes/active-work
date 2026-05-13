@@ -25,7 +25,7 @@ export default defineCommand({
   result: ResultSchema,
   cli: {
     positional: ['slug'],
-    usage: 'aw touch <slug>',
+    usage: 'active-work touch <slug>',
   },
   async run(args, ctx) {
     const briefPath = path.join(ctx.activeRoot, args.slug, 'brief.md');

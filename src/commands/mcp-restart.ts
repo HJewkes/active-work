@@ -8,7 +8,7 @@ import {
 } from '../server/lifecycle.js';
 
 /**
- * `aw mcp restart` — stop the running daemon (if any) then spawn a new
+ * `active-work mcp restart` — stop the running daemon (if any) then spawn a new
  * detached daemon. Honors the previously-bound port when not overridden.
  */
 

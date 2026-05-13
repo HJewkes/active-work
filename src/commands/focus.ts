@@ -69,7 +69,7 @@ export default defineCommand<Args, Result>({
         description: 'Target rank (positive integer). Defaults to end of list.',
       },
     },
-    usage: 'aw focus <slug> [--rank N]',
+    usage: 'active-work focus <slug> [--rank N]',
   },
   async run({ slug, rank }) {
     const briefs = await loadAllBriefs();

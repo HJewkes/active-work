@@ -1,5 +1,5 @@
 /**
- * Individual setup steps used by `aw setup` and `aw uninstall`.
+ * Individual setup steps used by `active-work setup` and `active-work uninstall`.
  *
  * Each step is a small async function that accepts a `SetupDeps` bag
  * (filesystem, spawn, prompts, paths). Tests inject stubs; production
@@ -96,7 +96,7 @@ function resolveDeps(deps: SetupDeps): Required<
   // — works both for source (`src/setup/steps.ts`) and bundled
   // (`dist/cli.js`) layouts.
   const repoRoot = deps.repoRoot ?? findRepoRoot();
-  const cliEntry = deps.cliEntry ?? process.argv[1] ?? 'aw';
+  const cliEntry = deps.cliEntry ?? process.argv[1] ?? 'active-work';
   return {
     fs,
     spawn,
@@ -383,7 +383,7 @@ function runOnce(
 
 const MCP_FALLBACK_SNIPPET = `{
   "active-work": {
-    "command": "aw",
+    "command": "active-work",
     "args": ["mcp", "serve", "--stdio"]
   }
 }`;
@@ -398,7 +398,7 @@ export async function stepRegisterMcp(
     '--user',
     '@hjewkes/active-work',
     '--',
-    'aw',
+    'active-work',
     'mcp',
     'serve',
     '--stdio',
@@ -440,7 +440,7 @@ export async function stepRegisterMcp(
   };
 }
 
-/** Spawn `aw mcp serve --detach` (best-effort). */
+/** Spawn `active-work mcp serve --detach` (best-effort). */
 export async function stepStartDaemon(
   deps: SetupDeps = {},
 ): Promise<StepResult> {
@@ -499,7 +499,7 @@ export async function stepIngestion(
       done: false,
       message:
         `Skipped ingestion walkthrough. Run \`claude\` in ${paths.activeRoot} ` +
-        'and ask it to run `aw discover` followed by `aw fold` / `aw drop` / `aw track`.',
+        'and ask it to run `active-work discover` followed by `active-work fold` / `active-work drop` / `active-work track`.',
     };
   }
   const answer = await prompts.confirm({
@@ -513,7 +513,7 @@ export async function stepIngestion(
       done: false,
       message:
         `Ingestion skipped. Later: run \`claude\` in ${paths.activeRoot} and ask it to ` +
-        'invoke `aw discover` to scan your work.',
+        'invoke `active-work discover` to scan your work.',
     };
   }
   return {
@@ -522,7 +522,7 @@ export async function stepIngestion(
     done: true,
     message:
       `Run \`claude\` in ${paths.activeRoot} and paste this prompt: ` +
-      '"Please run `aw discover`, then walk me through `aw fold` / `aw drop` / `aw track` for each hit."',
+      '"Please run `active-work discover`, then walk me through `active-work fold` / `active-work drop` / `active-work track` for each hit."',
   };
 }
 

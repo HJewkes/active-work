@@ -44,7 +44,7 @@ pnpm build           # tsup
 
 ## Conventions
 
-- **CLI is non-interactive by default** — Claude is the primary caller. Interactive UX is reserved for `aw open` picker, `aw setup` wizard, and explicit `--interactive` flags.
+- **CLI is non-interactive by default** — Claude is the primary caller. Interactive UX is reserved for `active-work open` picker, `active-work setup` wizard, and explicit `--interactive` flags.
 - **One source of truth for command surface** — `src/registry/`. CLI and MCP both consume it; never hand-maintain MCP tool definitions.
 - **All persisted data goes through validating writers** — never write to handoff.md / brief.md / tasks/*.yml / artifacts.yml without schema validation.
 - **Atomic writes + flock per-initiative** — read-modify-write paths must use `withFileLock` from `src/utils/fs-atomic.ts`.

@@ -7,7 +7,7 @@ import {
 } from '../server/lifecycle.js';
 
 /**
- * `aw mcp stop` — send SIGTERM to the daemon and wait for it to exit.
+ * `active-work mcp stop` — send SIGTERM to the daemon and wait for it to exit.
  *
  * Returns `{ stopped: false, reason: 'not running' }` when no PID file
  * exists or the recorded process has already died.

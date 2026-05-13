@@ -384,7 +384,7 @@ export async function assembleBootstrap(
   sections.push(`# Context\n${contextLines.join('\n')}`);
 
   sections.push(
-    `Work the top task unless redirected. Update tasks via \`aw task done\` and capture the session via \`aw session record\` when wrapping up.`,
+    `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
   );
 
   const prompt = sections.join('\n\n') + '\n';

@@ -8,7 +8,7 @@ This document describes the layers, the data model, the concurrency story, and t
 
 ```
                   +-----------------+    +-----------------+    +-----------------+
-                  |   CLI (aw)      |    |   MCP server    |    |  HTTP daemon    |
+                  |   CLI           |    |   MCP server    |    |  HTTP daemon    |
                   |  src/cli.ts     |    |  src/server/mcp |    |  src/server/    |
                   +--------+--------+    +--------+--------+    +--------+--------+
                            |                      |                      |
@@ -65,13 +65,13 @@ Conditional refinements ride along with the base schema: `state: 'focused'` requ
 Two patterns guard data integrity:
 
 - **Atomic writes.** `atomicWrite(path, content)` in `src/utils/fs-atomic.ts` writes to `<path>.<pid>.<rand>.tmp`, `fsync()`s the temp file, then `rename()`s it into place. Either the old file or the new file exists at every observable moment — there is no torn-write window.
-- **Per-initiative locks.** `withFileLock(lockPath, fn)` wraps a read-modify-write critical section in a POSIX advisory lock (`proper-lockfile`). The lock file lives next to the artifact being mutated (e.g. `<slug>/.brief.lock`), so two `aw focus` invocations against the same initiative serialize, but operations against different initiatives run in parallel.
+- **Per-initiative locks.** `withFileLock(lockPath, fn)` wraps a read-modify-write critical section in a POSIX advisory lock (`proper-lockfile`). The lock file lives next to the artifact being mutated (e.g. `<slug>/.brief.lock`), so two `active-work focus` invocations against the same initiative serialize, but operations against different initiatives run in parallel.
 
 Lock-then-validate-then-write is the canonical pattern — see `src/commands/_focus-helpers.ts` for the rank-shift implementation, which reads every focused initiative's brief.md, computes the shift, and writes back only the changed files inside one critical section.
 
 ## Bootstrap flow
 
-`aw open <slug>` is the primary entrypoint Claude calls when starting work on an initiative. It assembles a single prompt string containing everything needed to resume:
+`active-work open <slug>` is the primary entrypoint Claude calls when starting work on an initiative. It assembles a single prompt string containing everything needed to resume:
 
 1. **Resolve the slug.** Exact match wins; otherwise unique prefix; ambiguous prefixes error out.
 2. **Read the brief.** Frontmatter summary (state, rank, ship_target, owner) + the first prose paragraph as the excerpt.
@@ -82,11 +82,11 @@ Lock-then-validate-then-write is the canonical pattern — see `src/commands/_fo
 7. **Open artifacts.** `artifacts.yml` PRs whose status isn't `merged` or `closed`.
 8. **Time since last session.** Computed from the most recent session's `ended` timestamp (e.g. "3 hours ago").
 
-Implementation is in `src/bootstrap/prompt.ts`. The result is printed to stdout (so the caller can pipe it to `claude <prompt>` or to an MCP client). With no slug, `aw open` instead launches an interactive picker (clack) and spawns `claude` with the chosen initiative's worktree as cwd.
+Implementation is in `src/bootstrap/prompt.ts`. The result is printed to stdout (so the caller can pipe it to `claude <prompt>` or to an MCP client). With no slug, `active-work open` instead launches an interactive picker (clack) and spawns `claude` with the chosen initiative's worktree as cwd.
 
 ## Daemon endpoints
 
-The daemon (`aw mcp serve [--detach]`) is a single hono process bound to `127.0.0.1:7400` (port configurable). It exposes:
+The daemon (`active-work mcp serve [--detach]`) is a single hono process bound to `127.0.0.1:7400` (port configurable). It exposes:
 
 | Route | Purpose |
 |---|---|
@@ -96,7 +96,7 @@ The daemon (`aw mcp serve [--detach]`) is a single hono process bound to `127.0.
 | `GET /ui`, `GET /ui/*` | Serves the bundled dashboard from `dist/dashboard/` (single HTML file) |
 | `* /mcp` | Streamable MCP-over-HTTP transport; tool definitions are derived from the registry |
 
-A PID file at `$XDG_STATE_HOME/active-work/daemon.pid` and a metadata file at `daemon.meta.json` let `aw mcp status|stop|restart` find and signal the running process. macOS users get a launchd plist via `aw setup` (or `aw mcp install-launchd`); the agent re-launches the daemon on login.
+A PID file at `$XDG_STATE_HOME/active-work/daemon.pid` and a metadata file at `daemon.meta.json` let `active-work mcp status|stop|restart` find and signal the running process. macOS users get a launchd plist via `active-work setup` (or `active-work mcp install-launchd`); the agent re-launches the daemon on login.
 
 The dashboard is read-only at v0 and renders the registry's read endpoints (`list`, `task.list`, `audit`, `artifact.list`) plus a WebSocket subscription on `/ws` for live updates.
 
@@ -108,7 +108,7 @@ Installation:
 
 - `scripts/postinstall.js` runs on `npm install -g @hjewkes/active-work`. If `~/.claude/` exists, it copies `skill/` to `~/.claude/skills/active-work/`. Existing installs are replaced (so updates land cleanly).
 - `scripts/preuninstall.js` removes `~/.claude/skills/active-work/` on `npm rm`.
-- `aw setup` re-runs the same install logic — useful when the operator installed via a different path or wants to re-register after editing the skill.
+- `active-work setup` re-runs the same install logic — useful when the operator installed via a different path or wants to re-register after editing the skill.
 
 Reference docs live at `skill/references/{onboarding,auditing-existing-work,cli-dev}.md` and are pulled in by the skill on demand.
 
@@ -130,7 +130,7 @@ export async function ensureSchemaVersion(activeRoot: string): Promise<{
 
 On every startup that touches the active root, `ensureSchemaVersion` reads `.schema-version`, runs each migration in order from the current version to `CURRENT_VERSION`, and writes the new version. Each migration writes a `.pre-migration-v<N>.bak` snapshot of any file it rewrites, so a failed migration can be rolled back manually.
 
-A version higher than `CURRENT_VERSION` is a hard error — the operator is told to upgrade `@hjewkes/active-work`. v0 stores predate the schema-version file and are treated as v0; the v0 → v1 migration is intentionally absent (operators archive v0 state manually, then run `aw setup` for a fresh start).
+A version higher than `CURRENT_VERSION` is a hard error — the operator is told to upgrade `@hjewkes/active-work`. v0 stores predate the schema-version file and are treated as v0; the v0 → v1 migration is intentionally absent (operators archive v0 state manually, then run `active-work setup` for a fresh start).
 
 ## Cross-references
 

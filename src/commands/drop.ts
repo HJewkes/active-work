@@ -3,7 +3,7 @@ import { defineCommand } from '../registry/index.js';
 import { appendTriagedLog } from '../discover/triaged-log.js';
 
 /**
- * `aw drop <ref>` — silently dismiss a discover hit. The orchestrator
+ * `active-work drop <ref>` — silently dismiss a discover hit. The orchestrator
  * reads `.triaged.log` and skips refs already marked dropped.
  */
 

@@ -29,7 +29,7 @@ export default defineCommand<Args, Result>({
   result: ResultSchema,
   cli: {
     positional: ['slug'],
-    usage: 'aw unpause <slug>',
+    usage: 'active-work unpause <slug>',
   },
   async run({ slug }) {
     const briefs = await loadAllBriefs();

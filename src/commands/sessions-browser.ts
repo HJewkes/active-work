@@ -250,7 +250,7 @@ const sessions = defineCommand<Args, Result>({
         description: 'Include sessions whose cwd lives under an active initiative.',
       },
     },
-    usage: 'aw sessions [--limit N] [--include-active]',
+    usage: 'active-work sessions [--limit N] [--include-active]',
   },
   async run(args) {
     return runSessions(args);

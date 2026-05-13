@@ -31,7 +31,7 @@ export default defineCommand({
   result: ResultSchema,
   cli: {
     positional: ['old_slug', 'new_slug'],
-    usage: 'aw rename <old-slug> <new-slug>',
+    usage: 'active-work rename <old-slug> <new-slug>',
   },
   async run(args, ctx) {
     const check = validateSlug(args.new_slug);
