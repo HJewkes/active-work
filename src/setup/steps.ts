@@ -18,13 +18,8 @@ import {
   getStateRoot,
   getConfigRoot,
 } from '../utils/paths.js';
-import {
-  STEP_SUPERVISION,
-  UNIT_NAME,
-  stepInstallSupervision,
-  uninstallSupervision,
-  isUnitActive,
-} from './supervision-systemd.js';
+import { STEP_SUPERVISION } from './supervision-systemd.js';
+import { getSupervisor } from './supervision.js';
 
 function findRepoRoot(): string {
   let cursor = nodePath.dirname(fileURLToPath(import.meta.url));
@@ -449,25 +444,26 @@ export async function stepRegisterMcp(
 }
 
 /**
- * On Linux, offer to install a user-level systemd unit that supervises
- * the daemon. No-op on other platforms.
+ * Offer to install a user-level supervisor (systemd on Linux, launchd on
+ * macOS) that keeps the daemon running across logins. No-op on platforms
+ * without an integration.
  */
 export async function stepSupervision(
   deps: SetupDeps = {},
 ): Promise<StepResult> {
   const { prompts, yes } = resolveDeps(deps);
-  if (process.platform !== 'linux') {
+  const supervisor = getSupervisor();
+  if (!supervisor) {
     return {
       ok: true,
       name: STEP_SUPERVISION,
       done: false,
-      message: `Skipped: systemd supervision only applies on Linux (this host is ${process.platform})`,
+      message: `Skipped: no daemon supervisor is integrated for ${process.platform}`,
     };
   }
   if (!yes) {
     const answer = await prompts.confirm({
-      message:
-        'Install user systemd unit to keep the daemon running across logins?',
+      message: supervisor.installPrompt,
       initialValue: true,
     });
     if (prompts.isCancel(answer) || answer !== true) {
@@ -475,22 +471,22 @@ export async function stepSupervision(
         ok: true,
         name: STEP_SUPERVISION,
         done: false,
-        message: 'Systemd install skipped',
+        message: 'Supervision install skipped',
       };
     }
   }
   // Supervision is an optional enhancement, not a prerequisite. Like
-  // `stepStartDaemon`, a runtime failure (no user systemd session, container,
-  // WSL-without-systemd, CI) must not abort the whole setup — the unit file is
-  // still written, so downgrade an install failure to a non-fatal warning that
-  // tells the user how to finish enabling it by hand.
-  const result = await stepInstallSupervision(deps);
+  // `stepStartDaemon`, a runtime failure (no user session, container, CI) must
+  // not abort the whole setup — the unit/plist is still written, so downgrade
+  // an install failure to a non-fatal warning that tells the user how to finish
+  // enabling it by hand.
+  const result = await supervisor.install(deps);
   if (!result.ok) {
     return {
       ok: true,
       name: STEP_SUPERVISION,
       done: false,
-      message: `Systemd supervision not enabled (${result.error}); run \`systemctl --user enable --now ${UNIT_NAME}\` once a user systemd session is available`,
+      message: `Daemon supervision not enabled (${result.error}); run \`${supervisor.enableHint}\` once a user session is available`,
     };
   }
   return result;
@@ -501,16 +497,16 @@ export async function stepStartDaemon(
   deps: SetupDeps = {},
 ): Promise<StepResult> {
   const { spawn, prompts, yes, cliEntry } = resolveDeps(deps);
-  // If systemd is already supervising the daemon on Linux, skip the manual
-  // spawn — restarting under systemd is the user's job (`systemctl --user
-  // restart active-work.service`).
-  if (process.platform === 'linux' && (await isUnitActive(deps))) {
+  // If a supervisor already owns the daemon, skip the manual spawn — restarting
+  // it is the supervisor's job (e.g. `systemctl --user restart` / `launchctl
+  // kickstart`).
+  const supervisor = getSupervisor();
+  if (supervisor && (await supervisor.isActive(deps))) {
     return {
       ok: true,
       name: STEP_DAEMON,
       done: false,
-      message:
-        'Daemon already supervised by systemd (active-work.service); manual start skipped',
+      message: `Daemon already supervised by ${supervisor.kind}; manual start skipped`,
     };
   }
   if (!yes) {
@@ -759,14 +755,15 @@ export async function runUninstall(deps: SetupDeps = {}): Promise<UninstallRepor
     steps.push({ name: STEP_SKILL, done: false, message: 'Skipped' });
   }
 
-  if (process.platform === 'linux') {
+  const supervisor = getSupervisor();
+  if (supervisor) {
     const wantSupervision = await confirmStep(
       resolved.prompts,
       resolved.yes,
-      'Disable and remove the systemd user unit (active-work.service)?',
+      supervisor.uninstallPrompt,
     );
     if (wantSupervision) {
-      const r = await uninstallSupervision(deps);
+      const r = await supervisor.uninstall(deps);
       steps.push({
         name: r.name,
         done: r.ok ? r.done : false,

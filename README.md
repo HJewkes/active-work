@@ -192,7 +192,7 @@ __tests__/              # vitest unit + integration tests
 
 ## Troubleshooting
 
-**`active-work mcp status` says the daemon isn't running.** Start it with `active-work mcp serve --detach`. If it dies again immediately, check the log at `$XDG_STATE_HOME/active-work/daemon.log`. On macOS, `active-work mcp install-launchd` makes the daemon restart automatically at login.
+**`active-work mcp status` says the daemon isn't running.** Start it with `active-work mcp serve --detach`. If it dies again immediately, check the log at `$XDG_STATE_HOME/active-work/daemon.log`. On macOS, re-run `active-work setup` to install a launchd agent that restarts the daemon automatically at login (`active-work uninstall` removes it).
 
 **MCP tools aren't visible in Claude Code.** Verify the registration with `claude mcp list`. If the entry is missing, re-run `active-work setup --update` to re-register. If it's present but tools don't work, check the daemon log and confirm the version matches with `active-work --version` vs `curl http://127.0.0.1:7400/version`.
 
