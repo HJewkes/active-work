@@ -20,6 +20,7 @@ import {
 } from '../utils/paths.js';
 import {
   STEP_SUPERVISION,
+  UNIT_NAME,
   stepInstallSupervision,
   uninstallSupervision,
   isUnitActive,
@@ -478,7 +479,21 @@ export async function stepSupervision(
       };
     }
   }
-  return stepInstallSupervision(deps);
+  // Supervision is an optional enhancement, not a prerequisite. Like
+  // `stepStartDaemon`, a runtime failure (no user systemd session, container,
+  // WSL-without-systemd, CI) must not abort the whole setup — the unit file is
+  // still written, so downgrade an install failure to a non-fatal warning that
+  // tells the user how to finish enabling it by hand.
+  const result = await stepInstallSupervision(deps);
+  if (!result.ok) {
+    return {
+      ok: true,
+      name: STEP_SUPERVISION,
+      done: false,
+      message: `Systemd supervision not enabled (${result.error}); run \`systemctl --user enable --now ${UNIT_NAME}\` once a user systemd session is available`,
+    };
+  }
+  return result;
 }
 
 /** Spawn `active-work mcp serve --detach` (best-effort). */

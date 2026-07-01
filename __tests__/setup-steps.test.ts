@@ -327,6 +327,53 @@ describe('stepSupervision', () => {
       expect(result.message).toMatch(/skipped/i);
     }
   });
+
+  // Regression: on a Linux host without a working user systemd session
+  // (CI, containers, WSL-without-systemd), `systemctl --user enable` exits
+  // non-zero. That must degrade to a non-fatal warning so `active-work setup`
+  // completes, not abort the whole run at the supervision step.
+  it('downgrades a systemctl enable failure to a non-fatal warning on linux', async () => {
+    setPlatform('linux');
+    const { paths, cleanup } = makeTempPaths();
+    const spawn = vi.fn((cmd: string, args: string[]) => {
+      const handlers: Record<string, ((arg?: unknown) => void)[]> = {};
+      const child = {
+        stderr: {
+          on: (event: string, cb: (chunk: Buffer | string) => void) => {
+            handlers[event] ??= [];
+            if (args.includes('enable')) cb('Failed to enable unit');
+          },
+        },
+        on: (event: string, cb: (arg?: unknown) => void) => {
+          handlers[event] ??= [];
+          handlers[event]!.push(cb);
+        },
+      };
+      queueMicrotask(() => {
+        // daemon-reload succeeds; enable fails as it would with no user bus.
+        const code = args.includes('enable') ? 1 : 0;
+        handlers.close?.forEach((cb) => cb(code));
+      });
+      return child as unknown as ReturnType<typeof nodeSpawn>;
+    });
+    try {
+      const result = await stepSupervision({
+        yes: true,
+        paths,
+        fs,
+        spawn: spawn as unknown as typeof nodeSpawn,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.done).toBe(false);
+        expect(result.message).toMatch(/systemctl --user enable/);
+      }
+      // The unit file is still written so a later real session can enable it.
+      expect(existsSync(path.join(paths.homeDir, '.config', 'systemd', 'user', 'active-work.service'))).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 describe('stepStartDaemon (linux supervision detection)', () => {
