@@ -40,7 +40,7 @@ Commands:
                                 the legacy INDEX.md dump.
   mcp                           mcp commands
   new [options] <slug>          Scaffold a new initiative directory.
-  open [slug]                   Bootstrap a Claude session for an initiative.
+  open [options] [slug]         Bootstrap a Claude session for an initiative.
                                 Without a slug, returns the picker list of known
                                 initiatives.
   paths <slug>                  Print all artifact paths for an initiative.
@@ -98,31 +98,13 @@ Usage: active-work artifact add-branch [options] <slug>
 Append or upsert a branch entry in artifacts.yml.
 
 Arguments:
-  slug                   slug (string)
+  slug            slug (string)
 
 Options:
-  --repo <value>         Repo path or org/repo
-  --name <value>         Branch name
-  --last-commit <value>  Last commit date YYYY-MM-DD
-  -h, --help             display help for command
-```
-
-## active-work artifact add-pr
-
-```
-Usage: active-work artifact add-pr [options] <slug>
-
-Append or upsert a PR entry in artifacts.yml.
-
-Arguments:
-  slug              slug (string)
-
-Options:
-  --number <value>  PR number
-  --repo <value>    org/repo
-  --title <value>   PR title
-  --status <value>  open | merged | closed
-  -h, --help        display help for command
+  --repo <value>  Repo path or org/repo
+  --name <value>  Branch name
+  --note <value>  Why this branch is worth tracking
+  -h, --help      display help for command
 ```
 
 ## active-work artifact add-stash
@@ -133,27 +115,13 @@ Usage: active-work artifact add-stash [options] <slug>
 Append a stash entry to artifacts.yml.
 
 Arguments:
-  slug               slug (string)
+  slug             slug (string)
 
 Options:
-  --repo <value>     Repo path
-  --message <value>  Stash message
-  --created <value>  Created date YYYY-MM-DD
-  -h, --help         display help for command
-```
-
-## active-work artifact check
-
-```
-Usage: active-work artifact check [options] <slug>
-
-Refresh PR statuses in artifacts.yml via `gh pr view`.
-
-Arguments:
-  slug        slug (string)
-
-Options:
-  -h, --help  display help for command
+  --repo <value>   Repo path
+  --label <value>  Stash label
+  --sha <value>    Stash SHA, if known
+  -h, --help       display help for command
 ```
 
 ## active-work artifact list
@@ -169,6 +137,53 @@ Arguments:
 Options:
   --all-initiatives  Return artifacts for every initiative
   -h, --help         display help for command
+```
+
+## active-work artifact note
+
+```
+Usage: active-work artifact note [options] <slug>
+
+Set or update the free-form note on a tracked branch.
+
+Arguments:
+  slug            slug (string)
+
+Options:
+  --repo <value>  Repo path or org/repo
+  --name <value>  Branch name
+  --note <value>  Note text
+  -h, --help      display help for command
+```
+
+## active-work artifact prune
+
+```
+Usage: active-work artifact prune [options] <slug>
+
+List (default) or remove (--apply) tracked branches that no longer exist
+locally.
+
+Arguments:
+  slug        slug (string)
+
+Options:
+  --apply     Write the pruned artifacts.yml. Without this, dry-run only.
+  -h, --help  display help for command
+```
+
+## active-work artifact status
+
+```
+Usage: active-work artifact status [options] <slug>
+
+Pull live PR and branch state for the initiative via `git` + `gh`. Read-only.
+
+Arguments:
+  slug        slug (string)
+
+Options:
+  -h, --help  display help for command
 ```
 
 ## active-work audit
@@ -362,6 +377,8 @@ Arguments:
   slug        slug (string)
 
 Options:
+  --offline   Skip the live `gh`/`git` artifact lookup; render artifacts
+              statically.
   -h, --help  display help for command
 ```
 

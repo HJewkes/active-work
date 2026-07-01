@@ -28,11 +28,13 @@ describe('runMigrations', () => {
     });
   });
 
-  it('ships with no built-in migrators (v1 baseline, fresh-start policy)', () => {
-    expect(MIGRATIONS).toEqual([]);
+  it('ships with the v1 -> v2 artifacts migrator (AW-15)', () => {
+    expect(MIGRATIONS).toHaveLength(1);
+    expect(MIGRATIONS[0]?.from).toBe(1);
+    expect(MIGRATIONS[0]?.to).toBe(2);
   });
 
-  it('chains a synthetic v1 -> v2 migration when wired via the injected registry', async () => {
+  it('runs the v1 -> v2 step when started from v1, via the injected registry', async () => {
     await withEmptyActiveRoot(async (root) => {
       const calls: string[] = [];
       const synthetic: Migration[] = [
@@ -48,10 +50,8 @@ describe('runMigrations', () => {
       ];
 
       const result = await runMigrations(root, 1, synthetic);
-      // CURRENT_VERSION is 1 in this build, so 1 -> 1 still no-ops even
-      // with the synthetic chain present.
-      expect(result.ran).toEqual([]);
-      expect(calls).toEqual([]);
+      expect(result.ran).toHaveLength(1);
+      expect(calls).toEqual(['1->2']);
     });
   });
 

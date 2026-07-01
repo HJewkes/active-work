@@ -40,7 +40,7 @@ describe('open command', () => {
   it('with slug returns prompt, cwd_hint, and metadata', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const out = await openCommand.run(
-        { slug: 'sample-initiative' },
+        { slug: 'sample-initiative', offline: true },
         makeCtx(activeRoot),
       );
       expect(isPicker(out)).toBe(false);
@@ -86,7 +86,7 @@ describe('open command', () => {
         );
         await fs.writeFile(
           path.join(dir, 'artifacts.yml'),
-          'prs: []\nbranches: []\nstashes: []\n',
+          'branches: []\nstashes: []\n',
         );
       };
       await make(
@@ -152,7 +152,7 @@ describe('open command', () => {
   it('resolves a unique prefix to the full slug', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const out = await openCommand.run(
-        { slug: 'sample' },
+        { slug: 'sample', offline: true },
         makeCtx(activeRoot),
       );
       const result = out as OpenSuccess;
@@ -183,7 +183,7 @@ describe('open command', () => {
       );
       await fs.writeFile(
         path.join(dir, 'artifacts.yml'),
-        'prs: []\nbranches: []\nstashes: []\n',
+        'branches: []\nstashes: []\n',
       );
 
       await expect(

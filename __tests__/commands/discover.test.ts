@@ -124,9 +124,9 @@ describe('track command', () => {
       expect(handoff).toContain('feat/new-thing');
 
       const artifacts = await fs.readFile(path.join(dir, 'artifacts.yml'), 'utf8');
-      expect(artifacts).toContain('prs:');
       expect(artifacts).toContain('branches:');
       expect(artifacts).toContain('stashes:');
+      expect(artifacts).not.toContain('prs:');
 
       // subdirs
       const tasksStat = await fs.stat(path.join(dir, 'tasks'));
