@@ -28,8 +28,18 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Test
-        run: pnpm test
+      # Run tests under a throwaway HOME so no test — including ones that spawn
+      # the CLI as a subprocess — can touch a real home/config dir (AW-9). The
+      # in-process sandbox lives in __tests__/setup/sandbox-home.ts; this is the
+      # OS-level backstop that also covers spawned child processes.
+      - name: Test (sandboxed HOME)
+        run: |
+          sandbox_home="$RUNNER_TEMP/aw-test-home"
+          mkdir -p "$sandbox_home"
+          HOME="$sandbox_home" XDG_CONFIG_HOME="$sandbox_home/.config" \
+            XDG_DATA_HOME="$sandbox_home/.local/share" \
+            XDG_STATE_HOME="$sandbox_home/.local/state" \
+            pnpm test
 
       - name: Build
         run: pnpm build

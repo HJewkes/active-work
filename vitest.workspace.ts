@@ -7,6 +7,7 @@ export default defineWorkspace([
       include: ['__tests__/**/*.test.ts'],
       exclude: ['__tests__/integration/**'],
       globalSetup: ['./__tests__/setup/global-setup.ts'],
+      setupFiles: ['./__tests__/setup/sandbox-home.ts'],
       pool: 'threads',
       poolOptions: {
         threads: {
@@ -19,6 +20,7 @@ export default defineWorkspace([
     test: {
       name: 'integration',
       include: ['__tests__/integration/**/*.test.ts'],
+      setupFiles: ['./__tests__/setup/sandbox-home.ts'],
       pool: 'threads',
       poolOptions: {
         threads: {
