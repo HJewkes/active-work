@@ -21,6 +21,18 @@ const worktreeEntry = z.object({
   default: z.boolean().optional(),
 });
 
+// An MCP push-channel target enabled at `aw`/`open` launch via
+// `claude --dangerously-load-development-channels <target>`. Accepts an
+// explicit `server:<name>` / `plugin:<name>@<marketplace>` target, or a bare
+// server name that is normalized to `server:<name>` by the launcher.
+const channelTarget = z
+  .string()
+  .min(1)
+  .regex(/^(?:(?:server|plugin):.+|[A-Za-z0-9_-]+)$/, {
+    message:
+      'channel must be a target like "server:voltras", "plugin:name@marketplace", or a bare server name',
+  });
+
 export const BriefFrontmatterSchema = z
   .object({
     schema_version: positiveInt,
@@ -39,6 +51,7 @@ export const BriefFrontmatterSchema = z
         message: 'task_prefix must be uppercase letters/digits starting with a letter',
       }),
     worktrees: z.record(z.string(), worktreeEntry).optional(),
+    channels: z.array(channelTarget).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.state === 'focused' && value.rank === undefined) {
