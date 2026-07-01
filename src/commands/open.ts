@@ -35,6 +35,7 @@ const OpenResultSchema = z.object({
   slug: z.string(),
   prompt: z.string(),
   cwd_hint: z.string(),
+  channels: z.array(z.string()).optional(),
   metadata: z.object({
     slug: z.string(),
     brief_title: z.string(),
@@ -191,6 +192,9 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
       slug,
       prompt,
       cwd_hint: cwdHint,
+      ...(brief.channels && brief.channels.length > 0
+        ? { channels: brief.channels }
+        : {}),
       metadata,
     };
     return result;

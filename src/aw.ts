@@ -15,6 +15,7 @@
 import { spawn } from 'node:child_process';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
+import { buildClaudeArgs } from './launcher-args.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT } from './errors.js';
 import { color } from './utils/color.js';
@@ -31,6 +32,7 @@ interface OpenSuccess {
   slug: string;
   prompt: string;
   cwd_hint: string;
+  channels?: string[];
 }
 
 interface PickerResult {
@@ -83,9 +85,16 @@ async function pickInitiative(
   return String(choice);
 }
 
-function spawnClaude(prompt: string, cwd: string): Promise<number> {
+function spawnClaude(
+  prompt: string,
+  cwd: string,
+  channels?: string[],
+): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn('claude', [prompt], { cwd, stdio: 'inherit' });
+    const child = spawn('claude', buildClaudeArgs(prompt, channels), {
+      cwd,
+      stdio: 'inherit',
+    });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
       if (e.code === 'ENOENT') {
@@ -162,7 +171,11 @@ export async function main(argv: string[]): Promise<void> {
     } else {
       opened = (await runOpen(args[0])) as OpenSuccess;
     }
-    const code = await spawnClaude(opened.prompt, opened.cwd_hint);
+    const code = await spawnClaude(
+      opened.prompt,
+      opened.cwd_hint,
+      opened.channels,
+    );
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);
