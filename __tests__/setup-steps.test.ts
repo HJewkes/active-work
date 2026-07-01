@@ -304,13 +304,62 @@ describe('stepSupervision', () => {
   }
   afterEach(() => restorePlatform());
 
-  it('no-ops on non-linux platforms', async () => {
-    setPlatform('darwin');
+  it('no-ops on platforms without a supervisor (win32)', async () => {
+    setPlatform('win32');
     const result = await stepSupervision({ yes: true });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.done).toBe(false);
-      expect(result.message).toMatch(/Linux/);
+      expect(result.message).toMatch(/no daemon supervisor/i);
+    }
+  });
+
+  it('installs a launchd agent on darwin', async () => {
+    setPlatform('darwin');
+    const { paths, cleanup } = makeTempPaths();
+    // Fake launchctl: bootout may exit non-zero (not loaded), bootstrap exits 0.
+    const calls: string[][] = [];
+    const spawn = vi.fn((cmd: string, args: string[]) => {
+      calls.push([cmd, ...args]);
+      const handlers: Record<string, ((arg?: unknown) => void)[]> = {};
+      const child = {
+        stderr: { on: () => undefined },
+        on: (event: string, cb: (arg?: unknown) => void) => {
+          handlers[event] ??= [];
+          handlers[event]!.push(cb);
+        },
+      };
+      queueMicrotask(() => {
+        const code = args.includes('bootout') ? 3 : 0;
+        handlers.close?.forEach((cb) => cb(code));
+      });
+      return child as unknown as ReturnType<typeof nodeSpawn>;
+    });
+    try {
+      const result = await stepSupervision({
+        yes: true,
+        paths,
+        fs,
+        spawn: spawn as unknown as typeof nodeSpawn,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.done).toBe(true);
+        expect(result.message).toMatch(/launchd/);
+      }
+      expect(
+        existsSync(
+          path.join(
+            paths.homeDir,
+            'Library',
+            'LaunchAgents',
+            'dev.hjewkes.active-work.plist',
+          ),
+        ),
+      ).toBe(true);
+      expect(calls.some((c) => c.includes('bootstrap'))).toBe(true);
+    } finally {
+      cleanup();
     }
   });
 

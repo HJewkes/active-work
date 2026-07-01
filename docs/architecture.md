@@ -96,7 +96,7 @@ The daemon (`active-work mcp serve [--detach]`) is a single hono process bound t
 | `GET /ui`, `GET /ui/*` | Serves the bundled dashboard from `dist/dashboard/` (single HTML file) |
 | `* /mcp` | Streamable MCP-over-HTTP transport; tool definitions are derived from the registry |
 
-A PID file at `$XDG_STATE_HOME/active-work/daemon.pid` and a metadata file at `daemon.meta.json` let `active-work mcp status|stop|restart` find and signal the running process. macOS users get a launchd plist via `active-work setup` (or `active-work mcp install-launchd`); the agent re-launches the daemon on login.
+A PID file at `$XDG_STATE_HOME/active-work/daemon.pid` and a metadata file at `daemon.meta.json` let `active-work mcp status|stop|restart` find and signal the running process. macOS users get a launchd plist via `active-work setup` (and Linux users a systemd user unit); the agent/unit re-launches the daemon on login.
 
 The dashboard is read-only at v0 and renders the registry's read endpoints (`list`, `task.list`, `audit`, `artifact.list`) plus a WebSocket subscription on `/ws` for live updates.
 

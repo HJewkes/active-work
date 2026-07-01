@@ -58,16 +58,33 @@ describe('active-work setup', () => {
   });
 
   it('runs all steps and returns the report with --yes', async () => {
-    const result = await setupCmd.run(
-      { yes: true },
-      ctxFor(process.env.ACTIVE_ROOT!),
-    );
-    expect(result.banner).toContain('active-work');
-    expect(result.steps.length).toBeGreaterThanOrEqual(5);
-    for (const step of result.steps) {
-      expect(step.ok).toBe(true);
+    // Force a supervisor-less platform so this end-to-end run never mutates the
+    // developer's real systemd/launchd domain — the setup command does not
+    // thread an injectable `spawn`, and `getSupervisor()` would otherwise drive
+    // real `systemctl`/`launchctl`. The supervision step has its own dedicated
+    // coverage (supervision-systemd/-launchd/-steps tests).
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'sunos',
+      configurable: true,
+    });
+    try {
+      const result = await setupCmd.run(
+        { yes: true },
+        ctxFor(process.env.ACTIVE_ROOT!),
+      );
+      expect(result.banner).toContain('active-work');
+      expect(result.steps.length).toBeGreaterThanOrEqual(5);
+      for (const step of result.steps) {
+        expect(step.ok).toBe(true);
+      }
+      expect(existsSync(path.join(process.env.ACTIVE_ROOT!, '.schema-version'))).toBe(true);
+    } finally {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        configurable: true,
+      });
     }
-    expect(existsSync(path.join(process.env.ACTIVE_ROOT!, '.schema-version'))).toBe(true);
   });
 
   it('short-circuits at the first failure', async () => {
