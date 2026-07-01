@@ -28,6 +28,9 @@ Commands:
   discover [options]            Scan configured sources (gh PRs, local git,
                                 projects root, Claude sessions) and emit
                                 unfiltered discovery hits.
+  doctor                        Health-check the install: Node, active root,
+                                daemon, MCP registration, skill, and
+                                supervision.
   drop [options] <ref>          Mark a discover hit as dropped so future
                                 discovers suppress it.
   edit <slug> <target>          Open the operator's editor on brief.md or
@@ -211,6 +214,18 @@ Options:
   --local-repos <value>    Comma-separated repo paths for local git discovery
   --projects-root <value>  Root directory whose subdirs are scanned as projects
   -h, --help               display help for command
+```
+
+## active-work doctor
+
+```
+Usage: active-work doctor [options]
+
+Health-check the install: Node, active root, daemon, MCP registration, skill,
+and supervision.
+
+Options:
+  -h, --help  display help for command
 ```
 
 ## active-work drop
