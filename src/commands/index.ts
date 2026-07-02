@@ -72,6 +72,7 @@ import mcpLogs from './mcp-logs.js';
 import setup from './setup.js';
 import uninstall from './uninstall.js';
 import doctor from './doctor.js';
+import sync from './sync.js';
 
 const ALL_COMMANDS: AnyCommand[] = [
   // lifecycle
@@ -128,6 +129,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   setup,
   uninstall,
   doctor,
+  sync,
 ];
 
 for (const cmd of ALL_COMMANDS) {

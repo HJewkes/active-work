@@ -14,6 +14,21 @@ const DEBOUNCE = 40;
 
 let dir: string;
 let watcher: TreeWatcher | null = null;
+let counter = 0;
+
+/** Poll `cond` (which may itself trigger work) until true or the deadline. */
+async function pollUntil(
+  cond: () => boolean | Promise<boolean>,
+  timeoutMs: number,
+  stepMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await cond()) return true;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return false;
+}
 
 afterEach(() => {
   watcher?.close();
@@ -70,15 +85,18 @@ describe('watchTree', () => {
     let count = 0;
     watcher = watchTree(dir, () => (count += 1), { debounceMs: DEBOUNCE });
 
-    // Create a brand-new subtree, then write into it. The watcher must have
-    // added a watch on the new dir to catch the second write.
+    // Create a brand-new subtree; the watcher's rescan must attach a watch on
+    // it. Poll-write into the new dir until a change is observed rather than
+    // sleeping a fixed amount — the rescan/attach timing is load-dependent, so
+    // fixed sleeps are flaky under parallel test load.
     const fresh = path.join(dir, 'new-initiative');
     mkdirSync(fresh);
-    await new Promise((r) => setTimeout(r, DEBOUNCE * 6));
     const before = count;
-    writeFileSync(path.join(fresh, 'handoff.md'), 'state');
-    await new Promise((r) => setTimeout(r, DEBOUNCE * 8));
-    expect(count).toBeGreaterThan(before);
+    const observed = await pollUntil(async () => {
+      writeFileSync(path.join(fresh, `f-${counter++}.md`), 'state');
+      return count > before;
+    }, 4000, DEBOUNCE * 2);
+    expect(observed).toBe(true);
   });
 
   it('stops firing after close()', async () => {
