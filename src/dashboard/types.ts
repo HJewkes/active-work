@@ -101,3 +101,8 @@ export interface ArtifactsResult {
 export type JsonEnvelope<T> =
   | { ok: true; data: T; warnings?: string[] }
   | { ok: false; error: string; code: number };
+
+/** Shared props for top-level views. `refreshToken` bumps on live-reload. */
+export interface ViewProps {
+  refreshToken: number;
+}

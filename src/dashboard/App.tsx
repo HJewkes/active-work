@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { palette, radii, sp } from './tokens.js';
 import { InitiativesView } from './views/Initiatives.js';
 import { TasksView } from './views/Tasks.js';
 import { ArtifactsView } from './views/Artifacts.js';
+import { subscribeLive, type LiveStatus } from './utils/live.js';
+import { LiveIndicator } from './components/LiveIndicator.js';
 
 type ViewId = 'initiatives' | 'tasks' | 'artifacts';
 
@@ -19,6 +21,15 @@ const NAV_ITEMS: NavItem[] = [
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<ViewId>('initiatives');
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>('connecting');
+
+  useEffect(() => {
+    return subscribeLive({
+      onChange: () => setRefreshToken((n) => n + 1),
+      onStatus: setLiveStatus,
+    });
+  }, []);
 
   return (
     <div
@@ -61,6 +72,7 @@ export function App(): React.JSX.Element {
           >
             read-only dashboard
           </div>
+          <LiveIndicator status={liveStatus} />
         </div>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: sp[2] }}>
           {NAV_ITEMS.map((item) => {
@@ -96,9 +108,9 @@ export function App(): React.JSX.Element {
         }}
       >
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          {view === 'initiatives' && <InitiativesView />}
-          {view === 'tasks' && <TasksView />}
-          {view === 'artifacts' && <ArtifactsView />}
+          {view === 'initiatives' && <InitiativesView refreshToken={refreshToken} />}
+          {view === 'tasks' && <TasksView refreshToken={refreshToken} />}
+          {view === 'artifacts' && <ArtifactsView refreshToken={refreshToken} />}
         </div>
       </main>
     </div>

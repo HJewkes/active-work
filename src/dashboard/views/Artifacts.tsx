@@ -5,6 +5,7 @@ import type {
   ArtifactsResult,
   BranchEntry,
   StashEntry,
+  ViewProps,
 } from '../types.js';
 
 interface BranchRow extends BranchEntry {
@@ -14,7 +15,7 @@ interface StashRow extends StashEntry {
   slug: string;
 }
 
-export function ArtifactsView(): React.JSX.Element {
+export function ArtifactsView({ refreshToken }: ViewProps): React.JSX.Element {
   const [data, setData] = useState<ArtifactsResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -30,7 +31,7 @@ export function ArtifactsView(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshToken]);
 
   const flattened = useMemo(() => {
     if (!data) return { branches: [], stashes: [] };

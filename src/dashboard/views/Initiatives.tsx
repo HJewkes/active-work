@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { palette, sp } from '../tokens.js';
 import { InitiativeCard } from '../components/InitiativeCard.js';
 import { fetchInitiatives } from '../utils/api.js';
-import type { InitiativesResult } from '../types.js';
+import type { InitiativesResult, ViewProps } from '../types.js';
 
-export function InitiativesView(): React.JSX.Element {
+export function InitiativesView({ refreshToken }: ViewProps): React.JSX.Element {
   const [data, setData] = useState<InitiativesResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -20,7 +20,7 @@ export function InitiativesView(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshToken]);
 
   if (err) return <ErrorBlock message={err} />;
   if (!data) return <LoadingBlock />;

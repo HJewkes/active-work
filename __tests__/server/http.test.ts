@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildHttpApp } from '../../src/server/http.js';
+import { EventHub } from '../../src/server/events.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const TEST_PORT = 17400;
@@ -81,6 +85,42 @@ describe('POST /rpc/:name', () => {
   });
 });
 
+describe('GET /events (SSE)', () => {
+  async function firstChunk(res: Response): Promise<string> {
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    await reader.cancel();
+    return new TextDecoder().decode(value);
+  }
+
+  it('opens an event-stream and greets with a ready event', async () => {
+    const app = buildHttpApp({ port: TEST_PORT });
+    const res = await get(app, '/events');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toMatch(/text\/event-stream/);
+    expect(await firstChunk(res)).toContain('event: ready');
+  });
+
+  it('pushes hub broadcasts to a connected stream', async () => {
+    const hub = new EventHub();
+    const app = buildHttpApp({ port: TEST_PORT, hub });
+    const res = await get(app, '/events');
+    const reader = res.body!.getReader();
+
+    // Drain the initial "ready" frame so the subscriber is registered.
+    await reader.read();
+    // Give the handler a tick to run hub.subscribe().
+    await new Promise((r) => setTimeout(r, 10));
+    hub.broadcast({ event: 'change', data: 'active-root' });
+
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    await reader.cancel();
+    expect(text).toContain('event: change');
+    expect(text).toContain('active-root');
+  });
+});
+
 describe('GET /ui/*', () => {
   it('returns HTML; placeholder when the dashboard bundle is missing', async () => {
     const app = buildHttpApp({ port: TEST_PORT });
@@ -95,5 +135,22 @@ describe('GET /ui/*', () => {
     } else {
       expect(text.length).toBeGreaterThan(0);
     }
+  });
+
+  // Regression for the dashboardDir resolution bug: when a built bundle exists
+  // at <repo>/dist/dashboard, /ui must serve it — not the "not built"
+  // placeholder. Inert when the dashboard hasn't been built (e.g. unit-only CI).
+  it('serves the built bundle when dist/dashboard exists', async () => {
+    const repoRoot = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+    );
+    const bundle = path.join(repoRoot, 'dist', 'dashboard', 'index.html');
+    if (!existsSync(bundle)) return; // no build present; nothing to guard
+
+    const app = buildHttpApp({ port: TEST_PORT });
+    const text = await (await get(app, '/ui')).text();
+    expect(text).not.toContain('Dashboard not built yet');
   });
 });

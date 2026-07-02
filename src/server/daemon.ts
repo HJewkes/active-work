@@ -9,10 +9,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { serve, type ServerType } from '@hono/node-server';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { DaemonError } from '../errors.js';
+import { getActiveRoot } from '../utils/paths.js';
 import { buildHttpApp } from './http.js';
 import { DAEMON_VERSION } from './health.js';
 import { getLogger } from './logger.js';
 import { createMcpServer } from './mcp.js';
+import { EventHub } from './events.js';
+import { watchTree, type TreeWatcher } from './file-watch.js';
 import {
   isProcessAlive,
   readPidFile,
@@ -147,9 +150,24 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   await assertNotAlreadyRunning();
 
   const port = resolvePort(options);
-  const app = buildHttpApp({ port });
+  const hub = new EventHub();
+  const app = buildHttpApp({ port, hub });
   const server = await listenOn(app, port);
   const started = new Date().toISOString();
+
+  const activeRoot = getActiveRoot();
+  let watcher: TreeWatcher | null = null;
+  try {
+    watcher = watchTree(
+      activeRoot,
+      () => hub.broadcast({ event: 'change', data: 'active-root' }),
+      { onError: (err) => log.warn({ err }, 'file watcher error') },
+    );
+    log.info({ activeRoot }, 'watching active root for live reload');
+  } catch (err) {
+    // Live reload is a nicety; never let a watcher failure abort the daemon.
+    log.warn({ err, activeRoot }, 'live-reload watcher unavailable');
+  }
 
   await writePidFile(process.pid, {
     port,
@@ -165,6 +183,11 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
       shuttingDown = true;
       log.info({ signal }, 'shutting down');
       void (async () => {
+        try {
+          watcher?.close();
+        } catch (err) {
+          log.error({ err }, 'error closing file watcher');
+        }
         try {
           await closeServer(server);
         } catch (err) {
