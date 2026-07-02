@@ -79,6 +79,12 @@ export interface BootstrapInput {
    * static when the whole fetch throws.
    */
   liveStatusFetcher?: LiveStatusFetcher;
+  /**
+   * Task ids the caller archived just before this bootstrap (AW-8). Rendered as
+   * a short housekeeping note so the session knows they left the active list;
+   * the actual file moves happen in the `open` command, not here.
+   */
+  archivedTaskIds?: string[];
 }
 
 export interface BootstrapMetadata {
@@ -567,6 +573,7 @@ export async function assembleBootstrap(
     recentlyDoneDays = DEFAULT_RECENTLY_DONE_DAYS,
     includeLiveStatus = true,
     liveStatusFetcher,
+    archivedTaskIds,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -628,6 +635,12 @@ export async function assembleBootstrap(
   if (recentlyDoneBody) {
     sections.push(
       `# Recently done (last ${recentlyDoneDays} days)\n${recentlyDoneBody}`,
+    );
+  }
+
+  if (archivedTaskIds && archivedTaskIds.length > 0) {
+    sections.push(
+      `# Archived (housekeeping)\nMoved ${archivedTaskIds.length} stale done task(s) to tasks/archive/: ${archivedTaskIds.join(', ')}`,
     );
   }
 

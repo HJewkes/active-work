@@ -14,6 +14,10 @@ import {
   readMarkdownWithSchema,
   type BootstrapMetadata,
 } from '../bootstrap/prompt.js';
+import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
+
+/** Done tasks older than this are auto-archived on bootstrap (AW-8). */
+const ARCHIVE_DONE_AFTER_DAYS = 30;
 
 const ArgsSchema = z.object({
   slug: z.string().min(1).optional(),
@@ -190,10 +194,15 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
       BriefFrontmatterSchema,
     );
     const cwdHint = resolveCwdHint(activeRoot, slug, brief);
+    const archivedTaskIds = await archiveStaleTasks(
+      path.join(activeRoot, slug),
+      { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
+    );
     const { prompt, metadata } = await assembleBootstrap({
       activeRoot,
       slug,
       includeLiveStatus: !args.offline,
+      archivedTaskIds,
     });
     const result: OpenResult & { metadata: BootstrapMetadata } = {
       slug,

@@ -29,6 +29,33 @@ describe('assembleBootstrap', () => {
     });
   });
 
+  it('renders a housekeeping note for archived task ids (AW-8)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        archivedTaskIds: ['AW-7', 'AW-9'],
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('# Archived (housekeeping)');
+      expect(prompt).toContain('AW-7, AW-9');
+    });
+  });
+
+  it('omits the archived section when nothing was archived', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        archivedTaskIds: [],
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Archived (housekeeping)');
+    });
+  });
+
   it('picks the most recent canonical session', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const { prompt, metadata } = await assembleBootstrap({
