@@ -8,7 +8,7 @@
  * a change lands. Change events are debounced into a single callback so a burst
  * of atomic writes (temp file + rename) collapses into one broadcast.
  */
-import { watch, promises as fs, type FSWatcher } from 'node:fs';
+import { watch, readdirSync, promises as fs, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 
 export interface WatchTreeOptions {
@@ -93,8 +93,28 @@ export function watchTree(
     }
   };
 
+  // Attach watchers for the whole existing tree *synchronously* so no edit can
+  // slip through the gap between `watchTree` returning and an async scan
+  // completing — this matters on Linux, where the root watch is non-recursive
+  // and nested changes are only seen via the per-directory watchers.
+  const addExistingDirsSync = (dir: string): void => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      options.onError?.(err);
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const child = path.join(dir, entry.name);
+      watchDir(child);
+      addExistingDirsSync(child);
+    }
+  };
+
   watchDir(root);
-  void addNewDirs(root);
+  addExistingDirsSync(root);
 
   return {
     close(): void {
