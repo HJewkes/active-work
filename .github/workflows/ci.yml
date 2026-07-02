@@ -28,6 +28,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Build the CLI before tests so the integration suite runs against a
+      # prebuilt dist/cli.js rather than transpiling src via tsx on every spawn
+      # (AW-12). This makes the runner deterministic — same code path as local
+      # runs — and removes cold-tsx variance that flaked the first CI run.
+      - name: Build CLI (for deterministic integration tests)
+        run: pnpm build:cli
+
       # Run tests under a throwaway HOME so no test — including ones that spawn
       # the CLI as a subprocess — can touch a real home/config dir (AW-9). The
       # in-process sandbox lives in __tests__/setup/sandbox-home.ts; this is the
