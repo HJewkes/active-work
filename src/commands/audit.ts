@@ -4,7 +4,7 @@ import type { Dirent } from 'node:fs';
 import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
-import { readRawFrontmatter } from '../utils/gray-matter-io.js';
+import { readFrontmatter } from '../utils/gray-matter-io.js';
 import { defineCommand } from '../registry/index.js';
 
 const argsSchema = z.object({}).strict();
@@ -34,20 +34,6 @@ const resultSchema = z.object({
   worktree_conflicts: z.array(conflictSchema),
 });
 
-const DATE_FIELDS = new Set(['updated', 'paused_since']);
-
-function normalizeDateFields(
-  raw: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...raw };
-  for (const key of DATE_FIELDS) {
-    const value = out[key];
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      out[key] = value.toISOString().slice(0, 10);
-    }
-  }
-  return out;
-}
 
 const STATE_ORDER: Record<BriefFrontmatter['state'], number> = {
   focused: 0,
@@ -93,17 +79,11 @@ export async function scanInitiatives(activeRoot: string): Promise<ScanResult> {
       continue;
     }
     try {
-      const { frontmatter: raw } = await readRawFrontmatter(briefPath);
-      const normalized = normalizeDateFields(raw);
-      const result = BriefFrontmatterSchema.safeParse(normalized);
-      if (!result.success) {
-        errors.push({
-          slug,
-          error: `Frontmatter validation failed for ${briefPath}: ${result.error.message}`,
-        });
-      } else {
-        entries.push({ slug, frontmatter: result.data });
-      }
+      const { frontmatter } = await readFrontmatter(
+        briefPath,
+        BriefFrontmatterSchema,
+      );
+      entries.push({ slug, frontmatter });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       errors.push({ slug, error: message });
