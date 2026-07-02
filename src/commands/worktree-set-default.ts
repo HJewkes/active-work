@@ -1,27 +1,12 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { BriefFrontmatterSchema } from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
-import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
+import { readFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
 import { defineCommand } from '../registry/index.js';
-
-const DATE_FIELDS = new Set(['updated', 'paused_since']);
-
-function normalizeDateFields(
-  raw: Record<string, unknown>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...raw };
-  for (const key of DATE_FIELDS) {
-    const value = out[key];
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      out[key] = value.toISOString().slice(0, 10);
-    }
-  }
-  return out;
-}
 
 const argsSchema = z.object({
   slug: z.string().min(1),
@@ -45,15 +30,16 @@ export default defineCommand({
   async run({ slug, label }) {
     const briefPath = path.join(getActiveRoot(), slug, 'brief.md');
     return withFileLock(getLockPath(slug), async () => {
-      const { frontmatter: raw, body } = await readRawFrontmatter(briefPath);
-      const normalized = normalizeDateFields(raw);
-      const parsed = BriefFrontmatterSchema.safeParse(normalized);
-      if (!parsed.success) {
-        throw new ValidationError(
-          `Frontmatter validation failed for ${briefPath}: ${parsed.error.message}`,
-        );
+      let frontmatter: BriefFrontmatter;
+      let body: string;
+      try {
+        ({ frontmatter, body } = await readFrontmatter(
+          briefPath,
+          BriefFrontmatterSchema,
+        ));
+      } catch (err) {
+        throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
-      const frontmatter = parsed.data;
       const worktrees = frontmatter.worktrees;
       if (!worktrees || !Object.prototype.hasOwnProperty.call(worktrees, label)) {
         throw new NotFoundError(

@@ -5,26 +5,7 @@ import {
   type BriefFrontmatter,
 } from '../schemas/brief.js';
 import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
-import { readRawFrontmatter } from '../utils/gray-matter-io.js';
-
-const DATE_FIELDS = ['updated', 'paused_since'] as const;
-
-/**
- * Normalize fields that YAML may parse as a `Date` (bare `YYYY-MM-DD` values)
- * back into `YYYY-MM-DD` strings so they validate against the schema.
- */
-function normalizeDates(
-  raw: Record<string, unknown>,
-): Record<string, unknown> {
-  const next = { ...raw };
-  for (const field of DATE_FIELDS) {
-    const value = next[field];
-    if (value instanceof Date) {
-      next[field] = value.toISOString().slice(0, 10);
-    }
-  }
-  return next;
-}
+import { readFrontmatter } from '../utils/gray-matter-io.js';
 
 export interface InitiativeBrief {
   slug: string;
@@ -68,15 +49,11 @@ export async function loadAllBriefs(): Promise<InitiativeBrief[]> {
       continue;
     }
     if (!stat.isFile()) continue;
-    const { frontmatter: rawFront, body } = await readRawFrontmatter(briefPath);
-    const normalized = normalizeDates(rawFront);
-    const parsed = BriefFrontmatterSchema.safeParse(normalized);
-    if (!parsed.success) {
-      throw new Error(
-        `Frontmatter validation failed for ${briefPath}: ${parsed.error.message}`,
-      );
-    }
-    briefs.push({ slug: name, briefPath, frontmatter: parsed.data, body });
+    const { frontmatter, body } = await readFrontmatter(
+      briefPath,
+      BriefFrontmatterSchema,
+    );
+    briefs.push({ slug: name, briefPath, frontmatter, body });
   }
   briefs.sort((a, b) => a.slug.localeCompare(b.slug));
   return briefs;
