@@ -61,6 +61,8 @@ Commands:
                                 optionally starts the daemon and walks through
                                 ingestion.
   source                        source commands
+  sync [options]                Sync the active root over git: auto-commit local
+                                edits, pull --rebase, then push.
   task                          task commands
   touch <slug>                  Stamp `updated: today()` on an initiative's
                                 brief.md.
@@ -539,6 +541,21 @@ Options:
   --date <value>       Date YYYY-MM-DD for type=session
   --force              Overwrite if target exists
   -h, --help           display help for command
+```
+
+## active-work sync
+
+```
+Usage: active-work sync [options]
+
+Sync the active root over git: auto-commit local edits, pull --rebase, then
+push.
+
+Options:
+  -m, --message <value>  Commit message for the auto-commit (default: timestamp
+                         + host)
+  --require-clean        Fail instead of auto-committing when the tree is dirty
+  -h, --help             display help for command
 ```
 
 ## active-work task add
