@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { palette, sp, typography } from '../tokens.js';
 import { TaskRow } from '../components/TaskRow.js';
 import { fetchTasks } from '../utils/api.js';
-import type { TasksResult } from '../types.js';
+import type { TasksResult, ViewProps } from '../types.js';
 
-export function TasksView(): React.JSX.Element {
+export function TasksView({ refreshToken }: ViewProps): React.JSX.Element {
   const [data, setData] = useState<TasksResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -20,7 +20,7 @@ export function TasksView(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshToken]);
 
   if (err) {
     return (

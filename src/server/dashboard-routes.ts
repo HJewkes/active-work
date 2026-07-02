@@ -47,14 +47,21 @@ function contentTypeFor(filename: string): string {
 }
 
 /**
- * Resolve the bundled dashboard directory. We look relative to the
- * compiled file (`dist/server/...`) for `dist/dashboard/`; in dev (tsx),
- * we look relative to `src/server/...` then up to `dist/dashboard/`.
+ * Candidate locations for the built dashboard bundle (`dist/dashboard/`).
+ *
+ * `tsup` bundles the daemon into `dist/cli.js`, so at runtime the compiled
+ * file sits at `dist/` and the dashboard is a sibling (`here/dashboard`). In
+ * dev (tsx) the source runs from `src/server/`, and the built dashboard lives
+ * at `<repo>/dist/dashboard`. We probe both plus the legacy `dist/server`
+ * layout and use the first that exists.
  */
-function dashboardDir(): string {
+function dashboardDirCandidates(): string[] {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  // dist/server -> dist/dashboard
-  return path.resolve(here, '..', 'dashboard');
+  return [
+    path.resolve(here, 'dashboard'), // bundled: dist/cli.js -> dist/dashboard
+    path.resolve(here, '..', 'dashboard'), // legacy: dist/server -> dist/dashboard
+    path.resolve(here, '..', '..', 'dist', 'dashboard'), // dev: src/server -> dist/dashboard
+  ];
 }
 
 async function safeStat(p: string): Promise<{ exists: boolean; isFile: boolean }> {
@@ -66,10 +73,17 @@ async function safeStat(p: string): Promise<{ exists: boolean; isFile: boolean }
   }
 }
 
+/** First candidate directory that exists, or null if none is built yet. */
+async function resolveDashboardDir(): Promise<string | null> {
+  for (const dir of dashboardDirCandidates()) {
+    if ((await safeStat(dir)).exists) return dir;
+  }
+  return null;
+}
+
 export async function handleDashboard(c: Context): Promise<Response> {
-  const root = dashboardDir();
-  const rootStat = await safeStat(root);
-  if (!rootStat.exists) {
+  const root = await resolveDashboardDir();
+  if (!root) {
     return c.html(PLACEHOLDER_HTML, 200);
   }
 

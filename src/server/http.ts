@@ -6,6 +6,7 @@
  * instance without binding a port; `daemon.ts` handles the lifecycle.
  */
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 import { registry, successEnvelope, errorEnvelope } from '../registry/index.js';
 import type { CommandContext } from '../registry/index.js';
@@ -14,10 +15,20 @@ import { formatError, EXIT } from '../errors.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { buildHealthPayload, DAEMON_VERSION } from './health.js';
 import { handleDashboard } from './dashboard-routes.js';
+import type { EventHub } from './events.js';
 
 export interface BuildHttpAppOptions {
   port: number;
+  /**
+   * Optional event hub for live-reload SSE. When present, `/events` streams
+   * change notifications; when absent (e.g. unit tests), `/events` still
+   * connects but only emits heartbeats.
+   */
+  hub?: EventHub;
 }
+
+/** Interval between SSE keep-alive comments (ms). */
+const HEARTBEAT_MS = 25_000;
 
 export function buildHttpApp(options: BuildHttpAppOptions): Hono {
   const app = new Hono();
@@ -25,6 +36,24 @@ export function buildHttpApp(options: BuildHttpAppOptions): Hono {
   app.get('/health', (c) => c.json(buildHealthPayload(options.port)));
 
   app.get('/version', (c) => c.json({ version: DAEMON_VERSION }));
+
+  app.get('/events', (c) =>
+    streamSSE(c, async (stream) => {
+      await stream.writeSSE({ event: 'ready', data: 'connected' });
+      const unsubscribe = options.hub?.subscribe((message) =>
+        stream.writeSSE(message),
+      );
+      stream.onAbort(() => unsubscribe?.());
+      // Hold the connection open, emitting periodic heartbeats so proxies and
+      // dead-peer detection keep the stream healthy until the client aborts.
+      while (!stream.aborted) {
+        await stream.sleep(HEARTBEAT_MS);
+        if (stream.aborted) break;
+        await stream.writeSSE({ event: 'ping', data: String(Date.now()) });
+      }
+      unsubscribe?.();
+    }),
+  );
 
   app.post('/rpc/:name', async (c) => {
     const name = c.req.param('name');
