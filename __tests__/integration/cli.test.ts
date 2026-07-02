@@ -18,9 +18,11 @@ interface Runner {
 }
 
 /**
- * Pick the cheapest way to invoke the CLI: a pre-built `dist/cli.js`
- * when present, else tsx running the source file. This keeps `pnpm test`
- * green in CI even when the build step hasn't run yet.
+ * Pick how to invoke the CLI: a pre-built `dist/cli.js` when present, else tsx
+ * running the source file. CI builds the CLI before this suite runs (see the
+ * "Build CLI" step in ci.yml) so it always takes the deterministic dist path;
+ * the tsx fallback is a local-dev convenience for when `pnpm build` hasn't run.
+ * Preferring dist avoids cold-tsx transpile variance across processes (AW-12).
  */
 function pickRunner(): Runner {
   if (existsSync(DIST_BIN)) {
