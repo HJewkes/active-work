@@ -50,6 +50,11 @@ Commands:
   paths <slug>                  Print all artifact paths for an initiative.
   pause [options] <slug>        Mark an initiative as paused with required
                                 restart metadata.
+  prompt [options] [slug]       Print the bootstrap prompt for an initiative —
+                                the same text `aw` feeds Claude at launch —
+                                without any side effects. Resolves the
+                                initiative from a slug or the caller's cwd. Use
+                                it to re-seed context in a running session.
   rename <old_slug> <new_slug>  Rename an initiative slug (moves the directory;
                                 task_prefix unchanged).
   session                       session commands
@@ -433,6 +438,26 @@ Options:
   --since <value>            Pause-since date (YYYY-MM-DD).
   --restart-trigger <value>  What event should cause this initiative to resume.
   -h, --help                 display help for command
+```
+
+## active-work prompt
+
+```
+Usage: active-work prompt [options] [slug]
+
+Print the bootstrap prompt for an initiative — the same text `aw` feeds Claude
+at launch — without any side effects. Resolves the initiative from a slug or the
+caller's cwd. Use it to re-seed context in a running session.
+
+Arguments:
+  slug           slug (string)
+
+Options:
+  --offline      Skip the live `gh`/`git` artifact lookup; render artifacts
+                 statically.
+  --cwd <value>  Directory to resolve the initiative from when no slug is given
+                 (default: current directory).
+  -h, --help     display help for command
 ```
 
 ## active-work rename

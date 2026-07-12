@@ -87,6 +87,26 @@ describe('active-work setup', () => {
     }
   });
 
+  it('installs and removes the /aw-prompt command', async () => {
+    const target = path.join(
+      tempBase,
+      'home',
+      '.claude',
+      'commands',
+      'aw-prompt.md',
+    );
+
+    const install = await setupSteps.stepInstallCommand({});
+    expect(install.ok).toBe(true);
+    expect(install.done).toBe(true);
+    expect(existsSync(target)).toBe(true);
+
+    const remove = await setupSteps.uninstallCommand({});
+    expect(remove.ok).toBe(true);
+    expect(remove.done).toBe(true);
+    expect(existsSync(target)).toBe(false);
+  });
+
   it('short-circuits at the first failure', async () => {
     const original = setupSteps.runSetup;
     const spy = vi.spyOn(setupSteps, 'runSetup').mockImplementation(async () => ({

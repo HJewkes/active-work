@@ -41,6 +41,8 @@ Engage whenever the user signals they want to inspect, mutate, or hand off persi
 - Open artifacts with status
 - Time since the last session
 
+To re-seed context **mid-session** (a session that wasn't started via `aw`, or one that has drifted), run `active-work prompt` — it prints the same bootstrap prompt to stdout, cwd-resolved and side-effect-free (no auto-archive). The bundled `/aw-prompt` slash command wraps it and injects the output straight into the session.
+
 Because handoff and brief excerpt are already in your context, **do not re-read `brief.md` or `handoff.md`** at the top of the session. Jump straight to the highest-rank open task unless the user redirects you. If the user opens a slug without further instruction, ask "continue with `<top task title>`?" and proceed on confirmation.
 
 ## Reference docs
