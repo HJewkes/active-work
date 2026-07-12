@@ -391,12 +391,16 @@ Bootstrap a Claude session for an initiative. Without a slug, returns the picker
 list of known initiatives.
 
 Arguments:
-  slug        slug (string)
+  slug           slug (string)
 
 Options:
-  --offline   Skip the live `gh`/`git` artifact lookup; render artifacts
-              statically.
-  -h, --help  display help for command
+  --offline      Skip the live `gh`/`git` artifact lookup; render artifacts
+                 statically.
+  --cwd <value>  Directory to resolve the initiative from when no slug is given
+                 (default: current directory).
+  --pick         Always return the picker list; skip resolving the initiative
+                 from the current directory.
+  -h, --help     display help for command
 ```
 
 ## active-work paths

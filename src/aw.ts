@@ -33,6 +33,7 @@ interface OpenSuccess {
   prompt: string;
   cwd_hint: string;
   channels?: string[];
+  resolved_from?: 'slug' | 'cwd';
 }
 
 interface PickerResult {
@@ -162,12 +163,24 @@ export async function main(argv: string[]): Promise<void> {
   try {
     let opened: OpenSuccess;
     if (args.length === 0) {
-      const picker = (await runOpen()) as PickerResult;
-      const choice = await pickInitiative(picker.initiatives);
-      if (!choice) {
-        process.exit(EXIT.OK);
+      // No slug: `open` first tries to resolve the initiative from the
+      // current directory. It returns the picker list only when the cwd
+      // doesn't uniquely match a worktree.
+      const result = await runOpen();
+      if ('picker' in result) {
+        const choice = await pickInitiative(result.initiatives);
+        if (!choice) {
+          process.exit(EXIT.OK);
+        }
+        opened = (await runOpen(choice)) as OpenSuccess;
+      } else {
+        opened = result;
+        process.stderr.write(
+          color.dim(
+            `Opening ${opened.slug} — matched current directory.\n`,
+          ),
+        );
       }
-      opened = (await runOpen(choice)) as OpenSuccess;
     } else {
       opened = (await runOpen(args[0])) as OpenSuccess;
     }

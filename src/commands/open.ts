@@ -22,6 +22,12 @@ const ARCHIVE_DONE_AFTER_DAYS = 30;
 const ArgsSchema = z.object({
   slug: z.string().min(1).optional(),
   offline: z.boolean().optional(),
+  // Directory used to auto-resolve an initiative when no slug is given.
+  // Defaults to the process cwd; callers that do not share the user's shell
+  // cwd (the daemon / MCP server) must pass this explicitly.
+  cwd: z.string().min(1).optional(),
+  // Force the picker even when the cwd matches an initiative's worktree.
+  pick: z.boolean().optional(),
 });
 
 const InitiativeSummarySchema = z.object({
@@ -52,6 +58,9 @@ const OpenResultSchema = z.object({
     recently_done_count: z.number().int().nonnegative(),
     bootstrap_at: z.string(),
   }),
+  // How the initiative was selected: an explicit/prefix slug, or a match
+  // between the caller's cwd and one of the initiative's worktrees.
+  resolved_from: z.enum(['slug', 'cwd']).optional(),
 });
 
 const ResultSchema = z.union([OpenResultSchema, PickerResultSchema]);
@@ -149,6 +158,56 @@ async function resolveSlug(activeRoot: string, input: string): Promise<string> {
   );
 }
 
+/** True when `child` is `parent` itself or nested beneath it. */
+function isInside(child: string, parent: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Resolve an initiative slug from a working directory by matching it against
+ * every initiative's worktree paths. When `cwd` sits inside more than one
+ * worktree (e.g. nested checkouts) the deepest — longest — worktree path
+ * wins. Returns null when nothing matches or two initiatives tie at the same
+ * depth (ambiguous → let the caller fall back to the picker).
+ */
+async function resolveSlugFromCwd(
+  activeRoot: string,
+  cwd: string,
+): Promise<string | null> {
+  const resolvedCwd = path.resolve(cwd);
+  const slugs = await listInitiativeSlugs(activeRoot);
+  let best: { slug: string; depth: number } | null = null;
+  let tiedAtBest = false;
+
+  for (const slug of slugs) {
+    const briefPath = path.join(activeRoot, slug, 'brief.md');
+    let brief: BriefFrontmatter;
+    try {
+      ({ frontmatter: brief } = await readMarkdownWithSchema(
+        briefPath,
+        BriefFrontmatterSchema,
+      ));
+    } catch {
+      continue;
+    }
+    for (const entry of Object.values(brief.worktrees ?? {})) {
+      const worktreePath = path.resolve(expandTilde(entry.path));
+      if (!isInside(resolvedCwd, worktreePath)) continue;
+      const depth = worktreePath.length;
+      if (best === null || depth > best.depth) {
+        best = { slug, depth };
+        tiedAtBest = false;
+      } else if (depth === best.depth && slug !== best.slug) {
+        tiedAtBest = true;
+      }
+    }
+  }
+
+  if (best === null || tiedAtBest) return null;
+  return best.slug;
+}
+
 function resolveCwdHint(
   activeRoot: string,
   slug: string,
@@ -163,10 +222,44 @@ function resolveCwdHint(
   return path.join(activeRoot, slug);
 }
 
+async function bootstrapInitiative(
+  activeRoot: string,
+  slug: string,
+  offline: boolean | undefined,
+  resolvedFrom: 'slug' | 'cwd',
+): Promise<OpenResult & { metadata: BootstrapMetadata }> {
+  const briefPath = path.join(activeRoot, slug, 'brief.md');
+  const { frontmatter: brief } = await readMarkdownWithSchema(
+    briefPath,
+    BriefFrontmatterSchema,
+  );
+  const cwdHint = resolveCwdHint(activeRoot, slug, brief);
+  const archivedTaskIds = await archiveStaleTasks(
+    path.join(activeRoot, slug),
+    { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
+  );
+  const { prompt, metadata } = await assembleBootstrap({
+    activeRoot,
+    slug,
+    includeLiveStatus: !offline,
+    archivedTaskIds,
+  });
+  return {
+    slug,
+    prompt,
+    cwd_hint: cwdHint,
+    ...(brief.channels && brief.channels.length > 0
+      ? { channels: brief.channels }
+      : {}),
+    metadata,
+    resolved_from: resolvedFrom,
+  };
+}
+
 const openCommand = defineCommand<OpenArgs, OpenResult>({
   name: 'open',
   description:
-    'Bootstrap a Claude session for an initiative. Without a slug, returns the picker list of known initiatives.',
+    "Bootstrap a Claude session for an initiative. Without a slug, resolves the initiative whose worktree contains the caller's cwd; falls back to the picker list when nothing matches.",
   args: ArgsSchema,
   result: ResultSchema,
   cli: {
@@ -176,44 +269,39 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         long: '--offline',
         description: 'Skip the live `gh`/`git` artifact lookup; render artifacts statically.',
       },
+      cwd: {
+        long: '--cwd',
+        description:
+          'Directory to resolve the initiative from when no slug is given (default: current directory).',
+      },
+      pick: {
+        long: '--pick',
+        description:
+          'Always return the picker list; skip resolving the initiative from the current directory.',
+      },
     },
-    usage: 'active-work open [slug] [--offline]',
+    usage: 'active-work open [slug] [--offline] [--cwd <dir>] [--pick]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
 
-    if (!args.slug) {
-      const initiatives = await collectInitiatives(activeRoot);
-      return { picker: true, initiatives };
+    if (args.slug) {
+      const slug = await resolveSlug(activeRoot, args.slug);
+      return bootstrapInitiative(activeRoot, slug, args.offline, 'slug');
     }
 
-    const slug = await resolveSlug(activeRoot, args.slug);
-    const briefPath = path.join(activeRoot, slug, 'brief.md');
-    const { frontmatter: brief } = await readMarkdownWithSchema(
-      briefPath,
-      BriefFrontmatterSchema,
-    );
-    const cwdHint = resolveCwdHint(activeRoot, slug, brief);
-    const archivedTaskIds = await archiveStaleTasks(
-      path.join(activeRoot, slug),
-      { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
-    );
-    const { prompt, metadata } = await assembleBootstrap({
-      activeRoot,
-      slug,
-      includeLiveStatus: !args.offline,
-      archivedTaskIds,
-    });
-    const result: OpenResult & { metadata: BootstrapMetadata } = {
-      slug,
-      prompt,
-      cwd_hint: cwdHint,
-      ...(brief.channels && brief.channels.length > 0
-        ? { channels: brief.channels }
-        : {}),
-      metadata,
-    };
-    return result;
+    // No slug: infer the initiative from the caller's working directory,
+    // unless the caller explicitly asked for the picker.
+    if (!args.pick) {
+      const cwd = args.cwd ?? process.cwd();
+      const matched = await resolveSlugFromCwd(activeRoot, cwd);
+      if (matched) {
+        return bootstrapInitiative(activeRoot, matched, args.offline, 'cwd');
+      }
+    }
+
+    const initiatives = await collectInitiatives(activeRoot);
+    return { picker: true, initiatives };
   },
 });
 
