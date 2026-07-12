@@ -3,7 +3,9 @@
  *
  * Installs a `~/.config/systemd/user/active-work.service` unit that runs
  * `active-work mcp serve` in the foreground; systemd handles restart on
- * crash. On non-Linux platforms every step here is a no-op.
+ * crash. Also enables lingering (`loginctl enable-linger`) so the daemon
+ * survives logout and starts at boot. On non-Linux platforms every step here
+ * is a no-op.
  */
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
@@ -206,6 +208,28 @@ export async function stepInstallSupervision(
       };
     }
 
+    // Enable lingering so the user manager — and thus the daemon — persists
+    // across logout and starts at boot. Without it a `--user` unit is torn down
+    // when the user's last session ends, so the daemon would not survive logout.
+    //
+    // Pass the username explicitly: the bare `loginctl enable-linger` form needs
+    // an active login session to resolve "self" (it errors "No such device" when
+    // run outside one), whereas the explicit form still routes through polkit's
+    // `set-self-linger` action when the target is the caller. Best-effort:
+    // enabling linger can require privileges, so a failure degrades to a note
+    // rather than failing the install.
+    let lingerUser: string | undefined;
+    try {
+      lingerUser = os.userInfo().username;
+    } catch {
+      lingerUser = undefined;
+    }
+    const linger = await runOnce(spawn, 'loginctl', [
+      'enable-linger',
+      ...(lingerUser ? [lingerUser] : []),
+    ]);
+    const lingerEnabled = !linger.spawnError && linger.code === 0;
+
     const enable = await runOnce(spawn, 'systemctl', [
       '--user',
       'enable',
@@ -228,11 +252,15 @@ export async function stepInstallSupervision(
     }
 
     const action = unchanged ? 'refreshed' : 'installed';
+    const lingerCmd = `loginctl enable-linger${lingerUser ? ` ${lingerUser}` : ''}`;
+    const lingerNote = lingerEnabled
+      ? ' Lingering enabled — survives logout and starts at boot.'
+      : ` NOTE: could not enable lingering; run \`sudo ${lingerCmd}\` so the daemon survives logout and starts at boot (without it, it stops when your session ends).`;
     return {
       ok: true,
       name: STEP_SUPERVISION,
       done: !unchanged,
-      message: `Systemd unit ${action} at ${unitPath} and enabled`,
+      message: `Systemd unit ${action} at ${unitPath} and enabled.${lingerNote}`,
     };
   } catch (err) {
     return {
