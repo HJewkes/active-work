@@ -29,6 +29,37 @@ describe('assembleBootstrap', () => {
     });
   });
 
+  it('uses the default framing (top-task directive) when not ad-hoc', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('Starting a session on `sample-initiative`');
+      expect(prompt).toContain('Work the top task unless redirected.');
+      expect(prompt).not.toContain('ad-hoc session');
+    });
+  });
+
+  it('reframes the opening and closing when adhoc is set (AW-20)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        adhoc: true,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('Starting an ad-hoc session on `sample-initiative`');
+      expect(prompt).toContain('wait for the user to describe the specific ad-hoc task');
+      expect(prompt).toContain('treat the context above as background, not a directive');
+      // The normal top-task directive is replaced, not appended.
+      expect(prompt).not.toContain('Work the top task unless redirected.');
+    });
+  });
+
   it('renders a housekeeping note for archived task ids (AW-8)', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const { prompt } = await assembleBootstrap({

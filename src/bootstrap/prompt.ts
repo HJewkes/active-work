@@ -85,6 +85,13 @@ export interface BootstrapInput {
    * the actual file moves happen in the `open` command, not here.
    */
   archivedTaskIds?: string[];
+  /**
+   * When `true`, frame the session as ad-hoc work related to the workstream
+   * rather than a continuation of its handoff / top task. The same context is
+   * rendered, but the opening and closing directives tell the session to treat
+   * it as background and await the user's specific ad-hoc task (AW-20).
+   */
+  adhoc?: boolean;
 }
 
 export interface BootstrapMetadata {
@@ -574,6 +581,7 @@ export async function assembleBootstrap(
     includeLiveStatus = true,
     liveStatusFetcher,
     archivedTaskIds,
+    adhoc = false,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -615,7 +623,11 @@ export async function assembleBootstrap(
     : undefined;
 
   const sections: string[] = [];
-  sections.push(`Starting a session on \`${slug}\` (${brief.title}).`);
+  sections.push(
+    adhoc
+      ? `Starting an ad-hoc session on \`${slug}\` (${brief.title}). This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
+      : `Starting a session on \`${slug}\` (${brief.title}).`,
+  );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
 
   if (latestSession) {
@@ -657,7 +669,9 @@ export async function assembleBootstrap(
   sections.push(`# Context\n${contextLines.join('\n')}`);
 
   sections.push(
-    `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
+    adhoc
+      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work session record\`.`
+      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
   );
 
   const prompt = sections.join('\n\n') + '\n';

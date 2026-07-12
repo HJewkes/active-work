@@ -45,6 +45,8 @@ To re-seed context **mid-session** (a session that wasn't started via `aw`, or o
 
 Because handoff and brief excerpt are already in your context, **do not re-read `brief.md` or `handoff.md`** at the top of the session. Jump straight to the highest-rank open task unless the user redirects you. If the user opens a slug without further instruction, ask "continue with `<top task title>`?" and proceed on confirmation.
 
+**Ad-hoc sessions** (`aw <slug> --adhoc`, also `open`/`prompt --adhoc`): the opening and closing directives change to say the session is scoped to ad-hoc work on the workstream — the context is background, *not* a directive. Do **not** offer to continue the top task; wait for the user to describe the specific ad-hoc task, then work it with the workstream context in mind. The bootstrap prompt itself carries this instruction, so follow whichever framing it renders.
+
 ## Reference docs
 
 - [onboarding.md](references/onboarding.md) — first-time setup walkthrough

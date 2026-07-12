@@ -30,6 +30,9 @@ const ArgsSchema = z.object({
   cwd: z.string().min(1).optional(),
   // Force the picker even when the cwd matches an initiative's worktree.
   pick: z.boolean().optional(),
+  // Frame the bootstrap prompt as ad-hoc work related to the workstream rather
+  // than a continuation of its handoff / top task.
+  adhoc: z.boolean().optional(),
 });
 
 const InitiativeSummarySchema = z.object({
@@ -146,9 +149,12 @@ function resolveCwdHint(
 async function bootstrapInitiative(
   activeRoot: string,
   slug: string,
-  offline: boolean | undefined,
-  resolvedFrom: 'slug' | 'cwd',
-  cwdHintOverride?: string,
+  opts: {
+    offline?: boolean;
+    resolvedFrom: 'slug' | 'cwd';
+    cwdHintOverride?: string;
+    adhoc?: boolean;
+  },
 ): Promise<OpenResult & { metadata: BootstrapMetadata }> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
   const { frontmatter: brief } = await readMarkdownWithSchema(
@@ -157,7 +163,7 @@ async function bootstrapInitiative(
   );
   // When we resolved via cwd, launch in the worktree the user was standing in,
   // not the brief's default worktree.
-  const cwdHint = cwdHintOverride ?? resolveCwdHint(activeRoot, slug, brief);
+  const cwdHint = opts.cwdHintOverride ?? resolveCwdHint(activeRoot, slug, brief);
   const archivedTaskIds = await archiveStaleTasks(
     path.join(activeRoot, slug),
     { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
@@ -165,8 +171,9 @@ async function bootstrapInitiative(
   const { prompt, metadata } = await assembleBootstrap({
     activeRoot,
     slug,
-    includeLiveStatus: !offline,
+    includeLiveStatus: !opts.offline,
     archivedTaskIds,
+    adhoc: opts.adhoc,
   });
   return {
     slug,
@@ -176,7 +183,7 @@ async function bootstrapInitiative(
       ? { channels: brief.channels }
       : {}),
     metadata,
-    resolved_from: resolvedFrom,
+    resolved_from: opts.resolvedFrom,
   };
 }
 
@@ -203,15 +210,24 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         description:
           'Always return the picker list; skip resolving the initiative from the current directory.',
       },
+      adhoc: {
+        long: '--adhoc',
+        description:
+          'Frame the prompt as ad-hoc work on the workstream (awaiting the user’s task), not a continuation of the handoff / top task.',
+      },
     },
-    usage: 'active-work open [slug] [--offline] [--cwd <dir>] [--pick]',
+    usage: 'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
 
     if (args.slug) {
       const slug = await resolveSlug(activeRoot, args.slug);
-      return bootstrapInitiative(activeRoot, slug, args.offline, 'slug');
+      return bootstrapInitiative(activeRoot, slug, {
+        offline: args.offline,
+        resolvedFrom: 'slug',
+        adhoc: args.adhoc,
+      });
     }
 
     // No slug: infer the initiative from the caller's working directory,
@@ -222,13 +238,12 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
     if (!args.pick && cwd) {
       const matched = await resolveSlugFromCwd(activeRoot, cwd);
       if (matched) {
-        return bootstrapInitiative(
-          activeRoot,
-          matched.slug,
-          args.offline,
-          'cwd',
-          matched.worktreePath,
-        );
+        return bootstrapInitiative(activeRoot, matched.slug, {
+          offline: args.offline,
+          resolvedFrom: 'cwd',
+          cwdHintOverride: matched.worktreePath,
+          adhoc: args.adhoc,
+        });
       }
     }
 
