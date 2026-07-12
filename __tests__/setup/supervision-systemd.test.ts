@@ -167,15 +167,42 @@ describe('stepInstallSupervision', () => {
       expect(result.done).toBe(true);
       expect(result.message).toMatch(/installed/);
     }
-    expect(calls.map((c) => c.args.join(' '))).toEqual([
-      '--user daemon-reload',
-      `--user enable --now ${UNIT_NAME}`,
-    ]);
+    // daemon-reload, then enable-linger (username-agnostic), then enable --now.
+    expect(calls[0]).toEqual({ cmd: 'systemctl', args: ['--user', 'daemon-reload'] });
+    expect(calls[1]!.cmd).toBe('loginctl');
+    expect(calls[1]!.args[0]).toBe('enable-linger');
+    expect(calls[2]).toEqual({
+      cmd: 'systemctl',
+      args: ['--user', 'enable', '--now', UNIT_NAME],
+    });
+    if (result.ok) {
+      expect(result.message).toMatch(/Lingering enabled/);
+    }
     const unitPath = getUnitPath(paths.homeDir);
     expect(existsSync(unitPath)).toBe(true);
     const content = await fs.readFile(unitPath, 'utf8');
     expect(content).toContain('ExecStart=');
     expect(content).toContain('/x/cli.js mcp serve');
+  });
+
+  it('still succeeds but notes when enabling linger fails', async () => {
+    setPlatform('linux');
+    // loginctl fails (e.g. needs privileges); everything else exits 0.
+    const { spawn } = makeFakeSpawn({
+      exitCodes: (call) => (call.cmd === 'loginctl' ? 1 : 0),
+    });
+    const result = await stepInstallSupervision({
+      paths,
+      spawn,
+      cliEntry: '/x/cli.js',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The unit still installs+enables; only the linger note changes.
+      expect(result.done).toBe(true);
+      expect(result.message).toMatch(/could not enable lingering/);
+      expect(result.message).toMatch(/loginctl enable-linger/);
+    }
   });
 
   it('is idempotent when the unit content already matches', async () => {
