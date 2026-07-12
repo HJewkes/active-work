@@ -44,8 +44,9 @@ Commands:
   mcp                           mcp commands
   new [options] <slug>          Scaffold a new initiative directory.
   open [options] [slug]         Bootstrap a Claude session for an initiative.
-                                Without a slug, returns the picker list of known
-                                initiatives.
+                                Without a slug, resolves the initiative whose
+                                worktree contains the caller's cwd; falls back
+                                to the picker list when nothing matches.
   paths <slug>                  Print all artifact paths for an initiative.
   pause [options] <slug>        Mark an initiative as paused with required
                                 restart metadata.
@@ -387,8 +388,9 @@ Options:
 ```
 Usage: active-work open [options] [slug]
 
-Bootstrap a Claude session for an initiative. Without a slug, returns the picker
-list of known initiatives.
+Bootstrap a Claude session for an initiative. Without a slug, resolves the
+initiative whose worktree contains the caller's cwd; falls back to the picker
+list when nothing matches.
 
 Arguments:
   slug           slug (string)
@@ -736,6 +738,25 @@ Arguments:
 
 Options:
   -h, --help  display help for command
+```
+
+## active-work worktree set
+
+```
+Usage: active-work worktree set [options] <slug> <path>
+
+Add or update a worktree entry on an existing initiative. A lone worktree is
+made default automatically; use --default to promote an added one.
+
+Arguments:
+  slug             slug (string)
+  path             path (string)
+
+Options:
+  --label <value>  Worktree label (default: main).
+  --default        Mark this worktree as the default, clearing default on
+                   others.
+  -h, --help       display help for command
 ```
 
 ## active-work worktree set-default

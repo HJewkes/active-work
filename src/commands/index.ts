@@ -47,6 +47,7 @@ import sourceAdd from './source-add.js';
 // Worktree / cross-initiative reads
 import audit from './audit.js';
 import list from './list.js';
+import worktreeSet from './worktree-set.js';
 import worktreeSetDefault from './worktree-set-default.js';
 
 // Discover / triage
@@ -107,6 +108,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   artifactPrune,
   artifactNote,
   // worktree / cross-initiative
+  worktreeSet,
   worktreeSetDefault,
   audit,
   list,
