@@ -371,6 +371,8 @@ export async function stepInstallCommand(
       };
     }
     await fs.mkdir(targetDir, { recursive: true });
+    // Overwrite unconditionally (unlike the skill step, which skips if present):
+    // the command is a single version-bundled file, so setup should refresh it.
     await fs.copyFile(source, target);
     return {
       ok: true,

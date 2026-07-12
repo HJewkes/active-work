@@ -19,22 +19,21 @@ if (!existsSync(claudeDir)) {
   process.exit(0);
 }
 
-if (!existsSync(skillSource)) {
-  // Defensive: skill source missing from the npm tarball.
-  process.exit(0);
-}
-
-try {
-  // Remove existing install to ensure a clean copy.
-  if (existsSync(claudeSkillsDir)) {
-    rmSync(claudeSkillsDir, { recursive: true, force: true });
+// Skill and command installs are independent — a missing source for one must
+// not skip the other.
+if (existsSync(skillSource)) {
+  try {
+    // Remove existing install to ensure a clean copy.
+    if (existsSync(claudeSkillsDir)) {
+      rmSync(claudeSkillsDir, { recursive: true, force: true });
+    }
+    mkdirSync(claudeSkillsDir, { recursive: true });
+    cpSync(skillSource, claudeSkillsDir, { recursive: true });
+    console.log(`active-work: installed Claude Code skill to ${claudeSkillsDir}`);
+  } catch (err) {
+    // Don't fail npm install if skill copy fails.
+    console.error(`active-work: skill install skipped (${err.message})`);
   }
-  mkdirSync(claudeSkillsDir, { recursive: true });
-  cpSync(skillSource, claudeSkillsDir, { recursive: true });
-  console.log(`active-work: installed Claude Code skill to ${claudeSkillsDir}`);
-} catch (err) {
-  // Don't fail npm install if skill copy fails.
-  console.error(`active-work: skill install skipped (${err.message})`);
 }
 
 try {
