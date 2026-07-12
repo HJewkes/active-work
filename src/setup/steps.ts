@@ -116,6 +116,7 @@ const STEP_CREATE_ACTIVE = 'create-active-root';
 const STEP_SCHEMA = 'write-schema-version';
 const STEP_CONFIG = 'write-config-stub';
 const STEP_SKILL = 'install-skill';
+const STEP_COMMAND = 'install-command';
 const STEP_MCP = 'register-mcp';
 const STEP_DAEMON = 'start-daemon';
 const STEP_INGEST = 'ingestion';
@@ -126,6 +127,7 @@ export const STEP_NAMES = {
   SCHEMA: STEP_SCHEMA,
   CONFIG: STEP_CONFIG,
   SKILL: STEP_SKILL,
+  COMMAND: STEP_COMMAND,
   MCP: STEP_MCP,
   SUPERVISION: STEP_SUPERVISION,
   DAEMON: STEP_DAEMON,
@@ -347,6 +349,39 @@ export async function stepInstallSkill(
     return {
       ok: false,
       name: STEP_SKILL,
+      error: (err as Error).message,
+    };
+  }
+}
+
+export async function stepInstallCommand(
+  deps: SetupDeps = {},
+): Promise<StepResult> {
+  const { fs, paths, repoRoot } = resolveDeps(deps);
+  const targetDir = nodePath.join(paths.homeDir, '.claude', 'commands');
+  const target = nodePath.join(targetDir, 'aw-prompt.md');
+  const source = nodePath.join(repoRoot, 'claude-commands', 'aw-prompt.md');
+  try {
+    if (!(await pathExists(fs, source))) {
+      return {
+        ok: true,
+        name: STEP_COMMAND,
+        done: false,
+        message: `Command source not found at ${source}; skipping`,
+      };
+    }
+    await fs.mkdir(targetDir, { recursive: true });
+    await fs.copyFile(source, target);
+    return {
+      ok: true,
+      name: STEP_COMMAND,
+      done: true,
+      message: `Installed /aw-prompt command to ${target}`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      name: STEP_COMMAND,
       error: (err as Error).message,
     };
   }
@@ -611,6 +646,7 @@ export async function runSetup(deps: SetupDeps = {}): Promise<SetupReport> {
     stepWriteSchemaVersion,
     stepWriteConfigStub,
     stepInstallSkill,
+    stepInstallCommand,
     stepRegisterMcp,
     stepSupervision,
     stepStartDaemon,
@@ -673,6 +709,37 @@ export async function uninstallSkill(deps: SetupDeps = {}): Promise<StepResult> 
     };
   } catch (err) {
     return { ok: false, name: STEP_SKILL, error: (err as Error).message };
+  }
+}
+
+export async function uninstallCommand(
+  deps: SetupDeps = {},
+): Promise<StepResult> {
+  const { fs, paths } = resolveDeps(deps);
+  const target = nodePath.join(
+    paths.homeDir,
+    '.claude',
+    'commands',
+    'aw-prompt.md',
+  );
+  try {
+    if (!(await pathExists(fs, target))) {
+      return {
+        ok: true,
+        name: STEP_COMMAND,
+        done: false,
+        message: `Command not present at ${target}`,
+      };
+    }
+    await fs.rm(target, { force: true });
+    return {
+      ok: true,
+      name: STEP_COMMAND,
+      done: true,
+      message: `Removed /aw-prompt command from ${target}`,
+    };
+  } catch (err) {
+    return { ok: false, name: STEP_COMMAND, error: (err as Error).message };
   }
 }
 
@@ -753,6 +820,22 @@ export async function runUninstall(deps: SetupDeps = {}): Promise<UninstallRepor
     });
   } else {
     steps.push({ name: STEP_SKILL, done: false, message: 'Skipped' });
+  }
+
+  const wantCommand = await confirmStep(
+    resolved.prompts,
+    resolved.yes,
+    'Remove the /aw-prompt command from ~/.claude/commands/?',
+  );
+  if (wantCommand) {
+    const r = await uninstallCommand(deps);
+    steps.push({
+      name: r.name,
+      done: r.ok ? r.done : false,
+      ...(r.ok ? { message: r.message } : { error: r.error }),
+    });
+  } else {
+    steps.push({ name: STEP_COMMAND, done: false, message: 'Skipped' });
   }
 
   const supervisor = getSupervisor();

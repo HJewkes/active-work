@@ -58,6 +58,7 @@ import track from './track.js';
 
 // Bootstrap / picker
 import open from './open.js';
+import prompt from './prompt.js';
 
 // Editor
 import edit from './edit.js';
@@ -119,6 +120,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   track,
   // bootstrap
   open,
+  prompt,
   // editor
   edit,
   // mcp server

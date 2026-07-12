@@ -115,9 +115,12 @@ async function emitSuccess(
     );
     return;
   }
-  // Human mode: pretty-print JSON for now. Commands can layer richer
-  // output later by checking ctx.format themselves.
-  if (result !== undefined && result !== null) {
+  // Human mode: a bare string result is printed raw (e.g. `prompt` dumps the
+  // bootstrap text); everything else is pretty-printed JSON for now. Commands
+  // can layer richer output later by checking ctx.format themselves.
+  if (typeof result === 'string') {
+    process.stdout.write(result.endsWith('\n') ? result : result + '\n');
+  } else if (result !== undefined && result !== null) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   }
   // Touch cmd to avoid an unused-parameter warning when extending later.
