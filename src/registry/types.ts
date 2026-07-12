@@ -4,6 +4,11 @@ export interface CommandContext {
   activeRoot: string;
   warnings: string[];
   format: 'human' | 'json';
+  // The user's shell working directory, populated by interactive surfaces
+  // (the CLI dispatcher and `aw` launcher). Left undefined by the daemon /
+  // MCP server, whose process cwd is not the user's — those callers must pass
+  // an explicit `cwd` arg to opt into cwd-based resolution.
+  cwd?: string;
 }
 
 export interface CliOption {

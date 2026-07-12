@@ -186,6 +186,7 @@ function makeAction(
       activeRoot: getActiveRoot(),
       warnings: [],
       format,
+      cwd: process.cwd(),
     };
 
     const result = await invoke(cmd, raw, ctx, format);

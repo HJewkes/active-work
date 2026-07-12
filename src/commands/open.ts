@@ -164,20 +164,44 @@ function isInside(child: string, parent: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+interface CwdMatch {
+  slug: string;
+  worktreePath: string;
+}
+
 /**
- * Resolve an initiative slug from a working directory by matching it against
- * every initiative's worktree paths. When `cwd` sits inside more than one
- * worktree (e.g. nested checkouts) the deepest — longest — worktree path
- * wins. Returns null when nothing matches or two initiatives tie at the same
- * depth (ambiguous → let the caller fall back to the picker).
+ * Canonicalize a path via `realpath`, falling back to a lexical resolve when
+ * the path doesn't exist yet. Needed because `process.cwd()` returns the
+ * symlink-resolved path on macOS (e.g. `/var` → `/private/var`) while a brief
+ * may store the un-resolved form — matching them requires both canonicalized.
+ */
+async function canonicalize(p: string): Promise<string> {
+  try {
+    return await fs.realpath(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/**
+ * Resolve an initiative from a working directory by matching it against every
+ * initiative's worktree paths. When `cwd` sits inside more than one worktree
+ * (e.g. nested checkouts) the deepest — longest — worktree path wins. Returns
+ * the matched slug and (display-form) worktree path, or null when nothing
+ * matches or two initiatives tie at the same depth (ambiguous → fall back to
+ * the picker).
+ *
+ * Both sides are canonicalized with `realpath` so symlinked paths still match.
+ * Relative worktree paths are skipped, since they cannot be compared against
+ * an absolute cwd deterministically.
  */
 async function resolveSlugFromCwd(
   activeRoot: string,
   cwd: string,
-): Promise<string | null> {
-  const resolvedCwd = path.resolve(cwd);
+): Promise<CwdMatch | null> {
+  const resolvedCwd = await canonicalize(cwd);
   const slugs = await listInitiativeSlugs(activeRoot);
-  let best: { slug: string; depth: number } | null = null;
+  let best: { slug: string; worktreePath: string; depth: number } | null = null;
   let tiedAtBest = false;
 
   for (const slug of slugs) {
@@ -192,11 +216,13 @@ async function resolveSlugFromCwd(
       continue;
     }
     for (const entry of Object.values(brief.worktrees ?? {})) {
-      const worktreePath = path.resolve(expandTilde(entry.path));
-      if (!isInside(resolvedCwd, worktreePath)) continue;
-      const depth = worktreePath.length;
+      const displayPath = expandTilde(entry.path);
+      if (!path.isAbsolute(displayPath)) continue;
+      const canonical = await canonicalize(displayPath);
+      if (!isInside(resolvedCwd, canonical)) continue;
+      const depth = canonical.length;
       if (best === null || depth > best.depth) {
-        best = { slug, depth };
+        best = { slug, worktreePath: displayPath, depth };
         tiedAtBest = false;
       } else if (depth === best.depth && slug !== best.slug) {
         tiedAtBest = true;
@@ -205,7 +231,7 @@ async function resolveSlugFromCwd(
   }
 
   if (best === null || tiedAtBest) return null;
-  return best.slug;
+  return { slug: best.slug, worktreePath: best.worktreePath };
 }
 
 function resolveCwdHint(
@@ -227,13 +253,16 @@ async function bootstrapInitiative(
   slug: string,
   offline: boolean | undefined,
   resolvedFrom: 'slug' | 'cwd',
+  cwdHintOverride?: string,
 ): Promise<OpenResult & { metadata: BootstrapMetadata }> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
   const { frontmatter: brief } = await readMarkdownWithSchema(
     briefPath,
     BriefFrontmatterSchema,
   );
-  const cwdHint = resolveCwdHint(activeRoot, slug, brief);
+  // When we resolved via cwd, launch in the worktree the user was standing in,
+  // not the brief's default worktree.
+  const cwdHint = cwdHintOverride ?? resolveCwdHint(activeRoot, slug, brief);
   const archivedTaskIds = await archiveStaleTasks(
     path.join(activeRoot, slug),
     { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
@@ -291,12 +320,20 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
     }
 
     // No slug: infer the initiative from the caller's working directory,
-    // unless the caller explicitly asked for the picker.
-    if (!args.pick) {
-      const cwd = args.cwd ?? process.cwd();
+    // unless the caller explicitly asked for the picker. The cwd comes from
+    // the caller's args or the interactive-surface context; when neither is
+    // set (e.g. a daemon/MCP caller) we skip resolution and show the picker.
+    const cwd = args.cwd ?? ctx.cwd;
+    if (!args.pick && cwd) {
       const matched = await resolveSlugFromCwd(activeRoot, cwd);
       if (matched) {
-        return bootstrapInitiative(activeRoot, matched, args.offline, 'cwd');
+        return bootstrapInitiative(
+          activeRoot,
+          matched.slug,
+          args.offline,
+          'cwd',
+          matched.worktreePath,
+        );
       }
     }
 
