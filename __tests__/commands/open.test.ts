@@ -7,14 +7,15 @@ import { NotFoundError } from '../../src/errors.js';
 import type { CommandContext } from '../../src/registry/index.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
-function makeCtx(activeRoot: string): CommandContext {
-  return { activeRoot, warnings: [], format: 'json' };
+function makeCtx(activeRoot: string, cwd?: string): CommandContext {
+  return { activeRoot, warnings: [], format: 'json', cwd };
 }
 
 interface OpenSuccess {
   slug: string;
   prompt: string;
   cwd_hint: string;
+  resolved_from?: 'slug' | 'cwd';
   metadata: {
     slug: string;
     brief_title: string;
@@ -34,6 +35,40 @@ interface PickerResult {
 
 function isPicker(value: unknown): value is PickerResult {
   return typeof value === 'object' && value !== null && 'picker' in value;
+}
+
+async function makeInitiativeWithWorktree(
+  activeRoot: string,
+  slug: string,
+  title: string,
+  taskPrefix: string,
+  worktreePath: string,
+): Promise<void> {
+  const dir = path.join(activeRoot, slug);
+  await fs.mkdir(path.join(dir, 'tasks'), { recursive: true });
+  await fs.mkdir(path.join(dir, 'sessions'), { recursive: true });
+  await fs.writeFile(
+    path.join(dir, 'brief.md'),
+    [
+      '---',
+      'schema_version: 1',
+      `title: ${title}`,
+      'updated: 2026-05-12',
+      'state: backburner',
+      `task_prefix: ${taskPrefix}`,
+      'worktrees:',
+      '  main:',
+      `    path: ${worktreePath}`,
+      '---',
+      '',
+      `# ${title}`,
+      '',
+    ].join('\n'),
+  );
+  await fs.writeFile(
+    path.join(dir, 'artifacts.yml'),
+    'branches: []\nstashes: []\n',
+  );
 }
 
 describe('open command', () => {
@@ -66,6 +101,164 @@ describe('open command', () => {
           rank: 1,
         },
       ]);
+    });
+  });
+
+  it('with no slug resolves the initiative whose worktree contains the cwd', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/sample'), offline: true },
+        makeCtx(activeRoot),
+      );
+      expect(isPicker(out)).toBe(false);
+      const result = out as OpenSuccess;
+      expect(result.slug).toBe('sample-initiative');
+      expect(result.resolved_from).toBe('cwd');
+      // The launch dir is the matched worktree, not the brief default.
+      expect(result.cwd_hint).toBe(path.join(os.homedir(), 'code/sample'));
+    });
+  });
+
+  it('resolves from the context cwd when no cwd arg is given', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { offline: true },
+        makeCtx(activeRoot, path.join(os.homedir(), 'code/sample/src')),
+      );
+      const result = out as OpenSuccess;
+      expect(result.slug).toBe('sample-initiative');
+      expect(result.resolved_from).toBe('cwd');
+    });
+  });
+
+  it('returns the picker when no cwd is available anywhere (daemon path)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      // No cwd arg and no ctx.cwd — the resolution is skipped entirely.
+      const out = await openCommand.run({ offline: true }, makeCtx(activeRoot));
+      expect(isPicker(out)).toBe(true);
+    });
+  });
+
+  it('resolves from a nested subdirectory of a worktree', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/sample/src/deep/nested'), offline: true },
+        makeCtx(activeRoot),
+      );
+      const result = out as OpenSuccess;
+      expect(result.slug).toBe('sample-initiative');
+      expect(result.resolved_from).toBe('cwd');
+    });
+  });
+
+  it('matches through symlinks by canonicalizing both sides', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      // Real worktree dir + a symlink pointing at it. The brief stores the
+      // real path; the caller's cwd arrives through the symlink.
+      const base = await fs.mkdtemp(path.join(os.tmpdir(), 'aw-symlink-'));
+      const realWork = path.join(base, 'real-checkout');
+      const linkWork = path.join(base, 'linked-checkout');
+      await fs.mkdir(path.join(realWork, 'src'), { recursive: true });
+      await fs.symlink(realWork, linkWork);
+      try {
+        const dir = path.join(activeRoot, 'linked-init');
+        await fs.mkdir(path.join(dir, 'tasks'), { recursive: true });
+        await fs.mkdir(path.join(dir, 'sessions'), { recursive: true });
+        await fs.writeFile(
+          path.join(dir, 'brief.md'),
+          [
+            '---',
+            'schema_version: 1',
+            'title: Linked Init',
+            'updated: 2026-05-12',
+            'state: backburner',
+            'task_prefix: LI',
+            'worktrees:',
+            '  main:',
+            `    path: ${realWork}`,
+            '---',
+            '',
+            '# Linked Init',
+            '',
+          ].join('\n'),
+        );
+        await fs.writeFile(
+          path.join(dir, 'artifacts.yml'),
+          'branches: []\nstashes: []\n',
+        );
+
+        const out = await openCommand.run(
+          { cwd: path.join(linkWork, 'src'), offline: true },
+          makeCtx(activeRoot),
+        );
+        const result = out as OpenSuccess;
+        expect(result.slug).toBe('linked-init');
+        expect(result.resolved_from).toBe('cwd');
+      } finally {
+        await fs.rm(base, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('falls back to the picker when the cwd matches no worktree', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/unrelated-project'), offline: true },
+        makeCtx(activeRoot),
+      );
+      expect(isPicker(out)).toBe(true);
+    });
+  });
+
+  it('--pick forces the picker even when the cwd matches a worktree', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/sample'), pick: true, offline: true },
+        makeCtx(activeRoot),
+      );
+      expect(isPicker(out)).toBe(true);
+    });
+  });
+
+  it('an explicit slug is tagged resolved_from "slug"', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { slug: 'sample-initiative', offline: true },
+        makeCtx(activeRoot),
+      );
+      const result = out as OpenSuccess;
+      expect(result.resolved_from).toBe('slug');
+    });
+  });
+
+  it('picks the deepest worktree when cwd is inside nested worktrees', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithWorktree(activeRoot, 'mono-outer', 'Mono Outer', 'MO', '~/code/mono');
+      await makeInitiativeWithWorktree(
+        activeRoot,
+        'mono-inner',
+        'Mono Inner',
+        'MI',
+        '~/code/mono/packages/app',
+      );
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/mono/packages/app/src'), offline: true },
+        makeCtx(activeRoot),
+      );
+      const result = out as OpenSuccess;
+      expect(result.slug).toBe('mono-inner');
+    });
+  });
+
+  it('falls back to the picker when two initiatives claim the same worktree', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithWorktree(activeRoot, 'twin-a', 'Twin A', 'TA', '~/code/shared');
+      await makeInitiativeWithWorktree(activeRoot, 'twin-b', 'Twin B', 'TB', '~/code/shared');
+      const out = await openCommand.run(
+        { cwd: path.join(os.homedir(), 'code/shared'), offline: true },
+        makeCtx(activeRoot),
+      );
+      expect(isPicker(out)).toBe(true);
     });
   });
 

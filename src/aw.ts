@@ -33,6 +33,7 @@ interface OpenSuccess {
   prompt: string;
   cwd_hint: string;
   channels?: string[];
+  resolved_from?: 'slug' | 'cwd';
 }
 
 interface PickerResult {
@@ -42,13 +43,19 @@ interface PickerResult {
 
 type OpenResult = OpenSuccess | PickerResult;
 
-async function runOpen(slug?: string): Promise<OpenResult> {
+async function runOpen(
+  opts: { slug?: string; pick?: boolean } = {},
+): Promise<OpenResult> {
   const ctx: CommandContext = {
     activeRoot: getActiveRoot(),
     warnings: [],
     format: 'json',
+    cwd: process.cwd(),
   };
-  const parsed = openCommand.args.parse(slug ? { slug } : {});
+  const parsed = openCommand.args.parse({
+    ...(opts.slug ? { slug: opts.slug } : {}),
+    ...(opts.pick ? { pick: true } : {}),
+  });
   return (await openCommand.run(parsed, ctx)) as OpenResult;
 }
 
@@ -129,7 +136,9 @@ function printHelp(): void {
       '',
       'Usage:',
       '  aw [slug]      Bootstrap and launch a Claude session for <slug>.',
-      '                 Omit slug to pick interactively.',
+      '                 Omit slug to resolve the initiative from the current',
+      '                 directory, falling back to an interactive picker.',
+      '  aw --pick      Skip cwd resolution and always show the picker.',
       '  aw --help      Show this message.',
       '  aw --version   Print version.',
       '',
@@ -149,7 +158,10 @@ export async function main(argv: string[]): Promise<void> {
     process.stdout.write('0.1.0\n');
     process.exit(EXIT.OK);
   }
-  if (args.some((a) => a.startsWith('-')) || args.length > 1) {
+  // `--pick` forces the interactive picker instead of resolving from cwd.
+  const pick = args.includes('--pick');
+  const positional = args.filter((a) => a !== '--pick');
+  if (positional.some((a) => a.startsWith('-')) || positional.length > 1) {
     process.stderr.write(
       color.red(
         'error: `aw` only launches a Claude session for an initiative. ' +
@@ -161,15 +173,27 @@ export async function main(argv: string[]): Promise<void> {
 
   try {
     let opened: OpenSuccess;
-    if (args.length === 0) {
-      const picker = (await runOpen()) as PickerResult;
-      const choice = await pickInitiative(picker.initiatives);
-      if (!choice) {
-        process.exit(EXIT.OK);
+    if (positional.length === 0) {
+      // No slug: `open` first tries to resolve the initiative from the
+      // current directory (unless `--pick`). It returns the picker list only
+      // when the cwd doesn't uniquely match a worktree.
+      const result = await runOpen({ pick });
+      if ('picker' in result) {
+        const choice = await pickInitiative(result.initiatives);
+        if (!choice) {
+          process.exit(EXIT.OK);
+        }
+        opened = (await runOpen({ slug: choice })) as OpenSuccess;
+      } else {
+        opened = result;
+        process.stderr.write(
+          color.dim(
+            `Opening ${opened.slug} — matched current directory.\n`,
+          ),
+        );
       }
-      opened = (await runOpen(choice)) as OpenSuccess;
     } else {
-      opened = (await runOpen(args[0])) as OpenSuccess;
+      opened = (await runOpen({ slug: positional[0] })) as OpenSuccess;
     }
     const code = await spawnClaude(
       opened.prompt,

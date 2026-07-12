@@ -43,7 +43,7 @@ active-work task add my-feature --title "Write tests" --priority 2
 aw my-feature            # launches `claude` with the bootstrap prompt
 ```
 
-`active-work new` scaffolds the directory: brief.md (frontmatter + body), handoff.md, an empty tasks/ folder, and an artifacts.yml. `active-work task add` writes a YAML task file with a sequential ID derived from the initiative's `task_prefix` (e.g. `MF-1`, `MF-2`). `aw <slug>` is the launcher: it calls `active-work open <slug>` under the hood to assemble the bootstrap prompt — brief excerpt, full handoff, last session, top open tasks, open artifacts, time since last session — then execs `claude` with that prompt in the initiative's worktree. Run `aw` with no slug to pick interactively. Use `active-work open <slug>` directly when you want the prompt without launching Claude.
+`active-work new` scaffolds the directory: brief.md (frontmatter + body), handoff.md, an empty tasks/ folder, and an artifacts.yml. `active-work task add` writes a YAML task file with a sequential ID derived from the initiative's `task_prefix` (e.g. `MF-1`, `MF-2`). `aw <slug>` is the launcher: it calls `active-work open <slug>` under the hood to assemble the bootstrap prompt — brief excerpt, full handoff, last session, top open tasks, open artifacts, time since last session — then execs `claude` with that prompt in the initiative's worktree. Run `aw` with no slug and it resolves the initiative from your current directory — if the cwd sits inside an initiative's registered worktree, it opens that one straight away; otherwise (or with `aw --pick`) it drops to the interactive picker. Use `active-work open <slug>` directly when you want the prompt without launching Claude.
 
 When you wrap up a session, capture it:
 
