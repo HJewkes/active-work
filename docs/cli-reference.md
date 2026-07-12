@@ -407,6 +407,8 @@ Options:
                  (default: current directory).
   --pick         Always return the picker list; skip resolving the initiative
                  from the current directory.
+  --adhoc        Frame the prompt as ad-hoc work on the workstream (awaiting the
+                 user’s task), not a continuation of the handoff / top task.
   -h, --help     display help for command
 ```
 
@@ -457,6 +459,8 @@ Options:
                  statically.
   --cwd <value>  Directory to resolve the initiative from when no slug is given
                  (default: current directory).
+  --adhoc        Frame the prompt as ad-hoc work on the workstream, awaiting the
+                 user’s task, not a continuation of the handoff / top task.
   -h, --help     display help for command
 ```
 

@@ -220,6 +220,18 @@ describe('open command', () => {
     });
   });
 
+  it('--adhoc reframes the bootstrap prompt', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await openCommand.run(
+        { slug: 'sample-initiative', adhoc: true, offline: true },
+        makeCtx(activeRoot),
+      );
+      const result = out as OpenSuccess;
+      expect(result.prompt).toContain('ad-hoc session');
+      expect(result.prompt).not.toContain('Work the top task unless redirected.');
+    });
+  });
+
   it('an explicit slug is tagged resolved_from "slug"', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const out = await openCommand.run(

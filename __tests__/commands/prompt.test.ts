@@ -33,6 +33,17 @@ describe('prompt command', () => {
     });
   });
 
+  it('--adhoc reframes the printed prompt', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const out = await promptCommand.run(
+        { slug: 'sample-initiative', adhoc: true, offline: true },
+        makeCtx(activeRoot),
+      );
+      expect(out).toContain('ad-hoc session');
+      expect(out).not.toContain('Work the top task unless redirected.');
+    });
+  });
+
   it('resolves from the cwd arg when no slug is given', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const out = await promptCommand.run(

@@ -44,7 +44,7 @@ interface PickerResult {
 type OpenResult = OpenSuccess | PickerResult;
 
 async function runOpen(
-  opts: { slug?: string; pick?: boolean } = {},
+  opts: { slug?: string; pick?: boolean; adhoc?: boolean } = {},
 ): Promise<OpenResult> {
   const ctx: CommandContext = {
     activeRoot: getActiveRoot(),
@@ -55,6 +55,7 @@ async function runOpen(
   const parsed = openCommand.args.parse({
     ...(opts.slug ? { slug: opts.slug } : {}),
     ...(opts.pick ? { pick: true } : {}),
+    ...(opts.adhoc ? { adhoc: true } : {}),
   });
   return (await openCommand.run(parsed, ctx)) as OpenResult;
 }
@@ -139,6 +140,9 @@ function printHelp(): void {
       '                 Omit slug to resolve the initiative from the current',
       '                 directory, falling back to an interactive picker.',
       '  aw --pick      Skip cwd resolution and always show the picker.',
+      '  aw <slug> --adhoc',
+      '                 Frame the session as ad-hoc work on the workstream',
+      '                 (awaiting your task), not a handoff continuation.',
       '  aw --help      Show this message.',
       '  aw --version   Print version.',
       '',
@@ -158,9 +162,11 @@ export async function main(argv: string[]): Promise<void> {
     process.stdout.write('0.1.0\n');
     process.exit(EXIT.OK);
   }
-  // `--pick` forces the interactive picker instead of resolving from cwd.
+  // `--pick` forces the interactive picker instead of resolving from cwd;
+  // `--adhoc` reframes the prompt as ad-hoc work on the workstream.
   const pick = args.includes('--pick');
-  const positional = args.filter((a) => a !== '--pick');
+  const adhoc = args.includes('--adhoc');
+  const positional = args.filter((a) => a !== '--pick' && a !== '--adhoc');
   if (positional.some((a) => a.startsWith('-')) || positional.length > 1) {
     process.stderr.write(
       color.red(
@@ -177,13 +183,13 @@ export async function main(argv: string[]): Promise<void> {
       // No slug: `open` first tries to resolve the initiative from the
       // current directory (unless `--pick`). It returns the picker list only
       // when the cwd doesn't uniquely match a worktree.
-      const result = await runOpen({ pick });
+      const result = await runOpen({ pick, adhoc });
       if ('picker' in result) {
         const choice = await pickInitiative(result.initiatives);
         if (!choice) {
           process.exit(EXIT.OK);
         }
-        opened = (await runOpen({ slug: choice })) as OpenSuccess;
+        opened = (await runOpen({ slug: choice, adhoc })) as OpenSuccess;
       } else {
         opened = result;
         process.stderr.write(
@@ -193,7 +199,7 @@ export async function main(argv: string[]): Promise<void> {
         );
       }
     } else {
-      opened = (await runOpen({ slug: positional[0] })) as OpenSuccess;
+      opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
     }
     const code = await spawnClaude(
       opened.prompt,

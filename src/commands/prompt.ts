@@ -11,6 +11,9 @@ const ArgsSchema = z.object({
   // Directory to resolve the initiative from when no slug is given. Falls back
   // to the interactive-surface context cwd; unset for daemon/MCP callers.
   cwd: z.string().min(1).optional(),
+  // Frame the prompt as ad-hoc work on the workstream rather than a
+  // continuation of its handoff / top task.
+  adhoc: z.boolean().optional(),
 });
 
 type PromptArgs = z.infer<typeof ArgsSchema>;
@@ -33,8 +36,13 @@ const promptCommand = defineCommand<PromptArgs, string>({
         description:
           'Directory to resolve the initiative from when no slug is given (default: current directory).',
       },
+      adhoc: {
+        long: '--adhoc',
+        description:
+          'Frame the prompt as ad-hoc work on the workstream, awaiting the user’s task, not a continuation of the handoff / top task.',
+      },
     },
-    usage: 'active-work prompt [slug] [--offline] [--cwd <dir>]',
+    usage: 'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -59,6 +67,7 @@ const promptCommand = defineCommand<PromptArgs, string>({
       activeRoot,
       slug,
       includeLiveStatus: !args.offline,
+      adhoc: args.adhoc,
     });
     return prompt;
   },
