@@ -1,18 +1,67 @@
 name: Release
 
+# Tag-triggered release mirroring @titan-design/brain: push a `vX.Y.Z` tag whose
+# version matches package.json, and CI validates → publishes → cuts a GH release.
+#
+# Publishing uses npm trusted publishing (OIDC) — no NPM_TOKEN. This requires a
+# trusted publisher configured once on npmjs.com for @titan-design/active-work
+# (repo HJewkes/active-work, workflow release.yml). The package must already
+# exist on npm for that config to be added, so the very first 0.1.0 publish is a
+# one-time manual bootstrap; every release after that flows through here.
 on:
   push:
-    branches: [main]
-
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+    tags:
+      - 'v*'
 
 jobs:
-  release:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Build the CLI before tests so the integration suite runs against a
+      # prebuilt dist/cli.js (same rationale as ci.yml — AW-12).
+      - name: Build CLI (for deterministic integration tests)
+        run: pnpm build:cli
+
+      # Sandboxed HOME so no test can touch a real home/config dir (AW-9).
+      - name: Test (sandboxed HOME)
+        run: |
+          sandbox_home="$RUNNER_TEMP/aw-test-home"
+          mkdir -p "$sandbox_home"
+          HOME="$sandbox_home" XDG_CONFIG_HOME="$sandbox_home/.config" \
+            XDG_DATA_HOME="$sandbox_home/.local/share" \
+            XDG_STATE_HOME="$sandbox_home/.local/state" \
+            pnpm test
+
+      - name: Build
+        run: pnpm build
+
+  publish:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
+      contents: read
+      id-token: write # OIDC token for npm trusted publishing
     steps:
       - uses: actions/checkout@v4
 
@@ -34,13 +83,32 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # Publishes via OIDC trusted publishing — no NPM_TOKEN. Requires a trusted
-      # publisher configured on npmjs.com (org HJewkes, repo active-work,
-      # workflow release.yml) and `id-token: write` above. npm attaches
-      # provenance automatically. GITHUB_TOKEN is only for the Version PR.
-      - name: Create Release Pull Request or Publish
-        uses: changesets/action@v1
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) doesn't match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version verified: $PKG_VERSION"
+
+      # OIDC trusted publishing — no NPM_TOKEN. npm attaches provenance
+      # automatically. publishConfig.access is already "public" in package.json.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          publish: pnpm changeset publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
