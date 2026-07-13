@@ -16,9 +16,9 @@ If Node is older than 22, install a current LTS via `nvm`, `fnm`, or `volta` bef
 ## 2. Install the package globally
 
 ```bash
-npm install -g @hjewkes/active-work
+npm install -g @titan-design/active-work
 # or
-pnpm add -g @hjewkes/active-work
+pnpm add -g @titan-design/active-work
 ```
 
 The package ships the CLI binary (`active-work`), a thin Claude-session launcher (`aw <slug>`), the MCP server, the dashboard bundle, and the Claude skill content.

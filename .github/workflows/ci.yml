@@ -11,6 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gitleaks can scan all commits
+
+      # Secret scanning — fail the build if a credential was ever committed.
+      - name: Scan for secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v4
 
@@ -21,6 +29,10 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Dependency audit — fail on any critical advisory (parity with brain).
+      - name: Security audit
+        run: pnpm audit --audit-level critical
 
       - name: Typecheck
         run: pnpm typecheck

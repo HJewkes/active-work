@@ -15,7 +15,7 @@ The package ships everything in one tarball: CLI binary, MCP server, daemon, bun
 ## Install
 
 ```bash
-npm install -g @hjewkes/active-work
+npm install -g @titan-design/active-work
 active-work setup
 ```
 
@@ -196,7 +196,7 @@ __tests__/              # vitest unit + integration tests
 
 **MCP tools aren't visible in Claude Code.** Verify the registration with `claude mcp list`. If the entry is missing, re-run `active-work setup --update` to re-register. If it's present but tools don't work, check the daemon log and confirm the version matches with `active-work --version` vs `curl http://127.0.0.1:7400/version`.
 
-**Schema version mismatch.** If the on-disk active root was written by a newer build, the CLI will refuse to operate. Upgrade with `npm install -g @hjewkes/active-work@latest`. If the active root is older, `active-work setup` (or any command that touches the root) will run forward migrations automatically.
+**Schema version mismatch.** If the on-disk active root was written by a newer build, the CLI will refuse to operate. Upgrade with `npm install -g @titan-design/active-work@latest`. If the active root is older, `active-work setup` (or any command that touches the root) will run forward migrations automatically.
 
 **`active-work new` complains about an existing slug.** Slugs are unique within the active root. Either pick a different slug or `active-work archive <slug> <domain>` the existing one first.
 
