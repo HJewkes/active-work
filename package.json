@@ -46,7 +46,6 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\""
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
     "@eslint/js": "^9.39.4",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
