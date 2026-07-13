@@ -60,4 +60,4 @@ When you add a trigger phrase to `SKILL.md`, ask: is there an existing CLI comma
 
 ## Release flow
 
-Changes to skill content ship in the next `@hjewkes/active-work` release. The `postinstall.js` hook reinstalls the skill on every update; users do not need to do anything beyond `npm install -g @hjewkes/active-work@latest` (or the pnpm equivalent).
+Changes to skill content ship in the next `@titan-design/active-work` release. The `postinstall.js` hook reinstalls the skill on every update; users do not need to do anything beyond `npm install -g @titan-design/active-work@latest` (or the pnpm equivalent).

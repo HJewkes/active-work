@@ -1,5 +1,5 @@
 {
-  "name": "@hjewkes/active-work",
+  "name": "@titan-design/active-work",
   "version": "0.1.0",
   "type": "module",
   "description": "Durable workspace state for engineering work — CLI, MCP, and Claude skill for tracking initiatives across sessions",
