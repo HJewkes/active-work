@@ -17,6 +17,17 @@ These are the sourcing layer for the cost / eval / error-atlas work
 | `mine-session-signals.mjs` | transcripts for one repo | typed TS module | Full signal surface: PRs, branches, commits/pushes, files, tasks, subagents, per-session metrics (per-model token buckets incl. cache-creation, thinking, errors, turn durations, mode/permission phases, human edits) — every asset back-referencing the sessions/turns that touched it. |
 | `mine-file-history.mjs` | transcripts for one project dir | typed TS module | Per-file activity from recorded tool calls: reads/writes/edits, net growth, co-change edges, recency timeline. |
 | `export-aw-data.mjs` | `active-work` CLI + initiative prose | typed TS module | Snapshot real active-work state (structured data + brief/handoff/session bodies) into a fixture for read-only dashboard specimens. |
+| `cost-rollup.mjs` | a `mine-session-signals` output + `pricing/models.json` | typed TS module | Price per-model token buckets (in / out / cacheRead / cacheCreation) and roll spend up to each session, PR, and the whole initiative. |
+
+## Pricing
+
+`cost-rollup.mjs` reads a **separate, versioned** pricing table at
+`pricing/models.json` — token buckets are never priced at ingest, so re-pricing
+history is a table edit, not a re-mine. Rates are per-million-tokens; cache reads
+bill at 0.1× input and 5-minute cache writes at 1.25× input. Raw model ids are
+normalized (context `[1m]`, `-fast`, and trailing `-YYYYMMDD` suffixes stripped)
+before lookup; any unmatched model is surfaced in the report, never silently
+priced at zero.
 
 ## Usage
 
@@ -29,6 +40,10 @@ node tools/mine-file-history.mjs <encoded-project-dir> [--top N] [--out file.ts]
 
 # Snapshot active-work state for the dashboard specimens
 node tools/export-aw-data.mjs [focus-slug]
+
+# Price a mined signals file → per-session / per-PR / per-initiative cost
+node tools/cost-rollup.mjs --signals <session-signals.ts|.json> [--pricing pricing/models.json] [--out file.ts] [--json]
+node tools/cost-rollup.mjs --repo /abs/path/to/repo   # mines first, then prices
 ```
 
 Convenience wrappers are wired in `package.json` (`pnpm mine:session`,
