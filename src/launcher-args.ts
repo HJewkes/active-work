@@ -44,3 +44,34 @@ export function buildChannelArgs(channels: string[] | undefined): string[] {
 export function buildClaudeArgs(prompt: string, channels?: string[]): string[] {
   return [...buildChannelArgs(channels), '--', prompt];
 }
+
+/**
+ * `--adhoc` is the canonical spelling; `--ad-hoc` is accepted as an alias so
+ * the natural hyphenated form doesn't trip the unknown-flag guard below.
+ */
+export const ADHOC_FLAGS = ['--adhoc', '--ad-hoc'];
+
+export interface LauncherFlags {
+  pick: boolean;
+  adhoc: boolean;
+  positional: string[];
+  /** True when a positional looks like an unknown flag, or more than one slug was given. */
+  usageError: boolean;
+}
+
+/**
+ * Parse the `aw` launcher flags out of `argv.slice(2)`. Pure and
+ * side-effect-free so the flag handling — including the `--adhoc` / `--ad-hoc`
+ * alias — is unit-testable without executing the launcher.
+ */
+export function parseLauncherFlags(args: string[]): LauncherFlags {
+  const known = new Set(['--pick', ...ADHOC_FLAGS]);
+  const positional = args.filter((a) => !known.has(a));
+  return {
+    pick: args.includes('--pick'),
+    adhoc: args.some((a) => ADHOC_FLAGS.includes(a)),
+    positional,
+    usageError:
+      positional.some((a) => a.startsWith('-')) || positional.length > 1,
+  };
+}

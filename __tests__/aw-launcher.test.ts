@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildChannelArgs, buildClaudeArgs } from '../src/launcher-args.js';
+import {
+  buildChannelArgs,
+  buildClaudeArgs,
+  parseLauncherFlags,
+} from '../src/launcher-args.js';
 
 describe('buildChannelArgs', () => {
   it('returns no args when channels is undefined or empty', () => {
@@ -124,5 +128,50 @@ describe('buildClaudeArgs', () => {
     const args = buildClaudeArgs('-- not a flag', ['voltras']);
     expect(args.at(-2)).toBe('--');
     expect(args.at(-1)).toBe('-- not a flag');
+  });
+});
+
+describe('parseLauncherFlags', () => {
+  it('parses a bare slug with no flags', () => {
+    expect(parseLauncherFlags(['voltras-workspace'])).toEqual({
+      pick: false,
+      adhoc: false,
+      positional: ['voltras-workspace'],
+      usageError: false,
+    });
+  });
+
+  it('accepts --adhoc (canonical spelling)', () => {
+    const f = parseLauncherFlags(['voltras-workspace', '--adhoc']);
+    expect(f.adhoc).toBe(true);
+    expect(f.positional).toEqual(['voltras-workspace']);
+    expect(f.usageError).toBe(false);
+  });
+
+  // Regression: `aw <slug> --ad-hoc` used to fall through to the unknown-flag
+  // guard and error with "aw only launches a Claude session for an initiative".
+  it('accepts --ad-hoc as an alias for --adhoc', () => {
+    const f = parseLauncherFlags(['voltras-workspace', '--ad-hoc']);
+    expect(f.adhoc).toBe(true);
+    expect(f.positional).toEqual(['voltras-workspace']);
+    expect(f.usageError).toBe(false);
+  });
+
+  it('combines --pick with an adhoc alias', () => {
+    const f = parseLauncherFlags(['--pick', '--ad-hoc']);
+    expect(f).toEqual({
+      pick: true,
+      adhoc: true,
+      positional: [],
+      usageError: false,
+    });
+  });
+
+  it('still flags a genuinely unknown flag as a usage error', () => {
+    expect(parseLauncherFlags(['voltras', '--bogus']).usageError).toBe(true);
+  });
+
+  it('still flags more than one slug as a usage error', () => {
+    expect(parseLauncherFlags(['a', 'b']).usageError).toBe(true);
   });
 });
