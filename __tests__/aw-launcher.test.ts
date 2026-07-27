@@ -16,9 +16,10 @@ describe('buildChannelArgs', () => {
 
   it('passes explicit server:/plugin: targets through untouched', () => {
     expect(buildChannelArgs(['server:voltras', 'plugin:foo@market'])).toEqual([
+      '--channels',
+      'plugin:foo@market',
       '--dangerously-load-development-channels',
       'server:voltras',
-      'plugin:foo@market',
     ]);
   });
 
@@ -28,6 +29,55 @@ describe('buildChannelArgs', () => {
       (a) => a === '--dangerously-load-development-channels',
     );
     expect(flags).toHaveLength(1);
+  });
+
+  // Regression: plugin targets used to be emitted under the dev flag, which
+  // re-triggers the development-channels dialog that packaging a channel as an
+  // allowlisted plugin exists to avoid. Only `--channels` takes the allowlist
+  // path in Claude Code's channel gate.
+  it('routes plugin targets under --channels, never the dev flag', () => {
+    const args = buildChannelArgs(['plugin:voltras-channel@voltras-local']);
+    expect(args).toEqual([
+      '--channels',
+      'plugin:voltras-channel@voltras-local',
+    ]);
+    expect(args).not.toContain('--dangerously-load-development-channels');
+  });
+
+  it('omits the dev flag entirely when every target is a plugin', () => {
+    const args = buildChannelArgs(['plugin:a@m', 'plugin:b@m']);
+    expect(args).toEqual(['--channels', 'plugin:a@m', 'plugin:b@m']);
+  });
+
+  it('omits --channels entirely when no target is a plugin', () => {
+    const args = buildChannelArgs(['voltras', 'server:other']);
+    expect(args).not.toContain('--channels');
+    expect(args).toEqual([
+      '--dangerously-load-development-channels',
+      'server:voltras',
+      'server:other',
+    ]);
+  });
+
+  it('groups each kind under one flag when the kinds are interleaved', () => {
+    const args = buildChannelArgs([
+      'plugin:a@m',
+      'bare',
+      'plugin:b@m',
+      'server:s',
+    ]);
+    expect(args.filter((a) => a === '--channels')).toHaveLength(1);
+    expect(
+      args.filter((a) => a === '--dangerously-load-development-channels'),
+    ).toHaveLength(1);
+    expect(args).toEqual([
+      '--channels',
+      'plugin:a@m',
+      'plugin:b@m',
+      '--dangerously-load-development-channels',
+      'server:bare',
+      'server:s',
+    ]);
   });
 });
 
@@ -45,6 +95,24 @@ describe('buildClaudeArgs', () => {
     ]);
     // The prompt is the final arg and is preceded immediately by `--`.
     expect(args.at(-1)).toBe('the bootstrap prompt');
+    expect(args.at(-2)).toBe('--');
+  });
+
+  // Two variadic channel flags can now be present at once, so the `--`
+  // terminator has to survive whichever one lands last in the argv.
+  it('keeps the prompt behind `--` with both channel kinds present', () => {
+    const args = buildClaudeArgs('the bootstrap prompt', [
+      'plugin:foo@market',
+      'voltras',
+    ]);
+    expect(args).toEqual([
+      '--channels',
+      'plugin:foo@market',
+      '--dangerously-load-development-channels',
+      'server:voltras',
+      '--',
+      'the bootstrap prompt',
+    ]);
     expect(args.at(-2)).toBe('--');
   });
 
