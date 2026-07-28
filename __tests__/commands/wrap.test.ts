@@ -3,6 +3,8 @@ import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import YAML from 'yaml';
 import wrap from '../../src/commands/wrap.js';
+import { registry } from '../../src/registry/index.js';
+import '../../src/commands/index.js'; // populate the registry
 import { deriveOpenLoops } from '../../src/sessions/open-loops.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 import { today } from '../../src/utils/today.js';
@@ -39,6 +41,11 @@ async function readFrontmatter(file: string): Promise<Record<string, unknown>> {
 }
 
 describe('wrap', () => {
+  it('is the only way to record a session: session.record is gone', () => {
+    expect(registry.get('session.record')).toBeUndefined();
+    expect(registry.get('wrap')).toBeDefined();
+  });
+
   it('writes the session ledger and bumps brief.updated in one call', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const result = await wrap.run(
@@ -88,19 +95,23 @@ describe('wrap', () => {
     });
   });
 
-  it('refuses to wrap with an empty ledger, naming both ways forward', async () => {
+  it('refuses to wrap with an empty ledger, without naming its own bypass', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const sessionsDir = path.join(activeRoot, SLUG, 'sessions');
       const before = await fs.readdir(sessionsDir);
 
       await expect(wrap.run(baseArgs(), makeCtx(activeRoot))).rejects.toThrow(
-        /--next-steps.*--resolves.*--no-loops/s,
+        /--next-steps.*--resolves/s,
+      );
+      // An agent that hits the gate must not be handed the silencer with it.
+      await expect(wrap.run(baseArgs(), makeCtx(activeRoot))).rejects.toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining('--no-loops') }),
       );
       expect(await fs.readdir(sessionsDir)).toEqual(before);
     });
   });
 
-  it('allows an empty ledger under --no-loops', async () => {
+  it('records no_loops: true so a deliberate empty ledger is distinguishable', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const result = await wrap.run(
         baseArgs({ no_loops: true }),
@@ -109,7 +120,34 @@ describe('wrap', () => {
       const frontmatter = await readFrontmatter(result.path);
       expect(frontmatter.next_steps).toEqual([]);
       expect(frontmatter.resolves).toEqual([]);
+      expect(frontmatter.no_loops).toBe(true);
       expect(result.updated).toBe(today());
+    });
+  });
+
+  it('omits no_loops when a ledger is filed', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const result = await wrap.run(
+        baseArgs({ session_id: 'sess-marker', next_steps: NEXT_STEPS }),
+        makeCtx(activeRoot),
+      );
+      const frontmatter = await readFrontmatter(result.path);
+      expect(frontmatter.no_loops).toBeUndefined();
+    });
+  });
+
+  it('rejects --no-loops alongside a non-empty ledger', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await expect(
+        wrap.run(
+          baseArgs({
+            session_id: 'sess-both',
+            no_loops: true,
+            next_steps: NEXT_STEPS,
+          }),
+          makeCtx(activeRoot),
+        ),
+      ).rejects.toThrow(/--no-loops asserts an empty ledger/);
     });
   });
 
@@ -228,6 +266,111 @@ describe('wrap', () => {
         ended: ENDED,
       }),
     ).toThrow(/Exactly one of --body or --body-file/);
+  });
+
+  // AW-46: `resolves.ref` is `<stem>#<id>`, so an id or session_id carrying `#`,
+  // whitespace or `/` yields a loop that no valid resolve can ever close.
+  describe('id character sets (AW-46)', () => {
+    it.each(['step 1', 'a#b', 'a/b', 'with\ttab'])(
+      'rejects a next_steps id of %j',
+      async (id) => {
+        const steps = [{ id, text: 'x', kind: 'prose' }];
+        // Structured (MCP) callers are rejected at parse...
+        expect(() => baseArgs({ next_steps: steps })).toThrow(
+          /next_steps id must not contain/,
+        );
+        // ...and the CLI's JSON-string path writes nothing either.
+        await withTempActiveRoot(async (activeRoot) => {
+          const sessionsDir = path.join(activeRoot, SLUG, 'sessions');
+          const before = await fs.readdir(sessionsDir);
+
+          await expect(
+            wrap.run(
+              baseArgs({
+                session_id: 'sess-badid',
+                next_steps: JSON.stringify(steps),
+              }),
+              makeCtx(activeRoot),
+            ),
+          ).rejects.toThrow(/next_steps id must not contain/);
+          expect(await fs.readdir(sessionsDir)).toEqual(before);
+        });
+      },
+    );
+
+    it.each(['sess 1', 'a#b', '../escape', 'nested/id'])(
+      'rejects a session_id of %j',
+      (session_id) => {
+        expect(() => baseArgs({ session_id, no_loops: true })).toThrow(
+          /session_id must not contain/,
+        );
+      },
+    );
+
+    it('still accepts the free-form slug session_ids already in use', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const result = await wrap.run(
+          baseArgs({
+            session_id: '2026-07-26-book1-m4b-packaging',
+            no_loops: true,
+          }),
+          makeCtx(activeRoot),
+        );
+        expect(result.filename).toBe(
+          '2026-05-12-0900-2026-07-26-book1-m4b-packaging.md',
+        );
+      });
+    });
+  });
+
+  // Migrated from the deleted `session.record` command, which shared this path.
+  describe('session file writing', () => {
+    it('reads the body from --body-file when --body is omitted', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const bodyPath = path.join(activeRoot, 'body.md');
+        await fs.writeFile(bodyPath, 'from-file body\n- bullet\n', 'utf8');
+        const result = await wrap.run(
+          wrap.args.parse({
+            slug: SLUG,
+            session_id: 'body-from-file',
+            started: STARTED,
+            ended: ENDED,
+            body_file: bodyPath,
+            no_loops: true,
+          }),
+          makeCtx(activeRoot),
+        );
+        const raw = await fs.readFile(result.path, 'utf8');
+        expect(raw).toContain('from-file body');
+        expect(raw).toContain('- bullet');
+      });
+    });
+
+    it('rejects when both --body and --body-file are provided', () => {
+      expect(() => baseArgs({ body_file: '/tmp/whatever.md' })).toThrow(
+        /mutually exclusive/,
+      );
+    });
+
+    it('rejects an invalid track value', () => {
+      expect(() => baseArgs({ track: 'nope', no_loops: true })).toThrow();
+    });
+
+    it('rejects ended < started', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'reverse',
+              started: ENDED,
+              ended: STARTED,
+              no_loops: true,
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/Frontmatter validation failed/);
+      });
+    });
   });
 
   it('serializes concurrent wraps on the initiative lock', async () => {

@@ -32,7 +32,6 @@ import taskReorder from './task-reorder.js';
 
 // Sessions
 import sessionList from './session-list.js';
-import sessionRecord from './session-record.js';
 import sessionsBrowser from './sessions-browser.js';
 import wrap from './wrap.js';
 
@@ -98,7 +97,6 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskReorder,
   taskDelete,
   // sessions
-  sessionRecord,
   sessionList,
   sessionsBrowser,
   wrap,

@@ -61,8 +61,8 @@ function resolveLines(entries: ResolveFixture[]): string[] {
 }
 
 /**
- * Write a session file into the fixture initiative, named like `session record`
- * does. Returns the filename stem — the identity half of a loop `ref`.
+ * Write a session file into the fixture initiative, named like `wrap` does.
+ * Returns the filename stem — the identity half of a loop `ref`.
  */
 async function writeSession(
   activeRoot: string,
@@ -436,7 +436,7 @@ describe('assembleBootstrap', () => {
         adhoc: true,
         ...offlineOpts,
       });
-      expect(prompt).toContain('active-work session record --track adhoc');
+      expect(prompt).toContain('active-work wrap --track adhoc');
     });
   });
 

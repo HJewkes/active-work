@@ -8,6 +8,7 @@ import YAML from 'yaml';
 import {
   deriveOpenLoops,
   findDanglingResolves,
+  findSessionIssues,
 } from '../../src/sessions/open-loops.js';
 import type { Task } from '../../src/schemas/task.js';
 
@@ -306,8 +307,8 @@ describe('findDanglingResolves', () => {
     });
 
     expect(await findDanglingResolves(initiativeDir)).toEqual([
-      { sessionFile: resolver, ref: `${opener}#n9` },
-      { sessionFile: resolver, ref: 'no-such-file#n1' },
+      { sessionFile: resolver, ref: `${opener}#n9`, kind: 'missing' },
+      { sessionFile: resolver, ref: 'no-such-file#n1', kind: 'missing' },
     ]);
   });
 
@@ -324,7 +325,7 @@ describe('findDanglingResolves', () => {
     });
 
     expect(await findDanglingResolves(initiativeDir)).toEqual([
-      { sessionFile: resolver, ref: 'aaa#n1' },
+      { sessionFile: resolver, ref: 'aaa#n1', kind: 'missing' },
     ]);
   });
 
@@ -341,8 +342,29 @@ describe('findDanglingResolves', () => {
     });
 
     expect(await findDanglingResolves(initiativeDir)).toEqual([
-      { sessionFile: early, ref: '2026-07-10-late#n1' },
+      { sessionFile: early, ref: '2026-07-10-late#n1', kind: 'not-prior' },
     ]);
+  });
+
+  it('distinguishes a rejected out-of-order close from a bad ref', async () => {
+    // Parallel worktrees: A ran 09:00-17:00, B ran 10:00-16:00 but wrapped last
+    // and closed A's loop. The ref is correct; only the ordering rejects it.
+    const longRunning = await writeSession({
+      session_id: 'aaa',
+      ended: '2026-07-01T17:00:00Z',
+      next_steps: [{ id: 'n1', text: 'from the long worktree', kind: 'prose' }],
+    });
+    const shortRunning = await writeSession({
+      session_id: 'bbb',
+      ended: '2026-07-01T16:00:00Z',
+      resolves: [{ ref: `${longRunning}#n1`, outcome: 'done' }],
+    });
+
+    expect(await findDanglingResolves(initiativeDir)).toEqual([
+      { sessionFile: shortRunning, ref: `${longRunning}#n1`, kind: 'not-prior' },
+    ]);
+    const loops = await deriveOpenLoops(initiativeDir, { now: NOW });
+    expect(loops.map((l) => l.ref)).toEqual([`${longRunning}#n1`]);
   });
 
   it('returns nothing when every resolve lands', async () => {
@@ -358,5 +380,147 @@ describe('findDanglingResolves', () => {
     });
 
     expect(await findDanglingResolves(initiativeDir)).toEqual([]);
+  });
+});
+
+describe('self-resolution', () => {
+  it('rejects a session resolving a loop it opened in the same file', async () => {
+    // Otherwise `wrap`'s non-empty-ledger gate is defeatable: file one
+    // next_step plus a resolve naming your own (predictable) stem.
+    const stem = await writeSession({
+      session_id: 'aaa',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [{ id: 'n1', text: 'closed by itself', kind: 'prose' }],
+      resolves: [{ ref: '2026-07-01-aaa#n1', outcome: 'done' }],
+    });
+
+    const loops = await deriveOpenLoops(initiativeDir, { now: NOW });
+    expect(loops.map((l) => l.ref)).toEqual([`${stem}#n1`]);
+    expect(await findDanglingResolves(initiativeDir)).toEqual([
+      { sessionFile: stem, ref: `${stem}#n1`, kind: 'self' },
+    ]);
+  });
+
+  it('rejects a self-directed resolve that a filename collision aimed at the earlier file', async () => {
+    // The caller predicted its own stem, but `pickAvailableFilename` parked it
+    // at `-1`, so the ref now names a *different* record's live loop.
+    const earlier = await writeSession({
+      session_id: 'dupe',
+      file: '2026-07-01-1000-dupe',
+      ended: '2026-07-01T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'must stay open', kind: 'prose' }],
+    });
+    const collided = await writeSession({
+      session_id: 'dupe',
+      file: '2026-07-01-1000-dupe-1',
+      ended: '2026-07-01T11:00:00Z',
+      resolves: [{ ref: `${earlier}#n1`, outcome: 'done' }],
+    });
+
+    const loops = await deriveOpenLoops(initiativeDir, { now: NOW });
+    expect(loops.map((l) => l.ref)).toEqual([`${earlier}#n1`]);
+    expect(await findDanglingResolves(initiativeDir)).toEqual([
+      { sessionFile: collided, ref: `${earlier}#n1`, kind: 'self' },
+    ]);
+  });
+
+  it('rejects a resolve cycle between two sessions sharing an `ended`', async () => {
+    const a = await writeSession({
+      session_id: 'aaa',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [{ id: 'n1', text: 'a loop', kind: 'prose' }],
+      resolves: [{ ref: '2026-07-01-bbb#n1', outcome: 'done' }],
+    });
+    const b = await writeSession({
+      session_id: 'bbb',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [{ id: 'n1', text: 'b loop', kind: 'prose' }],
+      resolves: [{ ref: '2026-07-01-aaa#n1', outcome: 'done' }],
+    });
+
+    const loops = await deriveOpenLoops(initiativeDir, { now: NOW });
+    expect(loops.map((l) => l.ref).sort()).toEqual([`${a}#n1`, `${b}#n1`]);
+    expect(await findDanglingResolves(initiativeDir)).toEqual([
+      { sessionFile: a, ref: `${b}#n1`, kind: 'not-prior' },
+      { sessionFile: b, ref: `${a}#n1`, kind: 'not-prior' },
+    ]);
+  });
+});
+
+describe('findSessionIssues', () => {
+  it('reports nothing for a healthy initiative', async () => {
+    await writeSession({
+      session_id: 'aaa',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [{ id: 'n1', text: 'open', kind: 'prose' }],
+    });
+
+    expect(await findSessionIssues(initiativeDir)).toEqual({ dangling: [], malformed: [] });
+  });
+
+  it('reports a malformed session that both drops its loops and re-opens a resolved one', async () => {
+    const opener = await writeSession({
+      session_id: 'aaa',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [{ id: 'n1', text: 'was legitimately closed', kind: 'prose' }],
+    });
+    // `track` holding a branch name — the exact shape found in live data.
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', '2026-07-05-broken.md'),
+      [
+        '---',
+        'session_id: broken',
+        'started: 2026-07-05T00:00:00Z',
+        'ended: 2026-07-05T00:00:00Z',
+        'track: feat/tts-quality',
+        'next_steps:',
+        '  - id: n9',
+        '    text: lost with the file',
+        '    kind: prose',
+        'resolves:',
+        `  - ref: ${opener}#n1`,
+        '    outcome: done',
+        '---',
+        '',
+        'narrative',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    // The loop the broken file closed is back open and its own loop is gone —
+    // invisible in the ledger, so the issue report is the only signal.
+    const loops = await deriveOpenLoops(initiativeDir, { now: NOW });
+    expect(loops.map((l) => l.ref)).toEqual([`${opener}#n1`]);
+
+    const issues = await findSessionIssues(initiativeDir);
+    expect(issues.dangling).toEqual([]);
+    expect(issues.malformed).toHaveLength(1);
+    expect(issues.malformed[0]?.file).toBe('2026-07-05-broken.md');
+    expect(issues.malformed[0]?.reason).toContain('track');
+  });
+
+  it('reports a non-session file living in sessions/ as having no frontmatter', async () => {
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', 'ARCHIVED-handoff.md'),
+      '# hand-placed archive\n\nno frontmatter at all\n',
+      'utf8',
+    );
+
+    const issues = await findSessionIssues(initiativeDir);
+    expect(issues.malformed).toEqual([
+      { file: 'ARCHIVED-handoff.md', reason: 'no frontmatter block' },
+    ]);
+  });
+
+  it('reports unparseable YAML separately from schema failures', async () => {
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', '2026-07-01-badyaml.md'),
+      '---\nsession_id: "unterminated\nended: 2026-07-01T00:00:00Z\n---\n\nnarrative\n',
+      'utf8',
+    );
+
+    const issues = await findSessionIssues(initiativeDir);
+    expect(issues.malformed[0]?.reason).toMatch(/invalid YAML/);
   });
 });

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { BriefFrontmatterSchema } from '../schemas/brief.js';
 import {
   NextStepSchema,
+  SessionIdSchema,
   SessionResolveSchema,
   type NextStep,
   type SessionResolve,
@@ -27,7 +28,7 @@ const resolvesArg = z.union([z.string(), ResolvesSchema]);
 const ArgsSchema = z
   .object({
     slug: z.string().min(1),
-    session_id: z.string().min(1),
+    session_id: SessionIdSchema,
     started: z.string().min(1),
     ended: z.string().min(1),
     track: z.enum(['canonical', 'sidecar', 'adhoc']).default('canonical'),
@@ -88,20 +89,30 @@ function parseLedger<T>(
 }
 
 /**
- * The whole design rests on loops being filed at wrap: an empty ledger from a
- * sloppy wrap is otherwise indistinguishable from one that means "nothing is
- * hanging". `--no-loops` makes the second case a deliberate statement.
+ * The whole design rests on loops being filed at wrap. The message deliberately
+ * does not name `--no-loops`: an agent that reaches this error should be pointed
+ * at the work of filing loops, not at the flag that silences the check. The flag
+ * is documented in `--help` for the caller who genuinely has nothing hanging.
  */
 function requireLedger(
   ledger: { next_steps: NextStep[]; resolves: SessionResolve[] },
   noLoops: boolean,
 ): void {
-  if (noLoops) return;
-  if (ledger.next_steps.length > 0 || ledger.resolves.length > 0) return;
+  const hasEntries = ledger.next_steps.length > 0 || ledger.resolves.length > 0;
+  if (noLoops) {
+    if (hasEntries) {
+      throw new ValidationError(
+        '--no-loops asserts an empty ledger; drop it to file --next-steps or --resolves.',
+      );
+    }
+    return;
+  }
+  if (hasEntries) return;
   throw new ValidationError(
-    'Refusing to wrap with an empty ledger: pass --next-steps and/or --resolves ' +
-      'to file the loops this session opened or closed, or --no-loops to state ' +
-      'deliberately that nothing is hanging.',
+    'Refusing to wrap with an empty ledger. Pass --next-steps with the loops this ' +
+      'session leaves open (anything a future session would need to pick up: ' +
+      'unfinished work, open PRs, unanswered questions) and/or --resolves with the ' +
+      'refs of prior loops it closed.',
   );
 }
 
@@ -133,6 +144,7 @@ async function writeWrap(
     body,
     next_steps: ledger.next_steps,
     resolves: ledger.resolves,
+    ...(args.no_loops === true ? { no_loops: true as const } : {}),
   });
   try {
     const updated = await stampBriefUpdated(briefPath);
@@ -198,7 +210,7 @@ export default defineCommand<Args, Result>({
       no_loops: {
         long: '--no-loops',
         description:
-          'Wrap with an empty ledger, stating deliberately that nothing is hanging. Required when neither --next-steps nor --resolves is given.',
+          'Assert that this session leaves nothing hanging. Records no_loops: true so a deliberate empty ledger is distinguishable from an unfiled one. Mutually exclusive with --next-steps / --resolves.',
       },
     },
     usage:

@@ -15,7 +15,12 @@ import { getActiveRoot } from './utils/paths.js';
 import { readPidFile, isProcessAlive } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
 import { listInitiativeSlugs } from './lint/index.js';
-import { findDanglingResolves } from './sessions/open-loops.js';
+import {
+  findSessionIssues,
+  type DanglingKind,
+  type DanglingResolve,
+  type MalformedSession,
+} from './sessions/open-loops.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 
@@ -251,42 +256,84 @@ async function checkSupervisor(deps: DoctorDeps): Promise<DoctorCheck> {
   };
 }
 
-/**
- * Report `resolves` entries across every initiative that point at a
- * next_step that does not exist (including one that dangles because it
- * points forward in time — derivation treats both cases identically).
- */
-async function checkOpenLoops(deps: DoctorDeps): Promise<DoctorCheck> {
-  const activeRoot = deps.activeRoot ?? getActiveRoot();
-  const slugs = await listInitiativeSlugs(activeRoot);
-  const dangling: string[] = [];
-  for (const slug of slugs) {
-    const initiativeDir = nodePath.join(activeRoot, slug);
-    const found = await findDanglingResolves(initiativeDir);
-    for (const entry of found) {
-      dangling.push(`${slug}/sessions/${entry.sessionFile}.md resolves ${entry.ref}`);
-    }
-  }
-  if (dangling.length === 0) {
+/** Each rejection kind has a different remedy, so each gets its own sentence. */
+const DANGLING_REMEDY: Record<DanglingKind, string> = {
+  missing: 'no such next_step — fix or drop the ref',
+  'not-prior':
+    'target session ended at or after the resolver, so the close was rejected — re-file the resolve from a later session',
+  self: 'a session cannot resolve its own loop — resolve it from a later session',
+};
+
+function describeDangling(kind: DanglingKind, entries: string[]): string {
+  return `${DANGLING_REMEDY[kind]}: ${entries.join(', ')}`;
+}
+
+function openLoopsCheck(byKind: Map<DanglingKind, string[]>): DoctorCheck {
+  if (byKind.size === 0) {
     return { name: 'open-loops', status: 'ok', detail: 'no dangling resolves' };
   }
+  const parts = [...byKind.entries()].map(([kind, refs]) => describeDangling(kind, refs));
+  return { name: 'open-loops', status: 'warn', detail: parts.join('; ') };
+}
+
+function sessionFilesCheck(malformed: string[]): DoctorCheck {
+  if (malformed.length === 0) {
+    return { name: 'session-files', status: 'ok', detail: 'every session file parses' };
+  }
   return {
-    name: 'open-loops',
+    name: 'session-files',
     status: 'warn',
-    detail: `dangling resolves pointing at a missing (or later) next_step: ${dangling.join('; ')}`,
+    // These files are invisible in the ledger: their loops vanish and the loops
+    // they closed come back. Only this check can surface them.
+    detail: `${malformed.length} session file(s) unreadable — their loops are missing from the ledger: ${malformed.join('; ')}`,
   };
+}
+
+/**
+ * Walk every initiative once and report both integrity signals derivation
+ * cannot express in the ledger: rejected `resolves` and unparseable sessions.
+ */
+async function checkSessions(deps: DoctorDeps): Promise<DoctorCheck[]> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const slugs = await listInitiativeSlugs(activeRoot);
+  const byKind = new Map<DanglingKind, string[]>();
+  const malformed: string[] = [];
+  for (const slug of slugs) {
+    const issues = await findSessionIssues(nodePath.join(activeRoot, slug));
+    for (const entry of issues.dangling) collectDangling(byKind, slug, entry);
+    for (const entry of issues.malformed) malformed.push(describeMalformed(slug, entry));
+  }
+  return [openLoopsCheck(byKind), sessionFilesCheck(malformed)];
+}
+
+function collectDangling(
+  byKind: Map<DanglingKind, string[]>,
+  slug: string,
+  entry: DanglingResolve,
+): void {
+  const line = `${slug}/sessions/${entry.sessionFile}.md resolves ${entry.ref}`;
+  const existing = byKind.get(entry.kind);
+  if (existing) existing.push(line);
+  else byKind.set(entry.kind, [line]);
+}
+
+function describeMalformed(slug: string, entry: MalformedSession): string {
+  return `${slug}/sessions/${entry.file} (${entry.reason})`;
 }
 
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const checks = await Promise.all([
-    checkNode(deps),
-    checkActiveRoot(deps),
-    checkDaemon(deps),
-    checkMcp(deps),
-    checkSkill(deps),
-    checkSupervisor(deps),
-    checkOpenLoops(deps),
+  const [installChecks, sessionChecks] = await Promise.all([
+    Promise.all([
+      checkNode(deps),
+      checkActiveRoot(deps),
+      checkDaemon(deps),
+      checkMcp(deps),
+      checkSkill(deps),
+      checkSupervisor(deps),
+    ]),
+    checkSessions(deps),
   ]);
+  const checks = [...installChecks, ...sessionChecks];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }

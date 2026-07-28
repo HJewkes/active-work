@@ -18,6 +18,7 @@ export interface SessionWriteInput {
   body: string;
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
+  no_loops?: true;
 }
 
 export interface SessionWriteResult {
@@ -68,8 +69,8 @@ async function pickAvailableFilename(
 
 /**
  * Write `<slug>/sessions/<YYYY-MM-DD-HHMM>-<session_id>.md`, validating the
- * frontmatter first. Shared by `session.record` (narrative only) and `wrap`
- * (narrative + open-loop ledger), so both produce byte-identical layouts.
+ * frontmatter first. `wrap` is the only command that writes sessions through
+ * here; `fold` writes its derived sidecars directly.
  */
 export async function writeSessionFile(
   input: SessionWriteInput,
@@ -89,6 +90,7 @@ export async function writeSessionFile(
       track: input.track,
       next_steps: input.next_steps ?? [],
       resolves: input.resolves ?? [],
+      ...(input.no_loops === true ? { no_loops: true } : {}),
     },
     input.body,
     SessionFrontmatterSchema,

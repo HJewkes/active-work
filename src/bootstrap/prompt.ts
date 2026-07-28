@@ -765,8 +765,8 @@ export async function assembleBootstrap(
 
   sections.push(
     adhoc
-      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work session record --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
-      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
+      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
+      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and close the session out via \`active-work wrap\` when wrapping up — it records the session, files the loops you leave open, and stamps the brief in one step.`,
   );
 
   const prompt = sections.join('\n\n') + '\n';

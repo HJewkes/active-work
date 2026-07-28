@@ -84,7 +84,7 @@ interface DiscoverResult {
   errors: unknown[];
 }
 
-interface SessionRecordResult {
+interface WrapResult {
   path: string;
   filename: string;
 }
@@ -308,15 +308,15 @@ describe('end-to-end: full lifecycle through the registry', () => {
     expect(stillThere).toBeUndefined();
   });
 
-  it('sessions roundtrip: record -> list -> filename collision yields -1 suffix', async () => {
+  it('sessions roundtrip: wrap -> list -> filename collision yields -1 suffix', async () => {
     await runCmd('new', { slug: 'sess-test', title: 'Sess' }, activeRoot);
 
     const started = '2026-05-12T15:23:45.000Z';
     const ended = '2026-05-12T16:00:00.000Z';
     const body = 'First-line preview\nSecond line of body content.\n';
 
-    const first = await runCmd<SessionRecordResult>(
-      'session.record',
+    const first = await runCmd<WrapResult>(
+      'wrap',
       {
         slug: 'sess-test',
         session_id: 'abc123',
@@ -324,6 +324,7 @@ describe('end-to-end: full lifecycle through the registry', () => {
         ended,
         track: 'canonical',
         body,
+        no_loops: true,
       },
       activeRoot,
     );
@@ -339,8 +340,8 @@ describe('end-to-end: full lifecycle through the registry', () => {
     expect(listed.sessions[0]?.first_line).toBe('First-line preview');
 
     // Same session_id + started timestamp -> -1 collision suffix.
-    const second = await runCmd<SessionRecordResult>(
-      'session.record',
+    const second = await runCmd<WrapResult>(
+      'wrap',
       {
         slug: 'sess-test',
         session_id: 'abc123',
@@ -348,6 +349,7 @@ describe('end-to-end: full lifecycle through the registry', () => {
         ended,
         track: 'canonical',
         body: 'Other body',
+        no_loops: true,
       },
       activeRoot,
     );

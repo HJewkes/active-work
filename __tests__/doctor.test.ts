@@ -8,6 +8,19 @@ function statusOf(checks: DoctorCheck[], name: string): string {
   return checks.find((c) => c.name === name)!.status;
 }
 
+/** Write a session file from its frontmatter lines. */
+async function writeSessionFile(
+  initiativeDir: string,
+  filename: string,
+  frontmatter: string[],
+): Promise<void> {
+  await fs.writeFile(
+    path.join(initiativeDir, 'sessions', filename),
+    ['---', ...frontmatter, '---', '', 'narrative', ''].join('\n'),
+    'utf8',
+  );
+}
+
 describe('runDoctor', () => {
   let base: string;
   let activeRoot: string;
@@ -180,5 +193,66 @@ describe('runDoctor', () => {
     const check = report.checks.find((c) => c.name === 'open-loops')!;
     expect(check.detail).toContain('alpha/sessions/2026-07-01-s1.md');
     expect(check.detail).toContain('nope#missing');
+    expect(check.detail).toContain('no such next_step');
+  });
+
+  it('tells a rejected close apart from a bad ref', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await writeSessionFile(initiativeDir, '2026-07-01-late.md', [
+      'session_id: late',
+      'started: 2026-07-01T17:00:00Z',
+      'ended: 2026-07-01T17:00:00Z',
+      'track: canonical',
+      'next_steps:',
+      '  - id: n1',
+      '    text: from the long worktree',
+      '    kind: prose',
+    ]);
+    await writeSessionFile(initiativeDir, '2026-07-01-early.md', [
+      'session_id: early',
+      'started: 2026-07-01T16:00:00Z',
+      'ended: 2026-07-01T16:00:00Z',
+      'track: canonical',
+      'resolves:',
+      '  - ref: 2026-07-01-late#n1',
+      '    outcome: done',
+    ]);
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'open-loops')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('re-file the resolve from a later session');
+    expect(check.detail).not.toContain('no such next_step');
+  });
+
+  it('reports session files that do not parse', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', 'ARCHIVED-handoff.md'),
+      '# hand-placed archive\n',
+      'utf8',
+    );
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'session-files')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('alpha/sessions/ARCHIVED-handoff.md');
+    expect(check.detail).toContain('no frontmatter block');
+  });
+
+  it('reports session-files ok when every session parses', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await writeSessionFile(initiativeDir, '2026-07-01-s1.md', [
+      'session_id: s1',
+      'started: 2026-07-01T00:00:00Z',
+      'ended: 2026-07-01T00:00:00Z',
+      'track: canonical',
+    ]);
+
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'session-files')).toBe('ok');
   });
 });
