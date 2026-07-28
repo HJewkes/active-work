@@ -34,6 +34,7 @@ import taskReorder from './task-reorder.js';
 import sessionList from './session-list.js';
 import sessionRecord from './session-record.js';
 import sessionsBrowser from './sessions-browser.js';
+import wrap from './wrap.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -100,6 +101,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   sessionRecord,
   sessionList,
   sessionsBrowser,
+  wrap,
   // sources / artifacts
   sourceAdd,
   artifactAddBranch,

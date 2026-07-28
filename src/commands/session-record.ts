@@ -1,10 +1,6 @@
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
 import { z } from 'zod';
-import { SessionFrontmatterSchema } from '../schemas/session.js';
-import { getInitiativeDir } from '../utils/paths.js';
-import { writeFrontmatter } from '../utils/gray-matter-io.js';
-import { ValidationError } from '../errors.js';
+import { writeSessionFile } from '../sessions/session-file.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z
@@ -40,47 +36,6 @@ const ResultSchema = z.object({
   path: z.string(),
   filename: z.string(),
 });
-
-function formatStartedStamp(started: string): string {
-  const parsed = new Date(started);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new ValidationError(`Invalid started timestamp: ${started}`);
-  }
-  const yyyy = parsed.getUTCFullYear().toString().padStart(4, '0');
-  const mm = (parsed.getUTCMonth() + 1).toString().padStart(2, '0');
-  const dd = parsed.getUTCDate().toString().padStart(2, '0');
-  const hh = parsed.getUTCHours().toString().padStart(2, '0');
-  const min = parsed.getUTCMinutes().toString().padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}-${hh}${min}`;
-}
-
-async function exists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function pickAvailableFilename(
-  dir: string,
-  baseName: string,
-): Promise<{ filename: string; fullPath: string }> {
-  const initial = `${baseName}.md`;
-  const initialPath = path.join(dir, initial);
-  if (!(await exists(initialPath))) {
-    return { filename: initial, fullPath: initialPath };
-  }
-  for (let i = 1; i < 10_000; i++) {
-    const candidate = `${baseName}-${i}.md`;
-    const candidatePath = path.join(dir, candidate);
-    if (!(await exists(candidatePath))) {
-      return { filename: candidate, fullPath: candidatePath };
-    }
-  }
-  throw new Error(`Could not find an available filename for ${baseName}`);
-}
 
 export default defineCommand({
   name: 'session.record',
@@ -122,30 +77,14 @@ export default defineCommand({
     usage: 'session.record <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar|adhoc] (--body <text> | --body-file <path>)',
   },
   async run(args) {
-    const sessionsDir = path.join(getInitiativeDir(args.slug), 'sessions');
-    await fs.mkdir(sessionsDir, { recursive: true });
-
-    const stamp = formatStartedStamp(args.started);
-    const baseName = `${stamp}-${args.session_id}`;
-    const { filename, fullPath } = await pickAvailableFilename(
-      sessionsDir,
-      baseName,
-    );
-
     const body = args.body ?? (await fs.readFile(args.body_file!, 'utf8'));
-
-    await writeFrontmatter(
-      fullPath,
-      {
-        session_id: args.session_id,
-        started: args.started,
-        ended: args.ended,
-        track: args.track,
-      },
+    return writeSessionFile({
+      slug: args.slug,
+      session_id: args.session_id,
+      started: args.started,
+      ended: args.ended,
+      track: args.track,
       body,
-      SessionFrontmatterSchema,
-    );
-
-    return { path: fullPath, filename };
+    });
   },
 });
