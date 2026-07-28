@@ -35,6 +35,10 @@ import sessionList from './session-list.js';
 import sessionsBrowser from './sessions-browser.js';
 import wrap from './wrap.js';
 
+// Notes
+import noteAdd from './note-add.js';
+import noteList from './note-list.js';
+
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
 import artifactAddStash from './artifact-add-stash.js';
@@ -101,6 +105,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   sessionList,
   sessionsBrowser,
   wrap,
+  // notes
+  noteAdd,
+  noteList,
   // sources / artifacts
   sourceAdd,
   artifactAddBranch,

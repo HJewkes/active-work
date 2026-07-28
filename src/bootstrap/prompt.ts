@@ -18,6 +18,11 @@ import {
   type MalformedSession,
   type OpenLoop,
 } from '../sessions/open-loops.js';
+import {
+  loadNotesFromDir,
+  type LoadedNote,
+  type LoadedNotes,
+} from '../notes/note-file.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -204,7 +209,7 @@ async function loadArtifacts(initiativeDir: string): Promise<Artifacts> {
   try {
     return await readYaml(artifactsPath, ArtifactsSchema);
   } catch {
-    return { branches: [], stashes: [] };
+    return { branches: [], stashes: [], worktrees: [] };
   }
 }
 
@@ -298,6 +303,40 @@ function renderRecentlyDone(
   if (done.length === 0) return { body: null, count: 0 };
   const body = done.map((t) => `- [${t.id}] ${t.title} — done ${t.done_at}`).join('\n');
   return { body, count: done.length };
+}
+
+/**
+ * Notes are capped by count, never by age. A process lesson from six months ago
+ * is precisely the one about to be re-learned the hard way, so it must not
+ * scroll out of the bootstrap the way "recently done" does. The cap keeps the
+ * section bounded; one compact line each keeps it cheap.
+ */
+const DURABLE_NOTES_LIMIT = 12;
+
+function renderNoteLine(note: LoadedNote): string {
+  const { kind, title, created } = note.frontmatter;
+  return `- [${kind}] ${title} (${created})`;
+}
+
+function renderDurableNotes(loaded: LoadedNotes, slug: string): string | null {
+  const { notes, malformed } = loaded;
+  if (notes.length === 0 && malformed.length === 0) return null;
+  const shown = notes.slice(0, DURABLE_NOTES_LIMIT);
+  const lines = shown.map(renderNoteLine);
+  const overflow = notes.length - shown.length;
+  if (overflow > 0) {
+    lines.push(`(+${overflow} older — \`active-work note list ${slug}\`)`);
+  }
+  if (malformed.length > 0) {
+    lines.push(
+      `(${malformed.length} note file(s) unreadable — run \`active-work note list ${slug}\`)`,
+    );
+  }
+  const heading =
+    overflow > 0
+      ? `# Durable notes (newest ${shown.length} of ${notes.length})`
+      : `# Durable notes (${notes.length})`;
+  return `${heading}\n${lines.join('\n')}`;
 }
 
 /**
@@ -670,10 +709,11 @@ export async function assembleBootstrap(
     slug,
   );
 
-  const [loaded, tasks, artifacts] = await Promise.all([
+  const [loaded, tasks, artifacts, notes] = await Promise.all([
     loadSessionsNewestFirst(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
+    loadNotesFromDir(initiativeDir),
   ]);
   const { sessions, malformed } = loaded;
 
@@ -757,6 +797,9 @@ export async function assembleBootstrap(
       `# Archived (housekeeping)\nMoved ${archivedTaskIds.length} stale done task(s) to tasks/archive/: ${archivedTaskIds.join(', ')}`,
     );
   }
+
+  const notesBody = renderDurableNotes(notes, slug);
+  if (notesBody) sections.push(notesBody);
 
   if (artifactsBody) {
     sections.push(`# Open artifacts\n${artifactsBody}`);
