@@ -148,4 +148,37 @@ describe('runDoctor', () => {
     });
     expect(statusOf(report.checks, 'supervision')).toBe('ok');
   });
+
+  it('reports open-loops ok when there are no initiatives', async () => {
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'open-loops')).toBe('ok');
+  });
+
+  it('warns on a resolves entry pointing at a nonexistent next_step', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', '2026-07-01-s1.md'),
+      [
+        '---',
+        'session_id: s1',
+        'started: 2026-07-01T00:00:00Z',
+        'ended: 2026-07-01T00:00:00Z',
+        'track: canonical',
+        'resolves:',
+        '  - ref: nope#missing',
+        '    outcome: done',
+        '---',
+        '',
+        'narrative',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'open-loops')).toBe('warn');
+    const check = report.checks.find((c) => c.name === 'open-loops')!;
+    expect(check.detail).toContain('alpha/sessions/2026-07-01-s1.md');
+    expect(check.detail).toContain('nope#missing');
+  });
 });

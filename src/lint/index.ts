@@ -3,6 +3,7 @@ import path from 'node:path';
 import { getActiveRoot } from '../utils/paths.js';
 import { lintBrief } from './brief.js';
 import { lintHandoff } from './handoff.js';
+import { lintOpenLoops } from './open-loops.js';
 import { lintTasks } from './task.js';
 import { DEFAULT_LIMITS, type LintFinding, type LintLimits } from './types.js';
 
@@ -11,10 +12,13 @@ export { DEFAULT_LIMITS } from './types.js';
 export { lintHandoff } from './handoff.js';
 export { lintBrief } from './brief.js';
 export { lintTasks } from './task.js';
+export { lintOpenLoops } from './open-loops.js';
 
 interface LintOptions {
   activeRoot?: string;
   limits?: LintLimits;
+  /** Injected for determinism; defaults to `new Date()`. */
+  now?: Date;
 }
 
 /**
@@ -29,16 +33,18 @@ export async function lintSlug(
 ): Promise<LintFinding[]> {
   const activeRoot = options.activeRoot ?? getActiveRoot();
   const limits = options.limits ?? DEFAULT_LIMITS;
+  const now = options.now ?? new Date();
   const initiativeDir = path.join(activeRoot, slug);
-  const [handoff, brief, tasks] = await Promise.all([
+  const [handoff, brief, tasks, openLoops] = await Promise.all([
     lintHandoff(slug, initiativeDir, limits),
     lintBrief(slug, initiativeDir, limits),
     lintTasks(slug, initiativeDir, limits),
+    lintOpenLoops(slug, initiativeDir, limits, now),
   ]);
-  return [...handoff, ...brief, ...tasks];
+  return [...handoff, ...brief, ...tasks, ...openLoops];
 }
 
-async function listInitiativeSlugs(activeRoot: string): Promise<string[]> {
+export async function listInitiativeSlugs(activeRoot: string): Promise<string[]> {
   let entries: Dirent[];
   try {
     entries = await fs.readdir(activeRoot, { withFileTypes: true });
@@ -64,7 +70,11 @@ export async function lintAll(
   const slugs = await listInitiativeSlugs(activeRoot);
   const findings: LintFinding[] = [];
   for (const slug of slugs) {
-    const slugFindings = await lintSlug(slug, { activeRoot, limits: options.limits });
+    const slugFindings = await lintSlug(slug, {
+      activeRoot,
+      limits: options.limits,
+      now: options.now,
+    });
     findings.push(...slugFindings);
   }
   return findings;

@@ -14,6 +14,8 @@ import os from 'node:os';
 import { getActiveRoot } from './utils/paths.js';
 import { readPidFile, isProcessAlive } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
+import { listInitiativeSlugs } from './lint/index.js';
+import { findDanglingResolves } from './sessions/open-loops.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 
@@ -249,6 +251,32 @@ async function checkSupervisor(deps: DoctorDeps): Promise<DoctorCheck> {
   };
 }
 
+/**
+ * Report `resolves` entries across every initiative that point at a
+ * next_step that does not exist (including one that dangles because it
+ * points forward in time — derivation treats both cases identically).
+ */
+async function checkOpenLoops(deps: DoctorDeps): Promise<DoctorCheck> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const slugs = await listInitiativeSlugs(activeRoot);
+  const dangling: string[] = [];
+  for (const slug of slugs) {
+    const initiativeDir = nodePath.join(activeRoot, slug);
+    const found = await findDanglingResolves(initiativeDir);
+    for (const entry of found) {
+      dangling.push(`${slug}/sessions/${entry.sessionFile}.md resolves ${entry.ref}`);
+    }
+  }
+  if (dangling.length === 0) {
+    return { name: 'open-loops', status: 'ok', detail: 'no dangling resolves' };
+  }
+  return {
+    name: 'open-loops',
+    status: 'warn',
+    detail: `dangling resolves pointing at a missing (or later) next_step: ${dangling.join('; ')}`,
+  };
+}
+
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
   const checks = await Promise.all([
@@ -258,6 +286,7 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
     checkMcp(deps),
     checkSkill(deps),
     checkSupervisor(deps),
+    checkOpenLoops(deps),
   ]);
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }
