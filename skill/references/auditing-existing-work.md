@@ -46,7 +46,7 @@ active-work track gh:hjewkes/active-work#42 \
   --title "Dashboard load is sluggish on cold open"
 ```
 
-`active-work track` scaffolds the initiative (`brief.md` with frontmatter, empty `handoff.md`, empty `tasks/`, an `artifacts.yml` seeded with the source ref), then prints the new slug. Open it next:
+`active-work track` scaffolds the initiative (`brief.md` with frontmatter, empty `tasks/`, an `artifacts.yml` seeded with the source ref), then prints the new slug. Open it next:
 
 ```bash
 active-work open dashboard-perf
@@ -82,15 +82,13 @@ After triage, run the audit to catch issues:
 active-work audit
 ```
 
-Audit checks:
+`audit` is a cross-initiative summary, not a rule engine. It returns exactly three things:
 
-- Every active slug has a non-empty `handoff.md`
-- Every active slug has at least one open task (otherwise: should it be archived?)
-- `artifacts.yml` references resolve (PRs exist, branches exist locally, etc.)
-- Last session timestamp isn't stale beyond the configured threshold
-- No frontmatter validation errors
+- `initiatives` — every slug with its title, state, rank, `updated` date, and ship target, sorted by rank then state
+- `parse_errors` — slugs whose `brief.md` frontmatter failed validation, with the error
+- `worktree_conflicts` — worktree paths registered by more than one initiative
 
-Warnings are non-fatal. Fix them iteratively with `active-work set <slug> ...`, `active-work task add`, or `active-work archive`.
+For per-initiative health checks — staleness, loops hanging past 30 days, dangling `next_steps` refs — use `active-work lint` and `active-work doctor` instead. Nothing here is fatal; fix findings with `active-work set <slug> ...`, `active-work task add`, or `active-work archive`.
 
 ## Worked example
 
@@ -118,8 +116,14 @@ $ active-work drop claude:session/0192abc --reason "one-off debugging, no follow
 dropped
 
 $ active-work audit
-brain-inbox-rewrite: handoff.md is empty — add a one-paragraph status
-ok: 1 warning across 2 initiatives
+{
+  "initiatives": [
+    { "slug": "dashboard-perf", "title": "Dashboard cold-load perf", "state": "focused", "rank": 1, "updated": "2026-07-28" },
+    { "slug": "brain-inbox-rewrite", "title": "Brain inbox rewrite", "state": "focused", "rank": 2, "updated": "2026-07-28" }
+  ],
+  "parse_errors": [],
+  "worktree_conflicts": []
+}
 ```
 
 The user is now caught up. Continue with `active-work open dashboard-perf` (or whichever slug they want to push on first).
