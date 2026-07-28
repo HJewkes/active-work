@@ -150,14 +150,27 @@ export async function readMarkdownWithSchema<T>(
 }
 
 /**
- * Read all canonical sessions for an initiative, newest-`ended` first.
- *
- * Sidecar tracks and files that fail to parse are skipped silently — the
- * bootstrap is best-effort and must never crash on a malformed session.
+ * Order sessions newest first, breaking `ended` ties on `started` so a long
+ * mainline session that overlaps a short parallel one still sorts ahead of it.
  */
-async function loadCanonicalSessions(
-  initiativeDir: string,
-): Promise<LoadedSession[]> {
+function compareSessionsNewestFirst(a: LoadedSession, b: LoadedSession): number {
+  const endedDelta =
+    new Date(b.frontmatter.ended).getTime() -
+    new Date(a.frontmatter.ended).getTime();
+  if (endedDelta !== 0) return endedDelta;
+  return (
+    new Date(b.frontmatter.started).getTime() -
+    new Date(a.frontmatter.started).getTime()
+  );
+}
+
+/**
+ * Read every session for an initiative, newest first, regardless of track.
+ *
+ * Files that fail to parse are skipped silently — the bootstrap is best-effort
+ * and must never crash on a malformed session.
+ */
+async function loadSessions(initiativeDir: string): Promise<LoadedSession[]> {
   const sessionsDir = path.join(initiativeDir, 'sessions');
   let entries: string[];
   try {
@@ -174,18 +187,12 @@ async function loadCanonicalSessions(
         fullPath,
         SessionFrontmatterSchema,
       );
-      if (frontmatter.track === 'canonical') {
-        loaded.push({ filename, frontmatter, body });
-      }
+      loaded.push({ filename, frontmatter, body });
     } catch {
       // Skip malformed sessions; bootstrap should remain best-effort.
     }
   }
-  loaded.sort(
-    (a, b) =>
-      new Date(b.frontmatter.ended).getTime() -
-      new Date(a.frontmatter.ended).getTime(),
-  );
+  loaded.sort(compareSessionsNewestFirst);
   return loaded;
 }
 
@@ -547,6 +554,35 @@ function endedDate(iso: string): string {
   return iso.slice(0, 10);
 }
 
+/**
+ * Sessions on a non-canonical track that ended after the newest canonical one.
+ *
+ * These ran alongside the mainline thread, so they're worth surfacing — but
+ * only as pointers: full bodies would crowd out the mainline context.
+ */
+function selectParallelSessions(
+  sessions: LoadedSession[],
+  latestCanonical: LoadedSession | undefined,
+): LoadedSession[] {
+  if (!latestCanonical) return [];
+  const cutoff = new Date(latestCanonical.frontmatter.ended).getTime();
+  return sessions.filter(
+    (s) =>
+      s.frontmatter.track !== 'canonical' &&
+      new Date(s.frontmatter.ended).getTime() > cutoff,
+  );
+}
+
+function renderParallelSessions(sessions: LoadedSession[]): string | null {
+  if (sessions.length === 0) return null;
+  const lines = sessions.map((s) => {
+    const { ended, session_id, track } = s.frontmatter;
+    const summary = firstLine(s.body) ?? '_(empty session body)_';
+    return `- ${endedDate(ended)} (${track}, ${session_id}) — ${summary}`;
+  });
+  return `# Parallel sessions since then\n${lines.join('\n')}`;
+}
+
 async function loadBrief(
   initiativeDir: string,
   slug: string,
@@ -591,12 +627,15 @@ export async function assembleBootstrap(
   );
 
   const [sessions, tasks, artifacts] = await Promise.all([
-    loadCanonicalSessions(initiativeDir),
+    loadSessions(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
   ]);
 
-  const latestSession = sessions[0];
+  const latestSession = sessions.find((s) => s.frontmatter.track === 'canonical');
+  const parallelBody = renderParallelSessions(
+    selectParallelSessions(sessions, latestSession),
+  );
   const briefExcerpt = truncateLines(briefBody, BRIEF_BODY_MAX_LINES) || '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
@@ -642,6 +681,8 @@ export async function assembleBootstrap(
     sections.push(`# Last session\nNo previous sessions recorded.`);
   }
 
+  if (parallelBody) sections.push(parallelBody);
+
   sections.push(`# Tasks (top ${topNTasks} open by priority)\n${tasksBody}`);
 
   if (recentlyDoneBody) {
@@ -670,7 +711,7 @@ export async function assembleBootstrap(
 
   sections.push(
     adhoc
-      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work session record\`.`
+      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work session record --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
       : `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
   );
 

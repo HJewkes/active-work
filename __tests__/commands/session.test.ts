@@ -102,6 +102,22 @@ describe('session.record', () => {
     });
   });
 
+  it('records an adhoc-track session (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const parsed = sessionRecord.args.parse({
+        slug: 'sample-initiative',
+        session_id: 'adhoc-track',
+        started: STARTED,
+        ended: ENDED,
+        track: 'adhoc',
+        body: 'hi\n',
+      });
+      const result = await sessionRecord.run(parsed, makeCtx(activeRoot));
+      const raw = await fs.readFile(result.path, 'utf8');
+      expect(raw).toContain('track: adhoc');
+    });
+  });
+
   it('reads body from --body-file when --body is omitted', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const bodyPath = path.join(activeRoot, 'body.md');

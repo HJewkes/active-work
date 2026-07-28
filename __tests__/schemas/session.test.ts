@@ -52,6 +52,15 @@ describe('SessionFrontmatterSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it.each(['canonical', 'sidecar', 'adhoc'])(
+    'accepts the %s track (AW-36)',
+    (track) => {
+      expect(
+        SessionFrontmatterSchema.safeParse({ ...validBase, track }).success,
+      ).toBe(true);
+    },
+  );
+
   it('rejects invalid track enum', () => {
     const result = SessionFrontmatterSchema.safeParse({ ...validBase, track: 'main' });
     expect(result.success).toBe(false);

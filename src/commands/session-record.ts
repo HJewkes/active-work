@@ -13,7 +13,7 @@ const ArgsSchema = z
     session_id: z.string().min(1),
     started: z.string().min(1),
     ended: z.string().min(1),
-    track: z.enum(['canonical', 'sidecar']).default('canonical'),
+    track: z.enum(['canonical', 'sidecar', 'adhoc']).default('canonical'),
     body: z.string().optional(),
     body_file: z.string().optional(),
   })
@@ -107,7 +107,8 @@ export default defineCommand({
       },
       track: {
         long: '--track',
-        description: "'canonical' | 'sidecar' (default: canonical)",
+        description:
+          "'canonical' (mainline thread) | 'sidecar' (folded/derived) | 'adhoc' (parallel ad-hoc work) (default: canonical)",
       },
       body: {
         long: '--body',
@@ -118,7 +119,7 @@ export default defineCommand({
         description: 'Path to a file containing the markdown body',
       },
     },
-    usage: 'session.record <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar] (--body <text> | --body-file <path>)',
+    usage: 'session.record <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar|adhoc] (--body <text> | --body-file <path>)',
   },
   async run(args) {
     const sessionsDir = path.join(getInitiativeDir(args.slug), 'sessions');

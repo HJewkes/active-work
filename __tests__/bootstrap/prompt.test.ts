@@ -13,6 +13,36 @@ const FIXTURE_NOW = new Date('2026-05-12T16:00:00Z');
 
 const offlineOpts = { includeLiveStatus: false } as const;
 
+interface SessionFixture {
+  session_id: string;
+  started: string;
+  ended: string;
+  track: 'canonical' | 'sidecar' | 'adhoc';
+  body: string;
+}
+
+/** Write a session file into the fixture initiative, named like `session record` does. */
+async function writeSession(
+  activeRoot: string,
+  session: SessionFixture,
+): Promise<void> {
+  const hhmm = session.started.slice(11, 13) + session.started.slice(14, 16);
+  const name = `${session.started.slice(0, 10)}-${hhmm}-${session.session_id}.md`;
+  const front = [
+    '---',
+    `session_id: ${session.session_id}`,
+    `started: ${session.started}`,
+    `ended: ${session.ended}`,
+    `track: ${session.track}`,
+    '---',
+    '',
+  ].join('\n');
+  await fs.writeFile(
+    path.join(activeRoot, SAMPLE_SLUG, 'sessions', name),
+    front + session.body,
+  );
+}
+
 describe('assembleBootstrap', () => {
   it('returns a prompt that includes the slug and brief title', async () => {
     await withTempActiveRoot(async (activeRoot) => {
@@ -302,6 +332,118 @@ describe('assembleBootstrap', () => {
       expect(prompt).toContain('- Bootstrap: ');
       expect(metadata.bootstrap_at).toMatch(
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+      );
+    });
+  });
+
+  it('tells ad-hoc sessions to record on the adhoc track (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        adhoc: true,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('active-work session record --track adhoc');
+    });
+  });
+
+  it('omits the parallel-sessions block when there are none (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Parallel sessions');
+    });
+  });
+
+  it('lists adhoc and sidecar sessions newer than the last canonical one (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'adhoc001',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'adhoc',
+        body: '\n- Patched the flaky launcher test\n- Second line stays hidden\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'side001',
+        started: '2026-05-11T12:00:00Z',
+        ended: '2026-05-11T13:00:00Z',
+        track: 'sidecar',
+        body: '- Folded in a discovered branch\n',
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      // The narrative slot still belongs to the newest canonical session.
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-10-1430-fixture001.md',
+      );
+      expect(prompt).toContain('# Last session (2026-05-10, fixture001)');
+
+      expect(prompt).toContain('# Parallel sessions since then');
+      expect(prompt).toContain(
+        '- 2026-05-11 (adhoc, adhoc001) — - Patched the flaky launcher test',
+      );
+      expect(prompt).toContain('- 2026-05-11 (sidecar, side001) — - Folded in a discovered branch');
+      expect(prompt).not.toContain('Second line stays hidden');
+    });
+  });
+
+  it('excludes parallel sessions older than the last canonical one (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'old-adhoc',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T10:00:00Z',
+        track: 'adhoc',
+        body: '- Ancient ad-hoc detour\n',
+      });
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Parallel sessions');
+      expect(prompt).not.toContain('old-adhoc');
+    });
+  });
+
+  it('breaks equal `ended` ties on `started`, newest first (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'long-run',
+        started: '2026-05-11T08:00:00Z',
+        ended: '2026-05-11T18:00:00Z',
+        track: 'canonical',
+        body: '- Long mainline session\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'short-run',
+        started: '2026-05-11T17:30:00Z',
+        ended: '2026-05-11T18:00:00Z',
+        track: 'canonical',
+        body: '- Short mainline session\n',
+      });
+      const { metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-11-1730-short-run.md',
       );
     });
   });

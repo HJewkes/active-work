@@ -19,7 +19,7 @@ export const SessionFrontmatterSchema = z
     session_id: z.string().min(1),
     started: iso8601,
     ended: iso8601,
-    track: z.enum(['canonical', 'sidecar']),
+    track: z.enum(['canonical', 'sidecar', 'adhoc']),
   })
   .superRefine((value, ctx) => {
     const started = new Date(value.started).getTime();
