@@ -85,6 +85,32 @@ export interface SessionIssues {
 }
 
 /**
+ * A loop that was closed, and how.
+ *
+ * `outcome` and `note` were write-only until AW-59: derivation reduced every
+ * resolve to the bare fact that a ref had closed, so a loop deliberately
+ * abandoned — with the reason the schema *requires* for exactly that case —
+ * explained itself to nobody. An abandonment is a decision, and decisions are
+ * the part of a ledger worth keeping.
+ */
+export interface ResolvedLoop {
+  ref: string;
+  text: string;
+  kind: 'task' | 'pr' | 'prose';
+  outcome: 'done' | 'abandoned';
+  note?: string;
+  /** Stem of the session that opened the loop. */
+  sessionFile: string;
+  /** Stem of the session that closed it. */
+  closedBy: string;
+  openedAt: string;
+  /** ISO timestamp — the closing session's `ended`. */
+  closedAt: string;
+  /** Whole days between `closedAt` and the injected `now`. */
+  ageDays: number;
+}
+
+/**
  * A session file that parsed. This is the single in-memory representation of a
  * session: bootstrap renders from it and derivation reasons over it, so the two
  * can never disagree about which files parsed or what they contained.
@@ -112,9 +138,17 @@ interface LoopEntry {
   session: LoadedSession;
 }
 
+/** How one loop was closed, carried through derivation instead of discarded. */
+interface Resolution {
+  outcome: 'done' | 'abandoned';
+  note?: string;
+  closedBy: string;
+  closedAt: string;
+}
+
 interface Analysis {
   loops: LoopEntry[];
-  resolvedRefs: Set<string>;
+  resolutions: Map<string, Resolution>;
   dangling: DanglingResolve[];
   malformed: MalformedSession[];
 }
@@ -252,26 +286,40 @@ function classifyResolve(
   return null;
 }
 
+/**
+ * Later resolutions win. Two sessions may both close one loop — the ledger
+ * permits it — and the most recent statement of outcome is the current one.
+ */
 function applyResolves(
   sessions: LoadedSession[],
   loops: Map<string, LoopEntry>,
-): { resolvedRefs: Set<string>; dangling: DanglingResolve[] } {
-  const resolvedRefs = new Set<string>();
+): { resolutions: Map<string, Resolution>; dangling: DanglingResolve[] } {
+  const resolutions = new Map<string, Resolution>();
   const dangling: DanglingResolve[] = [];
   for (const session of sessions) {
     for (const entry of session.frontmatter.resolves) {
       const kind = classifyResolve(entry.ref, session, loops);
-      if (kind === null) resolvedRefs.add(entry.ref);
-      else dangling.push({ sessionFile: session.sessionFile, ref: entry.ref, kind });
+      if (kind !== null) {
+        dangling.push({ sessionFile: session.sessionFile, ref: entry.ref, kind });
+        continue;
+      }
+      const existing = resolutions.get(entry.ref);
+      if (existing && existing.closedAt > session.frontmatter.ended) continue;
+      resolutions.set(entry.ref, {
+        outcome: entry.outcome,
+        ...(entry.note !== undefined ? { note: entry.note } : {}),
+        closedBy: session.sessionFile,
+        closedAt: session.frontmatter.ended,
+      });
     }
   }
-  return { resolvedRefs, dangling };
+  return { resolutions, dangling };
 }
 
 function analyzeLoaded({ sessions, malformed }: LoadedSessions): Analysis {
   const loops = indexLoops(sessions);
-  const { resolvedRefs, dangling } = applyResolves(sessions, loops);
-  return { loops: [...loops.values()], resolvedRefs, dangling, malformed };
+  const { resolutions, dangling } = applyResolves(sessions, loops);
+  return { loops: [...loops.values()], resolutions, dangling, malformed };
 }
 
 async function analyze(initiativeDir: string): Promise<Analysis> {
@@ -320,9 +368,9 @@ export function deriveOpenLoopsFrom(
   loaded: LoadedSessions,
   opts: DeriveOptions,
 ): OpenLoop[] {
-  const { loops, resolvedRefs } = analyzeLoaded(loaded);
+  const { loops, resolutions } = analyzeLoaded(loaded);
   return loops
-    .filter((entry) => !resolvedRefs.has(entry.ref) && !isAutoResolved(entry, opts))
+    .filter((entry) => !resolutions.has(entry.ref) && !isAutoResolved(entry, opts))
     .map((entry) => toOpenLoop(entry, opts.now))
     .sort(
       (a, b) =>
@@ -337,6 +385,58 @@ export async function deriveOpenLoops(
   opts: DeriveOptions,
 ): Promise<OpenLoop[]> {
   return deriveOpenLoopsFrom(await loadSessionsFromDir(initiativeDir), opts);
+}
+
+function toResolvedLoop(
+  entry: LoopEntry,
+  resolution: Resolution,
+  now: Date,
+): ResolvedLoop {
+  const ageMs = now.getTime() - new Date(resolution.closedAt).getTime();
+  return {
+    ref: entry.ref,
+    text: entry.step.text,
+    kind: entry.step.kind,
+    outcome: resolution.outcome,
+    ...(resolution.note !== undefined ? { note: resolution.note } : {}),
+    sessionFile: entry.session.sessionFile,
+    closedBy: resolution.closedBy,
+    openedAt: entry.session.ended,
+    closedAt: resolution.closedAt,
+    ageDays: Math.max(0, Math.floor(ageMs / MS_PER_DAY)),
+  };
+}
+
+/**
+ * Loops that were explicitly closed, newest first.
+ *
+ * Excludes auto-resolution (a done task, a merged PR): those carry no stated
+ * outcome or reason, and inferring "done" for them would put words in the
+ * operator's mouth.
+ */
+export function deriveResolvedLoopsFrom(
+  loaded: LoadedSessions,
+  opts: DeriveOptions,
+): ResolvedLoop[] {
+  const { loops, resolutions } = analyzeLoaded(loaded);
+  return loops
+    .flatMap((entry) => {
+      const resolution = resolutions.get(entry.ref);
+      return resolution ? [toResolvedLoop(entry, resolution, opts.now)] : [];
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.closedAt).getTime() - new Date(a.closedAt).getTime() ||
+        a.ref.localeCompare(b.ref),
+    );
+}
+
+/** Explicitly closed loops for an initiative, newest first. */
+export async function deriveResolvedLoops(
+  initiativeDir: string,
+  opts: DeriveOptions,
+): Promise<ResolvedLoop[]> {
+  return deriveResolvedLoopsFrom(await loadSessionsFromDir(initiativeDir), opts);
 }
 
 /** `resolves` entries that did not close a loop, each tagged with why. */

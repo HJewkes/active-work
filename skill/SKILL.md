@@ -43,7 +43,8 @@ Then sweep your own session for everything durable and file it:
 | What you have | Where it goes |
 |---|---|
 | Unfinished work, open PRs, unanswered questions | `--next-steps` (the open-loop ledger) |
-| Prior loops this session closed | `--resolves` |
+| Prior loops this session closed | `--resolves` with `outcome: done` |
+| A thread you're deliberately dropping | `--resolves` with `outcome: abandoned` **and a note saying why** — the note is required, and it surfaces in the bootstrap for 14 days so nobody proposes the dropped thing again |
 | Anything actionable | `active-work task add` before wrapping, then `--tasks-filed` |
 | Process improvements, gotchas, "avoid this next time", non-actionable FYIs | `--notes` (lands in `sources/notes/`, indexed in every future bootstrap) |
 | Uncommitted work, unpushed branches, stashes, worktree state | recorded automatically by `wrap`; add `holding` context if the bare fact isn't enough |
@@ -62,6 +63,7 @@ Auto-prompt the wrap when you detect the user winding down ("I'm done", "let's s
 
 - A brief excerpt (the brief's prose body, truncated to 40 lines)
 - **Open loops** — unresolved `next_steps` from prior sessions, with the age of each hang
+- **Abandoned loops** from the last 14 days, each with the reason it was dropped (`active-work loops <slug> --state abandoned` for the full history)
 - The most recent session summary
 - The top N open tasks (rank-sorted)
 - Recently-done tasks from the last 14 days, if any

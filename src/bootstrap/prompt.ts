@@ -12,11 +12,13 @@ import {
 } from '../schemas/artifacts.js';
 import {
   deriveOpenLoopsFrom,
+  deriveResolvedLoopsFrom,
   loadSessionsFromDir,
   type LoadedSession,
   type LoadedSessions,
   type MalformedSession,
   type OpenLoop,
+  type ResolvedLoop,
 } from '../sessions/open-loops.js';
 import {
   loadNotesFromDir,
@@ -398,6 +400,27 @@ function renderOpenLoops(
   return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
 }
 
+/**
+ * Only abandonments are rendered, and only recent ones. A loop closed `done`
+ * needs no explanation — the work happened. A loop closed `abandoned` is a
+ * decision not to do something, and a future session that cannot see it will
+ * propose the abandoned thing again.
+ */
+function renderAbandonedLoops(
+  resolved: ResolvedLoop[],
+  windowDays: number,
+): string | null {
+  const abandoned = resolved.filter(
+    (loop) => loop.outcome === 'abandoned' && loop.ageDays <= windowDays,
+  );
+  if (abandoned.length === 0) return null;
+  const lines = abandoned.map((loop) => {
+    const head = `- ${loop.text} (dropped ${loop.closedAt.slice(0, 10)})`;
+    return loop.note ? `${head}\n  why: ${loop.note}` : head;
+  });
+  return `# Abandoned in the last ${windowDays} days (${abandoned.length})\n${lines.join('\n')}`;
+}
+
 const LIVE_RENDER_LIMIT = 10;
 
 function renderStaticBranchLine(branch: BranchEntry): string {
@@ -720,6 +743,7 @@ export async function assembleBootstrap(
   // `mergedPrs` is deliberately unsupplied: derivation must stay offline
   // because bootstrap runs it on every launch.
   const openLoops = deriveOpenLoopsFrom(loaded, { now, tasks });
+  const resolvedLoops = deriveResolvedLoopsFrom(loaded, { now, tasks });
 
   const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
   // No canonical session recorded for this initiative — fall back to the
@@ -763,6 +787,9 @@ export async function assembleBootstrap(
   );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
   sections.push(renderOpenLoops(openLoops, malformed, sessions[0]));
+
+  const abandonedBody = renderAbandonedLoops(resolvedLoops, recentlyDoneDays);
+  if (abandonedBody) sections.push(abandonedBody);
 
   if (narrativeSession) {
     const sessionExcerpt =

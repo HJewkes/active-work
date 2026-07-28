@@ -31,6 +31,7 @@ import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
 
 // Sessions
+import loops from './loops.js';
 import preflight from './preflight.js';
 import sessionList from './session-list.js';
 import sessionsBrowser from './sessions-browser.js';
@@ -105,6 +106,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   // sessions
   sessionList,
   sessionsBrowser,
+  loops,
   preflight,
   wrap,
   // notes

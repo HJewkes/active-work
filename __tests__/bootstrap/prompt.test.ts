@@ -454,6 +454,92 @@ describe('assembleBootstrap', () => {
     });
   });
 
+  // AW-59: an abandonment is a decision. A session that cannot see it will
+  // propose the abandoned thing again.
+  it('renders an abandoned loop with the reason it was dropped', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const opener = await writeSession(activeRoot, {
+        session_id: 'opener1',
+        started: '2026-05-08T09:00:00Z',
+        ended: '2026-05-08T10:00:00Z',
+        track: 'canonical',
+        next_steps: [
+          { id: 'n1', text: 'rewrite the picker in ink', kind: 'prose' },
+        ],
+        body: 'opened\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'closer1',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'canonical',
+        resolves: [
+          {
+            ref: `${opener}#n1`,
+            outcome: 'abandoned',
+            note: 'ink pulls in 40 deps for one screen',
+          },
+        ],
+        body: 'closed\n',
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('# Abandoned in the last 14 days (1)');
+      expect(prompt).toContain('rewrite the picker in ink');
+      expect(prompt).toContain('why: ink pulls in 40 deps for one screen');
+      // It closed, so it must not also be reported as hanging.
+      expect(prompt).not.toContain(`ref ${opener}#n1`);
+    });
+  });
+
+  it('omits loops closed as done from the abandoned section', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const opener = await writeSession(activeRoot, {
+        session_id: 'opener2',
+        started: '2026-05-08T09:00:00Z',
+        ended: '2026-05-08T10:00:00Z',
+        track: 'canonical',
+        next_steps: [{ id: 'n1', text: 'land the fix', kind: 'prose' }],
+        body: 'opened\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'closer2',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'canonical',
+        resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+        body: 'closed\n',
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).not.toContain('# Abandoned in the last');
+    });
+  });
+
+  it('omits the abandoned section entirely when there is nothing to show', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Abandoned in the last');
+    });
+  });
+
   it('lists adhoc and sidecar sessions newer than the last canonical one (AW-36)', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       await writeSession(activeRoot, {
