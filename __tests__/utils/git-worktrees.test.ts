@@ -105,13 +105,16 @@ describe('discoverWorktrees', () => {
 });
 
 describe('readWorktreeState', () => {
+  // Routed by range rather than call order: readUnpushed runs concurrently
+  // with readAheadBehind, so a counter-based fake is not deterministic.
   it('reports a dirty tree with a file count and ahead/behind', async () => {
-    let revListCalls = 0;
     setGitRunner(
       gitFake({
+        '--not': () => ({ code: 0, stdout: '1\n' }),
+        '@{u}..HEAD': () => ({ code: 0, stdout: '3\n' }),
+        'HEAD..@{u}': () => ({ code: 0, stdout: '2\n' }),
         status: () => ({ code: 0, stdout: ' M src/a.ts\n?? src/b.ts\n' }),
         'rev-parse': () => ({ code: 0, stdout: 'feat/thing\n' }),
-        'rev-list': () => ({ code: 0, stdout: revListCalls++ === 0 ? '3\n' : '2\n' }),
       }),
     );
     expect(await readWorktreeState('/repo/wt')).toEqual({
@@ -121,6 +124,8 @@ describe('readWorktreeState', () => {
       branch: 'feat/thing',
       ahead: 3,
       behind: 2,
+      has_upstream: true,
+      unpushed: 1,
     });
   });
 

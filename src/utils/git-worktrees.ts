@@ -30,8 +30,16 @@ export interface WorktreeState {
   dirty: boolean;
   files_changed: number;
   branch: string | null;
+  /** Null when there is no upstream — meaning unknown, never "nothing to push". */
   ahead: number | null;
   behind: number | null;
+  has_upstream: boolean;
+  /**
+   * Commits reachable from HEAD that exist on no remote at all. This is the
+   * honest "what would be lost if this disk died" number, and unlike `ahead`
+   * it is defined for a branch that was never pushed anywhere.
+   */
+  unpushed: number | null;
 }
 
 export interface StashRef {
@@ -118,10 +126,21 @@ async function readBranch(worktreePath: string): Promise<string | null> {
   }
 }
 
-async function countRevs(worktreePath: string, range: string): Promise<number | null> {
+async function countRevs(
+  worktreePath: string,
+  range: string,
+  extra: string[] = [],
+): Promise<number | null> {
   const git = getGitRunner();
   try {
-    const res = await git('git', ['-C', worktreePath, 'rev-list', '--count', range]);
+    const res = await git('git', [
+      '-C',
+      worktreePath,
+      'rev-list',
+      '--count',
+      range,
+      ...extra,
+    ]);
     if (res.code !== 0) return null;
     const count = Number(res.stdout.trim());
     return Number.isFinite(count) ? count : null;
@@ -163,17 +182,34 @@ const ABSENT: WorktreeState = {
   branch: null,
   ahead: null,
   behind: null,
+  has_upstream: false,
+  unpushed: null,
 };
+
+/** Commits on HEAD that no remote has. Defined even with no upstream set. */
+async function readUnpushed(worktreePath: string): Promise<number | null> {
+  return countRevs(worktreePath, 'HEAD', ['--not', '--remotes']);
+}
 
 /** Live, non-persisted state of a single worktree. */
 export async function readWorktreeState(worktreePath: string): Promise<WorktreeState> {
   if (!(await isPresent(worktreePath))) return { ...ABSENT };
-  const [{ dirty, files_changed }, branch, { ahead, behind }] = await Promise.all([
+  const [{ dirty, files_changed }, branch, { ahead, behind }, unpushed] = await Promise.all([
     readDirty(worktreePath),
     readBranch(worktreePath),
     readAheadBehind(worktreePath),
+    readUnpushed(worktreePath),
   ]);
-  return { present: true, dirty, files_changed, branch, ahead, behind };
+  return {
+    present: true,
+    dirty,
+    files_changed,
+    branch,
+    ahead,
+    behind,
+    has_upstream: ahead !== null,
+    unpushed,
+  };
 }
 
 /** Stashes present in `repoPath`, newest first. Empty on failure. */
