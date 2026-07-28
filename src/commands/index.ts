@@ -74,6 +74,7 @@ import mcpLogs from './mcp-logs.js';
 import setup from './setup.js';
 import uninstall from './uninstall.js';
 import doctor from './doctor.js';
+import migrate from './migrate.js';
 import sync from './sync.js';
 
 const ALL_COMMANDS: AnyCommand[] = [
@@ -133,6 +134,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   setup,
   uninstall,
   doctor,
+  migrate,
   sync,
 ];
 

@@ -19,6 +19,12 @@ export interface SessionWriteInput {
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
   no_loops?: true;
+  /**
+   * Override the resolved active root. Migrations are handed the root they
+   * operate on as an argument and must not fall back to the process-wide
+   * `getActiveRoot()`, which would write into the operator's live data.
+   */
+  activeRoot?: string;
 }
 
 export interface SessionWriteResult {
@@ -37,6 +43,32 @@ function formatStartedStamp(started: string): string {
   const hh = parsed.getUTCHours().toString().padStart(2, '0');
   const min = parsed.getUTCMinutes().toString().padStart(2, '0');
   return `${yyyy}-${mm}-${dd}-${hh}${min}`;
+}
+
+/**
+ * The filename stem a session gets from its `started` + `session_id`, minus
+ * the `.md` extension and any de-duplication suffix. This is the first half
+ * of a loop ref (`<stem>#<next_step id>`), so callers that need to predict a
+ * session's path — the v2→v3 migration, which keys idempotence on the exact
+ * target path — must derive it from here rather than reimplementing it.
+ */
+export function buildSessionStem(started: string, sessionId: string): string {
+  return `${formatStartedStamp(started)}-${sessionId}`;
+}
+
+/** Absolute path a session with this stem would occupy on a first write. */
+export function sessionFilePathForStem(
+  slug: string,
+  stem: string,
+  activeRoot?: string,
+): string {
+  return path.join(resolveSessionsDir(slug, activeRoot), `${stem}.md`);
+}
+
+function resolveSessionsDir(slug: string, activeRoot?: string): string {
+  const dir =
+    activeRoot === undefined ? getInitiativeDir(slug) : path.join(activeRoot, slug);
+  return path.join(dir, 'sessions');
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -75,10 +107,10 @@ async function pickAvailableFilename(
 export async function writeSessionFile(
   input: SessionWriteInput,
 ): Promise<SessionWriteResult> {
-  const sessionsDir = path.join(getInitiativeDir(input.slug), 'sessions');
+  const sessionsDir = resolveSessionsDir(input.slug, input.activeRoot);
   await fs.mkdir(sessionsDir, { recursive: true });
 
-  const baseName = `${formatStartedStamp(input.started)}-${input.session_id}`;
+  const baseName = buildSessionStem(input.started, input.session_id);
   const { filename, fullPath } = await pickAvailableFilename(sessionsDir, baseName);
 
   await writeFrontmatter(

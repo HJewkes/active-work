@@ -120,8 +120,7 @@ describe('track command', () => {
       expect(brief).toContain('owner: hjewkes');
       expect(brief).toContain('Source: feat/new-thing');
 
-      const handoff = await fs.readFile(path.join(dir, 'handoff.md'), 'utf8');
-      expect(handoff).toContain('feat/new-thing');
+      await expect(fs.access(path.join(dir, 'handoff.md'))).rejects.toThrow();
 
       const artifacts = await fs.readFile(path.join(dir, 'artifacts.yml'), 'utf8');
       expect(artifacts).toContain('branches:');

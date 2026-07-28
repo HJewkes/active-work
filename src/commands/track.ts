@@ -97,11 +97,6 @@ export default defineCommand({
       BriefFrontmatterSchema,
     );
 
-    await atomicWrite(
-      path.join(dir, 'handoff.md'),
-      buildHandoff(title, args.ref),
-    );
-
     const artifacts = ArtifactsSchema.parse({});
     await atomicWrite(path.join(dir, 'artifacts.yml'), yamlStringify(artifacts));
     await atomicWrite(path.join(dir, 'sources', '.gitkeep'), '');
@@ -142,12 +137,3 @@ function buildBriefBody(title: string, ref: string): string {
   ].join('\n');
 }
 
-function buildHandoff(title: string, ref: string): string {
-  return [
-    '# Current state',
-    '',
-    `New initiative \`${title}\` tracked from discover hit \`${ref}\`.`,
-    'No work landed yet — fill this in after the first working session.',
-    '',
-  ].join('\n');
-}

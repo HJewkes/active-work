@@ -35,7 +35,6 @@ describe('new', () => {
 
       const briefPath = path.join(root, 'alpha-init', 'brief.md');
       expect((await fs.stat(briefPath)).isFile()).toBe(true);
-      expect((await fs.stat(path.join(root, 'alpha-init', 'handoff.md'))).isFile()).toBe(true);
       expect(
         (await fs.stat(path.join(root, 'alpha-init', 'artifacts.yml'))).isFile(),
       ).toBe(true);
@@ -181,14 +180,13 @@ describe('touch', () => {
 });
 
 describe('paths', () => {
-  it('returns the 6 expected paths', async () => {
+  it('returns the 5 expected paths', async () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'pth', title: 'P' }, ctxFor(root));
       const out = await pathsCmd.run({ slug: 'pth' }, ctxFor(root));
       const dir = path.join(root, 'pth');
       expect(out).toEqual({
         brief: path.join(dir, 'brief.md'),
-        handoff: path.join(dir, 'handoff.md'),
         tasks_dir: path.join(dir, 'tasks'),
         sessions_dir: path.join(dir, 'sessions'),
         artifacts: path.join(dir, 'artifacts.yml'),
