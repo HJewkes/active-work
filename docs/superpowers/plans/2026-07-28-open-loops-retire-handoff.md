@@ -109,23 +109,43 @@ started: '2026-07-16T...'
 ended: '2026-07-16T...'
 track: canonical | sidecar | adhoc
 next_steps:
-  - id: n1                    # unique within session; global ref = <session_id>#n1
+  - id: n1                    # unique within session
     text: 'Wire cost rollup into the daemon'
     kind: task | pr | prose
     ref: AW-24                # task id, PR number, or omitted for prose
 resolves:
-  - ref: 8f2c1a44#n3          # a prior session's next_step
+  - ref: 2026-07-07-0914-8f2c1a44-...#n3   # a prior session's next_step
     outcome: done | abandoned
     note: 'superseded by the SQLite index'   # required when abandoned
 ```
+
+**Loop refs key off the session FILENAME stem, not `session_id`.** `session_id`
+is *not* unique within an initiative: `pickAvailableFilename` in
+`session-record.ts` appends `-1`/`-2` when one session records more than once,
+and the live data already has duplicates in five initiatives —
+voltras-workspace 12, codewatch 9, audiobook 3, claude-channels 3, relay 1.
+`<session_id>#<id>` would be ambiguous. The filename stem is unique by
+construction.
 
 ### Derivation
 
 `openLoops(initiative)` = every `next_step` across all sessions, minus:
 
 - any with a matching `resolves` entry in any later session, and
-- **auto-resolved** loops: `kind: task` whose task is `status: done`; `kind: pr`
-  whose artifact is merged. This is the payoff for typing them.
+- **auto-resolved** loops: `kind: task` whose task is `status: done`. This is the
+  payoff for typing them.
+
+**`kind: pr` does NOT auto-resolve from `artifacts.yml`.** There is no `prs[]` to
+match against — it was removed in schema v2 (AW-15) precisely because persisted PR
+state went stale; status is fetched live via `gh pr list --head <branch>`.
+Derivation runs on every bootstrap and must stay pure, fast, and offline, so it
+never shells out. PR loops close against a caller-supplied `mergedPrs` list when
+one is available, and are resolved manually otherwise.
+
+**Auto-resolution does not latch.** If a task is reopened, its loop resurrects
+carrying its original age. Derivation stays a pure function of current state; a
+latch would be stored state invisible in the data, which is the problem this
+design exists to remove.
 
 Each surviving loop carries `age = now − originating session.ended`. One session may
 resolve loops from many prior sessions — that edge is the lineage record, and it is
@@ -163,11 +183,18 @@ session record + `next_steps` + `resolves` + `brief.updated` touch. A half-finis
 wrap-up becomes impossible rather than merely discouraged. `session record` remains
 for narrative-only writes.
 
+**`wrap` refuses to complete with no loops.** It errors unless at least one
+`next_step` or `resolve` is filed, or `--no-loops` is passed explicitly. This is
+the backstop for the design's one soft spot: loops are only as good as what gets
+filed, and an empty ledger would otherwise be indistinguishable from a clean one.
+With the gate in place an empty bootstrap is a *deliberate* statement, so bootstrap
+renders it plainly with no warning annotation, and the zero-loops lint rule is
+unnecessary. The friction is acceptable — using `wrap` well already requires
+understanding the tooling.
+
 ### Lint / doctor
 
-- warn: open loop older than N days (default 30)
-- warn: a wrap recorded zero `next_steps` **and** zero `resolves` — usually means the
-  agent skipped the thinking
+- warn: open loop older than **30 days**
 - doctor: dangling `resolves.ref` pointing at a nonexistent next_step
 - doctor: empty initiative scaffolds (see cleanup below)
 - delete `src/lint/handoff.ts`
@@ -232,9 +259,21 @@ Correct regardless of the above; ship first:
 - **Agent compliance.** Loops are only as good as what the agent files at wrap. The
   zero-loops lint is the backstop.
 
+## Resolved decisions (2026-07-28)
+
+- **Stale-loop warning at 30 days.** Age is always visible at bootstrap regardless.
+- **`abandoned` loops vanish** from bootstrap, recoverable from the session file that
+  abandoned them. The live view shows only what is actually open.
+- **Auto-resolution does not latch** — a reopened task resurrects its loop.
+- **`wrap` requires loops or an explicit `--no-loops`**, so an empty ledger is
+  deliberate rather than sloppy. Replaces the proposed zero-loops lint rule.
+- **`track: adhoc` is a third enum value** (shipped in AW-36).
+- **Loop refs key off the session filename stem**, not `session_id`.
+
 ## Open questions
 
-- Threshold for the stale-loop warning — 30 days assumed.
-- Should `abandoned` loops stay visible in a collapsed tail, or vanish? Assumed vanish,
-  recoverable from the session file.
-- Does `track: adhoc` warrant a third enum value, or is `sidecar` sufficient?
+- Do loop refs survive the migration? Synthetic migration sessions must produce
+  stable refs, or every migrated loop dangles. Gate for AW-38.
+- Tie-breaking for "only a later session may resolve an earlier one" when two
+  sessions share an `ended` timestamp — `claude-channels` already has a pair, and
+  folded sessions share timestamps by construction.
