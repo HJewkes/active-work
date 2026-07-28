@@ -14,6 +14,7 @@ import {
   type Artifacts,
   type BranchEntry,
 } from '../schemas/artifacts.js';
+import { deriveOpenLoops, type OpenLoop } from '../sessions/open-loops.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -100,6 +101,7 @@ export interface BootstrapMetadata {
   last_session?: { filename: string; ended: string };
   time_since_last_session_human?: string;
   open_task_count: number;
+  open_loop_count: number;
   recently_done_count: number;
   bootstrap_at: string;
 }
@@ -318,6 +320,37 @@ function renderRecentlyDone(
   if (done.length === 0) return { body: null, count: 0 };
   const body = done.map((t) => `- [${t.id}] ${t.title} — done ${t.done_at}`).join('\n');
   return { body, count: done.length };
+}
+
+const NO_OPEN_LOOPS = 'Nothing hanging — no unresolved loops.';
+
+/** Prefix the loop text with its target so a task/PR loop is actionable at a glance. */
+function loopLabel(loop: OpenLoop): string {
+  if (loop.targetRef === undefined) return loop.text;
+  const target =
+    loop.kind === 'pr' ? `PR #${loop.targetRef.replace(/^#/, '')}` : loop.targetRef;
+  return `${target} ${loop.text}`;
+}
+
+/**
+ * Loops are already unresolved and oldest-first; `ageDays` comes from the
+ * derivation so the render never recomputes time. The full `ref` is printed
+ * rather than an abbreviated session id because it is the handle `wrap
+ * --resolve` takes.
+ */
+function renderOpenLoops(loops: OpenLoop[]): string {
+  if (loops.length === 0) return `# Open loops\n${NO_OPEN_LOOPS}`;
+  const labels = loops.map(loopLabel);
+  const ageWidth = Math.max(...loops.map((l) => String(l.ageDays).length));
+  const labelWidth = Math.max(...labels.map((l) => l.length));
+  const lines = loops.map((loop, i) => {
+    const age = `[${String(loop.ageDays).padStart(ageWidth)}d]`;
+    const label = labels[i]!.padEnd(labelWidth);
+    const from = loop.openedAt.slice(0, 10);
+    return `- ${age} ${label}   (from ${from}, ref ${loop.ref})`;
+  });
+  const oldest = loops[0]!.ageDays;
+  return `# Open loops (${loops.length} hanging, oldest ${oldest}d)\n${lines.join('\n')}`;
 }
 
 const LIVE_RENDER_LIMIT = 10;
@@ -637,6 +670,10 @@ export async function assembleBootstrap(
     loadArtifacts(initiativeDir),
   ]);
 
+  // `mergedPrs` is deliberately unsupplied: derivation must stay offline
+  // because bootstrap runs it on every launch.
+  const openLoops = await deriveOpenLoops(initiativeDir, { now, tasks });
+
   const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
   // No canonical session recorded for this initiative — fall back to the
   // newest session of any track rather than reporting "no sessions" when
@@ -678,6 +715,7 @@ export async function assembleBootstrap(
       : `Starting a session on \`${slug}\` (${brief.title}).`,
   );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
+  sections.push(renderOpenLoops(openLoops));
 
   if (narrativeSession) {
     const sessionExcerpt =
@@ -737,6 +775,7 @@ export async function assembleBootstrap(
     slug,
     brief_title: brief.title,
     open_task_count: openTaskCount,
+    open_loop_count: openLoops.length,
     recently_done_count: recentlyDoneCount,
     bootstrap_at: bootstrapAt,
   };
