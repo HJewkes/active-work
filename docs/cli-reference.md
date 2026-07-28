@@ -80,6 +80,11 @@ Commands:
                                 root.
   unpause <slug>                Move a paused initiative back to backburner.
   worktree                      worktree commands
+  wrap [options] <slug>         Close out a session in one atomic step: write
+                                the session file with its open-loop ledger
+                                (next_steps / resolves) and stamp the brief's
+                                updated date. Refuses an empty ledger unless
+                                --no-loops is passed.
   help [command]                display help for command
 
 Run `active-work <command> --help` for command-specific options.
@@ -494,26 +499,6 @@ Options:
   -h, --help       display help for command
 ```
 
-## active-work session record
-
-```
-Usage: active-work session record [options] <slug>
-
-Write a session summary file under <slug>/sessions/
-
-Arguments:
-  slug                  slug (string)
-
-Options:
-  --session-id <value>  Claude session identifier
-  --started <value>     ISO 8601 session start timestamp
-  --ended <value>       ISO 8601 session end timestamp
-  --track <value>       'canonical' | 'sidecar' (default: canonical)
-  --body <value>        Raw markdown body
-  --body-file <value>   Path to a file containing the markdown body
-  -h, --help            display help for command
-```
-
 ## active-work sessions
 
 ```
@@ -802,4 +787,36 @@ Arguments:
 
 Options:
   -h, --help  display help for command
+```
+
+## active-work wrap
+
+```
+Usage: active-work wrap [options] <slug>
+
+Close out a session in one atomic step: write the session file with its
+open-loop ledger (next_steps / resolves) and stamp the brief's updated date.
+Refuses an empty ledger unless --no-loops is passed.
+
+Arguments:
+  slug                  slug (string)
+
+Options:
+  --session-id <value>  Claude session identifier
+  --started <value>     ISO 8601 session start timestamp
+  --ended <value>       ISO 8601 session end timestamp
+  --track <value>       'canonical' (mainline thread) | 'sidecar'
+                        (folded/derived) | 'adhoc' (parallel ad-hoc work)
+                        (default: canonical)
+  --body <value>        Raw markdown body (session narrative)
+  --body-file <value>   Path to a file containing the markdown body
+  --next-steps <value>  JSON array of loops this session opens:
+                        [{"id","text","kind":"task|pr|prose","ref"?}]
+  --resolves <value>    JSON array of loops this session closes:
+                        [{"ref":"<session-file-stem>#<id>","outcome":"done|abandoned","note"?}]
+  --no-loops            Assert that this session leaves nothing hanging. Records
+                        no_loops: true so a deliberate empty ledger is
+                        distinguishable from an unfiled one. Mutually exclusive
+                        with --next-steps / --resolves.
+  -h, --help            display help for command
 ```

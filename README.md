@@ -43,15 +43,23 @@ active-work task add my-feature --title "Write tests" --priority 2
 aw my-feature            # launches `claude` with the bootstrap prompt
 ```
 
-`active-work new` scaffolds the directory: brief.md (frontmatter + body), handoff.md, an empty tasks/ folder, and an artifacts.yml. `active-work task add` writes a YAML task file with a sequential ID derived from the initiative's `task_prefix` (e.g. `MF-1`, `MF-2`). `aw <slug>` is the launcher: it calls `active-work open <slug>` under the hood to assemble the bootstrap prompt — brief excerpt, full handoff, last session, top open tasks, open artifacts, time since last session — then execs `claude` with that prompt in the initiative's worktree. Run `aw` with no slug and it resolves the initiative from your current directory — if the cwd sits inside an initiative's registered worktree, it opens that one straight away; otherwise (or with `aw --pick`) it drops to the interactive picker. Use `active-work open <slug>` directly when you want the prompt without launching Claude. To re-seed context inside an already-running session, `active-work prompt [slug]` prints the same bootstrap prompt (cwd-resolved, no side effects); the bundled `/aw-prompt` Claude Code slash command runs it and injects the output. Add `--adhoc` to any of these (`aw <slug> --adhoc`) to reframe the prompt for ad-hoc work on the workstream — the context becomes background rather than a directive to continue the handoff, and the session waits for you to describe the task.
+`active-work new` scaffolds the directory: brief.md (frontmatter + body), handoff.md, an empty tasks/ folder, and an artifacts.yml. `active-work task add` writes a YAML task file with a sequential ID derived from the initiative's `task_prefix` (e.g. `MF-1`, `MF-2`). `aw <slug>` is the launcher: it calls `active-work open <slug>` under the hood to assemble the bootstrap prompt — brief excerpt, open loops with the age of each hang, last session, top open tasks, open artifacts, time since last session — then execs `claude` with that prompt in the initiative's worktree. Run `aw` with no slug and it resolves the initiative from your current directory — if the cwd sits inside an initiative's registered worktree, it opens that one straight away; otherwise (or with `aw --pick`) it drops to the interactive picker. Use `active-work open <slug>` directly when you want the prompt without launching Claude. To re-seed context inside an already-running session, `active-work prompt [slug]` prints the same bootstrap prompt (cwd-resolved, no side effects); the bundled `/aw-prompt` Claude Code slash command runs it and injects the output. Add `--adhoc` to any of these (`aw <slug> --adhoc`) to reframe the prompt for ad-hoc work on the workstream — the context becomes background rather than a directive to continue the handoff, and the session waits for you to describe the task.
 
 When you wrap up a session, capture it:
 
 ```bash
-active-work session record my-feature --session-id <id> \
+active-work wrap my-feature --session-id <id> \
   --started 2026-05-12T09:00:00Z --ended 2026-05-12T11:30:00Z \
-  --track canonical --body "Wired up the OAuth flow; tests still pending."
+  --track canonical --body "Wired up the OAuth flow; tests still pending." \
+  --next-steps '[{"id":"n1","text":"Finish the OAuth tests","kind":"task","ref":"MF-4"}]'
 ```
+
+`wrap` writes the session, files the ledger, and bumps `brief.updated` in one
+locked operation. It records what this session left hanging (`--next-steps`) and
+what it closed from earlier sessions (`--resolves`); the unresolved remainder is
+what the next bootstrap shows as open loops, with the age of each hang. It
+refuses an empty ledger unless you state deliberately that nothing is hanging —
+see `active-work wrap --help`.
 
 The skill's "wrap up" / "I'm done" trigger phrases prompt Claude to do this for you automatically.
 
@@ -110,7 +118,7 @@ The most-used surface, grouped by purpose. Run `active-work <command> --help` fo
 | Tasks | `active-work task add <slug> --title ... --priority N` | Add a task |
 | Tasks | `active-work task done <slug> <id>` | Mark a task done |
 | Tasks | `active-work task list [slug]` | List tasks for an initiative or across all |
-| Sessions | `active-work session record <slug> ...` | Capture a session summary |
+| Sessions | `active-work wrap <slug> ...` | End a session: summary + open-loop ledger + brief bump |
 | Sessions | `aw <slug>` | Launch Claude with the bootstrap prompt |
 | Sessions | `active-work open <slug>` | Print the bootstrap prompt to stdout (no claude spawn) |
 | Daemon | `active-work mcp serve [--detach]` | Start the HTTP + MCP daemon |
