@@ -1,33 +1,7 @@
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { deriveOpenLoops } from '../sessions/open-loops.js';
-import { TaskSchema, type Task } from '../schemas/task.js';
-import { readYaml } from '../utils/yaml-io.js';
+import { loadTasks } from './load-tasks.js';
 import { DEFAULT_LIMITS, type LintFinding, type LintLimits } from './types.js';
-
-/**
- * Tasks must be supplied to `deriveOpenLoops` or `kind: 'task'` loops never
- * auto-resolve, and the rule warns about loops whose task is already done.
- * Malformed files are skipped: lint is warn-only and must not throw.
- */
-async function loadTasks(initiativeDir: string): Promise<Task[]> {
-  const tasksDir = path.join(initiativeDir, 'tasks');
-  let entries: string[];
-  try {
-    entries = await fs.readdir(tasksDir);
-  } catch {
-    return [];
-  }
-  const tasks: Task[] = [];
-  for (const filename of entries.filter((n) => n.endsWith('.yml') || n.endsWith('.yaml'))) {
-    try {
-      tasks.push(await readYaml(path.join(tasksDir, filename), TaskSchema));
-    } catch {
-      // Skip malformed task files.
-    }
-  }
-  return tasks;
-}
 
 /**
  * Warn about open loops that have aged past the cap.

@@ -15,7 +15,9 @@ import { getActiveRoot } from './utils/paths.js';
 import { readPidFile, isProcessAlive } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
 import { listInitiativeSlugs } from './lint/index.js';
+import { loadTasks } from './lint/load-tasks.js';
 import {
+  deriveOpenLoops,
   findSessionIssues,
   type DanglingKind,
   type DanglingResolve,
@@ -276,6 +278,35 @@ function openLoopsCheck(byKind: Map<DanglingKind, string[]>): DoctorCheck {
   return { name: 'open-loops', status: 'warn', detail: parts.join('; ') };
 }
 
+function taskRefsCheck(entries: string[]): DoctorCheck {
+  if (entries.length === 0) {
+    return { name: 'task-refs', status: 'ok', detail: 'every next_steps task ref resolves' };
+  }
+  return {
+    name: 'task-refs',
+    status: 'warn',
+    // Mirrors dangling resolves, but for the other half of the ledger: unlike
+    // a bad `resolves` ref, a bad `next_steps` ref is never rejected — the
+    // loop just stays open and silent forever.
+    detail: `next_steps reference a task that does not exist: ${entries.join('; ')}`,
+  };
+}
+
+/** `kind: 'task'` open loops whose `ref` names no task in this initiative. */
+async function collectBadTaskRefs(
+  slug: string,
+  initiativeDir: string,
+  now: Date,
+): Promise<string[]> {
+  const tasks = await loadTasks(initiativeDir);
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const loops = await deriveOpenLoops(initiativeDir, { now, tasks });
+  return loops
+    .filter((loop) => loop.kind === 'task' && loop.targetRef !== undefined)
+    .filter((loop) => !taskIds.has(loop.targetRef as string))
+    .map((loop) => `${slug}/sessions/${loop.sessionFile}.md ${loop.ref} -> ${loop.targetRef} (no such task)`);
+}
+
 function sessionFilesCheck(malformed: string[]): DoctorCheck {
   if (malformed.length === 0) {
     return { name: 'session-files', status: 'ok', detail: 'every session file parses' };
@@ -298,12 +329,16 @@ async function checkSessions(deps: DoctorDeps): Promise<DoctorCheck[]> {
   const slugs = await listInitiativeSlugs(activeRoot);
   const byKind = new Map<DanglingKind, string[]>();
   const malformed: string[] = [];
+  const badTaskRefs: string[] = [];
+  const now = new Date();
   for (const slug of slugs) {
-    const issues = await findSessionIssues(nodePath.join(activeRoot, slug));
+    const initiativeDir = nodePath.join(activeRoot, slug);
+    const issues = await findSessionIssues(initiativeDir);
     for (const entry of issues.dangling) collectDangling(byKind, slug, entry);
     for (const entry of issues.malformed) malformed.push(describeMalformed(slug, entry));
+    badTaskRefs.push(...(await collectBadTaskRefs(slug, initiativeDir, now)));
   }
-  return [openLoopsCheck(byKind), sessionFilesCheck(malformed)];
+  return [openLoopsCheck(byKind), sessionFilesCheck(malformed), taskRefsCheck(badTaskRefs)];
 }
 
 function collectDangling(

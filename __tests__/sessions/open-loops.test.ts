@@ -7,8 +7,10 @@ import YAML from 'yaml';
 
 import {
   deriveOpenLoops,
+  deriveOpenLoopsFrom,
   findDanglingResolves,
   findSessionIssues,
+  loadSessionsFromDir,
 } from '../../src/sessions/open-loops.js';
 import type { Task } from '../../src/schemas/task.js';
 
@@ -522,5 +524,70 @@ describe('findSessionIssues', () => {
 
     const issues = await findSessionIssues(initiativeDir);
     expect(issues.malformed[0]?.reason).toMatch(/invalid YAML/);
+  });
+});
+
+describe('deriveOpenLoopsFrom', () => {
+  it('derives without touching the disk again', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'a loop', kind: 'prose' }],
+    });
+    const loaded = await loadSessionsFromDir(initiativeDir);
+
+    // Removing the source proves the second pass reads nothing: a loader that
+    // re-read the directory here would come back empty.
+    rmSync(path.join(initiativeDir, 'sessions'), { recursive: true, force: true });
+    const loops = deriveOpenLoopsFrom(loaded, { now: NOW });
+
+    expect(loops.map((l) => l.ref)).toEqual([`${opener}#n1`]);
+  });
+
+  it('matches deriveOpenLoops for the same directory', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [
+        { id: 'n1', text: 'first', kind: 'prose' },
+        { id: 'n2', text: 'second', kind: 'prose' },
+      ],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-22T10:00:00Z',
+      resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+    });
+
+    const fromDir = await deriveOpenLoops(initiativeDir, { now: NOW });
+    const preloaded = deriveOpenLoopsFrom(
+      await loadSessionsFromDir(initiativeDir),
+      { now: NOW },
+    );
+
+    expect(preloaded).toEqual(fromDir);
+    expect(preloaded.map((l) => l.ref)).toEqual([`${opener}#n2`]);
+  });
+});
+
+describe('loadSessionsFromDir', () => {
+  it('exposes the body so bootstrap renders what derivation parsed', async () => {
+    await writeSession({ session_id: 'a', ended: '2026-07-20T10:00:00Z' });
+    const { sessions, malformed } = await loadSessionsFromDir(initiativeDir);
+    expect(malformed).toEqual([]);
+    expect(sessions[0]?.body.trim()).toBe('narrative');
+  });
+
+  it('reports an unreadable file instead of silently skipping it', async () => {
+    await fs.writeFile(
+      path.join(initiativeDir, 'sessions', 'broken.md'),
+      'no frontmatter here\n',
+      'utf8',
+    );
+    const { sessions, malformed } = await loadSessionsFromDir(initiativeDir);
+    expect(sessions).toEqual([]);
+    expect(malformed).toEqual([
+      { file: 'broken.md', reason: 'no frontmatter block' },
+    ]);
   });
 });

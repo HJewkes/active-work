@@ -84,12 +84,26 @@ export interface SessionIssues {
   malformed: MalformedSession[];
 }
 
-interface LoadedSession {
+/**
+ * A session file that parsed. This is the single in-memory representation of a
+ * session: bootstrap renders from it and derivation reasons over it, so the two
+ * can never disagree about which files parsed or what they contained.
+ */
+export interface LoadedSession {
+  /** Filename without `.md` — the identity half of a loop `ref`. */
   sessionFile: string;
   sessionId: string;
   ended: string;
   endedMs: number;
   frontmatter: SessionFrontmatter;
+  /** Markdown after the frontmatter block; rendered by bootstrap. */
+  body: string;
+}
+
+/** Everything one pass over `sessions/` yielded, including what it could not read. */
+export interface LoadedSessions {
+  sessions: LoadedSession[];
+  malformed: MalformedSession[];
 }
 
 interface LoopEntry {
@@ -139,7 +153,7 @@ async function loadSession(fullPath: string, sessionFile: string): Promise<LoadR
   }
   const result = SessionFrontmatterSchema.safeParse(parsed);
   if (!result.success) return fail(`invalid frontmatter: ${summarizeIssues(result.error)}`);
-  return { ok: true, session: toLoadedSession(sessionFile, result.data) };
+  return { ok: true, session: toLoadedSession(sessionFile, result.data, match[2] ?? '') };
 }
 
 function summarizeIssues(error: {
@@ -153,6 +167,7 @@ function summarizeIssues(error: {
 function toLoadedSession(
   sessionFile: string,
   frontmatter: SessionFrontmatter,
+  body: string,
 ): LoadedSession {
   return {
     sessionFile,
@@ -160,12 +175,19 @@ function toLoadedSession(
     ended: frontmatter.ended,
     endedMs: new Date(frontmatter.ended).getTime(),
     frontmatter,
+    body,
   };
 }
 
-async function loadSessions(
+/**
+ * Read every session under `initiativeDir/sessions`, filename-ascending.
+ *
+ * The one loader for session files. Callers that need a different order sort a
+ * copy; this order is what makes `dangling` reporting stable.
+ */
+export async function loadSessionsFromDir(
   initiativeDir: string,
-): Promise<{ sessions: LoadedSession[]; malformed: MalformedSession[] }> {
+): Promise<LoadedSessions> {
   const sessionsDir = path.join(initiativeDir, 'sessions');
   let entries: string[];
   try {
@@ -246,11 +268,14 @@ function applyResolves(
   return { resolvedRefs, dangling };
 }
 
-async function analyze(initiativeDir: string): Promise<Analysis> {
-  const { sessions, malformed } = await loadSessions(initiativeDir);
+function analyzeLoaded({ sessions, malformed }: LoadedSessions): Analysis {
   const loops = indexLoops(sessions);
   const { resolvedRefs, dangling } = applyResolves(sessions, loops);
   return { loops: [...loops.values()], resolvedRefs, dangling, malformed };
+}
+
+async function analyze(initiativeDir: string): Promise<Analysis> {
+  return analyzeLoaded(await loadSessionsFromDir(initiativeDir));
 }
 
 /** `#57` and `57` are the same PR; normalize before comparing. */
@@ -285,12 +310,17 @@ function toOpenLoop(entry: LoopEntry, now: Date): OpenLoop {
   };
 }
 
-/** Unresolved loops for an initiative, oldest first. */
-export async function deriveOpenLoops(
-  initiativeDir: string,
+/**
+ * Unresolved loops from already-parsed sessions, oldest first.
+ *
+ * Callers holding a `loadSessionsFromDir` result (bootstrap does — it renders
+ * the same sessions) use this so the files are read and parsed exactly once.
+ */
+export function deriveOpenLoopsFrom(
+  loaded: LoadedSessions,
   opts: DeriveOptions,
-): Promise<OpenLoop[]> {
-  const { loops, resolvedRefs } = await analyze(initiativeDir);
+): OpenLoop[] {
+  const { loops, resolvedRefs } = analyzeLoaded(loaded);
   return loops
     .filter((entry) => !resolvedRefs.has(entry.ref) && !isAutoResolved(entry, opts))
     .map((entry) => toOpenLoop(entry, opts.now))
@@ -299,6 +329,14 @@ export async function deriveOpenLoops(
         new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime() ||
         a.ref.localeCompare(b.ref),
     );
+}
+
+/** Unresolved loops for an initiative, oldest first. */
+export async function deriveOpenLoops(
+  initiativeDir: string,
+  opts: DeriveOptions,
+): Promise<OpenLoop[]> {
+  return deriveOpenLoopsFrom(await loadSessionsFromDir(initiativeDir), opts);
 }
 
 /** `resolves` entries that did not close a loop, each tagged with why. */

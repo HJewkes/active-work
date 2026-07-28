@@ -255,4 +255,102 @@ describe('runDoctor', () => {
     const report = await runDoctor(healthyDeps());
     expect(statusOf(report.checks, 'session-files')).toBe('ok');
   });
+
+  it('reports task-refs ok when there are no initiatives', async () => {
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'task-refs')).toBe('ok');
+  });
+
+  it('warns when next_steps references a task that does not exist', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await writeSessionFile(initiativeDir, '2026-07-01-s1.md', [
+      'session_id: s1',
+      'started: 2026-07-01T00:00:00Z',
+      'ended: 2026-07-01T00:00:00Z',
+      'track: canonical',
+      'next_steps:',
+      '  - id: n1',
+      '    text: ship the thing',
+      '    kind: task',
+      '    ref: AW-999',
+    ]);
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'task-refs')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('alpha/sessions/2026-07-01-s1.md');
+    expect(check.detail).toContain('2026-07-01-s1#n1');
+    expect(check.detail).toContain('AW-999');
+  });
+
+  it('is silent when next_steps references a task that exists but is not done', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(path.join(initiativeDir, 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(initiativeDir, 'tasks'), { recursive: true });
+    await writeSessionFile(initiativeDir, '2026-07-01-s1.md', [
+      'session_id: s1',
+      'started: 2026-07-01T00:00:00Z',
+      'ended: 2026-07-01T00:00:00Z',
+      'track: canonical',
+      'next_steps:',
+      '  - id: n1',
+      '    text: ship the thing',
+      '    kind: task',
+      '    ref: AW-1',
+    ]);
+    await fs.writeFile(
+      path.join(initiativeDir, 'tasks', 'AW-1.yml'),
+      [
+        'id: AW-1',
+        'title: Ship the thing',
+        'priority: 1',
+        'status: open',
+        'created: 2026-07-01',
+        'updated: 2026-07-01',
+        'done_at: null',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'task-refs')).toBe('ok');
+  });
+
+  it('does not confuse a bad task ref with a cross-initiative id', async () => {
+    const alphaDir = path.join(activeRoot, 'alpha');
+    const betaDir = path.join(activeRoot, 'beta');
+    await fs.mkdir(path.join(alphaDir, 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(betaDir, 'tasks'), { recursive: true });
+    await writeSessionFile(alphaDir, '2026-07-01-s1.md', [
+      'session_id: s1',
+      'started: 2026-07-01T00:00:00Z',
+      'ended: 2026-07-01T00:00:00Z',
+      'track: canonical',
+      'next_steps:',
+      '  - id: n1',
+      '    text: cross-initiative reference',
+      '    kind: task',
+      '    ref: VW-68',
+    ]);
+    await fs.writeFile(
+      path.join(betaDir, 'tasks', 'VW-68.yml'),
+      [
+        'id: VW-68',
+        'title: Lives in beta, not alpha',
+        'priority: 1',
+        'status: open',
+        'created: 2026-07-01',
+        'updated: 2026-07-01',
+        'done_at: null',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'task-refs')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('alpha/sessions/2026-07-01-s1.md');
+    expect(check.detail).toContain('VW-68');
+  });
 });

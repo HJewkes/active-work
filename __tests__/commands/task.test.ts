@@ -112,6 +112,71 @@ describe('task.add', () => {
     });
   });
 
+  // AW-52: a corrupt task_seq used to fall back to max(on-disk) + 1 — the exact
+  // allocator the field replaced — or throw an anonymous zod dump.
+  describe('corrupt task_seq (AW-52)', () => {
+    // Written as raw text: the validating writer would refuse these values,
+    // which is precisely how they only ever arrive by hand-editing.
+    async function injectTaskSeq(root: string, literal: string): Promise<void> {
+      const briefPath = path.join(root, SLUG, 'brief.md');
+      const text = await fs.readFile(briefPath, 'utf8');
+      await fs.writeFile(
+        briefPath,
+        text.replace('task_prefix: SI', `task_prefix: SI\ntask_seq: ${literal}`),
+        'utf8',
+      );
+    }
+
+    it.each([
+      ['negative', '-4'],
+      ['zero', '0'],
+      ['a string', "'twelve'"],
+      ['null', 'null'],
+      ['a float', '3.7'],
+      ['beyond the safe integer range', '9007199254740993'],
+      ['infinite', '1e400'],
+    ])('refuses to allocate when task_seq is %s', async (_label, literal) => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, literal);
+
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(/Invalid task_seq/);
+
+        // The message must name the field, the file, and the repair.
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(
+          /brief\.md.*active-work set sample-initiative task_seq <n>/s,
+        );
+
+        // Nothing is allocated, so no id can be reissued below the mark.
+        const files = await fs.readdir(path.join(root, SLUG, 'tasks'));
+        expect(files.sort()).toEqual(['SI-1.yml', 'SI-2.yml']);
+      });
+    });
+
+    it('names the on-disk high-water mark as the repair floor', async () => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, '-4');
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(/highest id on disk is SI-2.*at least 2/s);
+      });
+    });
+
+    it('still allocates from a valid persisted mark', async () => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, '12');
+        const created = await taskAdd.run(
+          { slug: SLUG, title: 'fine' },
+          ctx(root),
+        );
+        expect(created.id).toBe('SI-13');
+      });
+    });
+  });
+
   it('serializes concurrent adds under the initiative lock', async () => {
     await withTempActiveRoot(async (root) => {
       const results = await Promise.all(

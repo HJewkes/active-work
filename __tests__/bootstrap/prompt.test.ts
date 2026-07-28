@@ -34,6 +34,7 @@ interface SessionFixture {
   body: string;
   next_steps?: NextStepFixture[];
   resolves?: ResolveFixture[];
+  no_loops?: true;
 }
 
 function nextStepLines(steps: NextStepFixture[]): string[] {
@@ -76,6 +77,7 @@ async function writeSession(
     `started: ${session.started}`,
     `ended: ${session.ended}`,
     `track: ${session.track}`,
+    ...(session.no_loops ? ['no_loops: true'] : []),
     ...nextStepLines(session.next_steps ?? []),
     ...resolveLines(session.resolves ?? []),
     '---',
@@ -580,7 +582,7 @@ describe('assembleBootstrap open loops', () => {
     });
   });
 
-  it('states plainly that nothing is hanging when no loops are open', async () => {
+  it('says nothing was asserted clear when no session filed a no_loops marker', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const { prompt, metadata } = await assembleBootstrap({
         activeRoot,
@@ -588,8 +590,34 @@ describe('assembleBootstrap open loops', () => {
         now: FIXTURE_NOW,
         ...offlineOpts,
       });
-      expect(prompt).toContain('# Open loops\nNothing hanging — no unresolved loops.');
+      expect(prompt).toContain(
+        '# Open loops\nNothing hanging — no unresolved loops, but no session has asserted the ledger is clear.',
+      );
       expect(metadata.open_loop_count).toBe(0);
+    });
+  });
+
+  it('credits the newest session when it asserted the ledger is clear', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'all-clear',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Confirmed nothing hanging\n',
+        no_loops: true,
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain(
+        '# Open loops\nNothing hanging — the 2026-05-11 session asserted the ledger is clear.',
+      );
     });
   });
 
@@ -675,6 +703,102 @@ describe('assembleBootstrap open loops', () => {
       expect(loopsIdx).toBeGreaterThan(-1);
       expect(loopsIdx).toBeLessThan(sessionIdx);
       expect(sessionIdx).toBeLessThan(tasksIdx);
+    });
+  });
+});
+
+/**
+ * Bootstrap and the loop derivation must agree about which session files
+ * parsed. When they disagree, bootstrap renders a healthy recent session while
+ * every loop it opened silently vanishes from the ledger — the failure mode is
+ * invisible precisely because the prompt still looks correct.
+ */
+describe('assembleBootstrap session parsing', () => {
+  const LOOP_FM = [
+    'session_id: edge',
+    'started: 2026-05-09T09:00:00Z',
+    'ended: 2026-05-09T16:00:00Z',
+    'track: canonical',
+    'next_steps:',
+    '  - id: s1',
+    '    text: edge case loop',
+    '    kind: prose',
+  ].join('\n');
+
+  async function bootstrapWithRawSession(
+    activeRoot: string,
+    contents: string,
+  ): Promise<string> {
+    await fs.writeFile(
+      path.join(activeRoot, SAMPLE_SLUG, 'sessions', '2026-05-09-0900-edge.md'),
+      contents,
+      'utf8',
+    );
+    const { prompt } = await assembleBootstrap({
+      activeRoot,
+      slug: SAMPLE_SLUG,
+      now: FIXTURE_NOW,
+      ...offlineOpts,
+    });
+    return prompt;
+  }
+
+  const variants: Record<string, string> = {
+    plain: `---\n${LOOP_FM}\n---\n\n- Edge body\n`,
+    'utf-8 BOM': `\uFEFF---\n${LOOP_FM}\n---\n\n- Edge body\n`,
+    'delimiter with trailing space': `--- \n${LOOP_FM}\n---\n\n- Edge body\n`,
+  };
+
+  for (const [label, contents] of Object.entries(variants)) {
+    it(`renders and derives consistently for a session with a ${label}`, async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const prompt = await bootstrapWithRawSession(activeRoot, contents);
+        // The two consumers agree: the loop reaches the ledger exactly when
+        // bootstrap did not have to report the file as unreadable.
+        const unreadable = prompt.includes('session file(s) unreadable');
+        expect(prompt.includes('edge case loop')).toBe(!unreadable);
+      });
+    });
+  }
+
+  it('annotates the open loops heading when a session file cannot be read', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const prompt = await bootstrapWithRawSession(
+        activeRoot,
+        '---\nsession_id: broken\nended: not-a-timestamp\n---\n\nbroken\n',
+      );
+      expect(prompt).toContain(
+        '# Open loops (1 session file(s) unreadable — run `active-work doctor`)',
+      );
+    });
+  });
+
+  it('renders the malformed file without dropping the loops of readable ones', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'healthy',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T16:00:00Z',
+        track: 'canonical',
+        body: '- Healthy\n',
+        next_steps: [{ id: 's1', text: 'surviving loop', kind: 'prose' }],
+      });
+      await fs.writeFile(
+        path.join(activeRoot, SAMPLE_SLUG, 'sessions', '2026-05-09-1000-bad.md'),
+        'not a session at all\n',
+        'utf8',
+      );
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('surviving loop');
+      expect(prompt).toContain('1 session file(s) unreadable');
+      expect(metadata.open_loop_count).toBe(1);
     });
   });
 });

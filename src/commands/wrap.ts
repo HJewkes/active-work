@@ -10,6 +10,10 @@ import {
   type SessionResolve,
 } from '../schemas/session.js';
 import { writeSessionFile } from '../sessions/session-file.js';
+import {
+  findDanglingResolves,
+  type DanglingKind,
+} from '../sessions/open-loops.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
@@ -57,16 +61,25 @@ const ArgsSchema = z
     }
   });
 
+const RejectedResolveSchema = z.object({
+  ref: z.string(),
+  kind: z.enum(['missing', 'not-prior', 'self']),
+});
+
 const ResultSchema = z.object({
   path: z.string(),
   filename: z.string(),
   next_steps: z.number().int().nonnegative(),
-  resolves: z.number().int().nonnegative(),
+  // Not `resolves`: the count of refs passed says nothing about how many closed
+  // a loop, and the caller acts on the difference.
+  resolves_applied: z.number().int().nonnegative(),
+  resolves_rejected: z.array(RejectedResolveSchema),
   updated: z.string(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
+type RejectedResolve = z.infer<typeof RejectedResolveSchema>;
 
 function parseLedger<T>(
   raw: string | T[] | undefined,
@@ -134,7 +147,7 @@ async function writeWrap(
   briefPath: string,
   body: string,
   ledger: { next_steps: NextStep[]; resolves: SessionResolve[] },
-): Promise<Result> {
+): Promise<{ path: string; filename: string; updated: string }> {
   const session = await writeSessionFile({
     slug: args.slug,
     session_id: args.session_id,
@@ -148,16 +161,56 @@ async function writeWrap(
   });
   try {
     const updated = await stampBriefUpdated(briefPath);
-    return {
-      ...session,
-      next_steps: ledger.next_steps.length,
-      resolves: ledger.resolves.length,
-      updated,
-    };
+    return { ...session, updated };
   } catch (err) {
     await fs.rm(session.path, { force: true });
     throw err;
   }
+}
+
+/**
+ * Which `resolves` entries of the session just written closed nothing, and why.
+ *
+ * Derived by re-running the canonical derivation over the initiative rather
+ * than re-implementing the rules: a second classifier that disagreed with
+ * `deriveOpenLoops` would report a close that bootstrap still shows as open.
+ */
+async function rejectedResolves(
+  initiativeDir: string,
+  filename: string,
+): Promise<RejectedResolve[]> {
+  const stem = filename.replace(/\.md$/, '');
+  const dangling = await findDanglingResolves(initiativeDir);
+  return dangling
+    .filter((entry) => entry.sessionFile === stem)
+    .map(({ ref, kind }) => ({ ref, kind }));
+}
+
+const REMEDY: Record<DanglingKind, string> = {
+  missing:
+    'no loop carries that ref — check the session-file stem and the next_steps id',
+  'not-prior':
+    'the loop was opened by a session that did not end strictly before this one — re-file the resolve from a later session',
+  self: 'a session cannot close a loop it opened — carry it as a next_step instead',
+};
+
+/**
+ * The session is on disk by the time this runs and the message says so: an
+ * agent that typo'd one ref should re-file that ref, not re-run the wrap and
+ * duplicate the narrative.
+ */
+function rejectionReport(
+  result: Result,
+  rejected: RejectedResolve[],
+  total: number,
+): string {
+  const lines = rejected.map((r) => `  - ${r.ref} (${r.kind}): ${REMEDY[r.kind]}`);
+  return (
+    `Session written to ${result.path}, but ${rejected.length} of ${total} ` +
+    `--resolves entries closed no loop:\n${lines.join('\n')}\n` +
+    'The session file and brief.updated are committed; re-file only the rejected ' +
+    'refs from a later session.'
+  );
 }
 
 export default defineCommand<Args, Result>({
@@ -217,7 +270,8 @@ export default defineCommand<Args, Result>({
       'active-work wrap <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar|adhoc] (--body <text> | --body-file <path>) (--next-steps <json> | --resolves <json> | --no-loops)',
   },
   async run(args, ctx) {
-    const briefPath = path.join(ctx.activeRoot, args.slug, 'brief.md');
+    const initiativeDir = path.join(ctx.activeRoot, args.slug);
+    const briefPath = path.join(initiativeDir, 'brief.md');
     try {
       await fs.access(briefPath);
     } catch {
@@ -231,8 +285,20 @@ export default defineCommand<Args, Result>({
     requireLedger(ledger, args.no_loops ?? false);
     const body = args.body ?? (await fs.readFile(args.body_file!, 'utf8'));
 
-    return withFileLock(getLockPath(args.slug), () =>
-      writeWrap(args, briefPath, body, ledger),
-    );
+    return withFileLock(getLockPath(args.slug), async () => {
+      const written = await writeWrap(args, briefPath, body, ledger);
+      const total = ledger.resolves.length;
+      const rejected = await rejectedResolves(initiativeDir, written.filename);
+      const result: Result = {
+        ...written,
+        next_steps: ledger.next_steps.length,
+        resolves_applied: total - rejected.length,
+        resolves_rejected: rejected,
+      };
+      if (rejected.length > 0) {
+        throw new ValidationError(rejectionReport(result, rejected, total));
+      }
+      return result;
+    });
   },
 });

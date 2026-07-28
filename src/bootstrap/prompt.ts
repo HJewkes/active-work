@@ -6,15 +6,18 @@ import {
 } from '../schemas/brief.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
 import {
-  SessionFrontmatterSchema,
-  type SessionFrontmatter,
-} from '../schemas/session.js';
-import {
   ArtifactsSchema,
   type Artifacts,
   type BranchEntry,
 } from '../schemas/artifacts.js';
-import { deriveOpenLoops, type OpenLoop } from '../sessions/open-loops.js';
+import {
+  deriveOpenLoopsFrom,
+  loadSessionsFromDir,
+  type LoadedSession,
+  type LoadedSessions,
+  type MalformedSession,
+  type OpenLoop,
+} from '../sessions/open-loops.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -111,12 +114,6 @@ export interface BootstrapOutput {
   metadata: BootstrapMetadata;
 }
 
-interface LoadedSession {
-  filename: string;
-  frontmatter: SessionFrontmatter;
-  body: string;
-}
-
 const FRONTMATTER_DELIM = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 /**
@@ -167,35 +164,16 @@ function compareSessionsNewestFirst(a: LoadedSession, b: LoadedSession): number 
 }
 
 /**
- * Read every session for an initiative, newest first, regardless of track.
+ * Every session for an initiative, newest first, regardless of track.
  *
- * Files that fail to parse are skipped silently — the bootstrap is best-effort
- * and must never crash on a malformed session.
+ * Parsing is delegated to `loadSessionsFromDir` — the same loader derivation
+ * uses — so bootstrap can never render a session whose loops the ledger
+ * dropped, or vice versa. Unparseable files are not skipped silently: they
+ * come back as `malformed` and are surfaced in the Open loops heading.
  */
-async function loadSessions(initiativeDir: string): Promise<LoadedSession[]> {
-  const sessionsDir = path.join(initiativeDir, 'sessions');
-  let entries: string[];
-  try {
-    entries = await fs.readdir(sessionsDir);
-  } catch {
-    return [];
-  }
-  const mdFiles = entries.filter((n) => n.endsWith('.md'));
-  const loaded: LoadedSession[] = [];
-  for (const filename of mdFiles) {
-    const fullPath = path.join(sessionsDir, filename);
-    try {
-      const { frontmatter, body } = await readMarkdownWithSchema(
-        fullPath,
-        SessionFrontmatterSchema,
-      );
-      loaded.push({ filename, frontmatter, body });
-    } catch {
-      // Skip malformed sessions; bootstrap should remain best-effort.
-    }
-  }
-  loaded.sort(compareSessionsNewestFirst);
-  return loaded;
+async function loadSessionsNewestFirst(initiativeDir: string): Promise<LoadedSessions> {
+  const { sessions, malformed } = await loadSessionsFromDir(initiativeDir);
+  return { sessions: [...sessions].sort(compareSessionsNewestFirst), malformed };
 }
 
 async function loadTasks(initiativeDir: string): Promise<Task[]> {
@@ -322,7 +300,28 @@ function renderRecentlyDone(
   return { body, count: done.length };
 }
 
-const NO_OPEN_LOOPS = 'Nothing hanging — no unresolved loops.';
+/**
+ * An empty ledger has two very different meanings and the operator has to be
+ * able to tell them apart: a session that ran `wrap --no-loops` positively
+ * asserted nothing was hanging, whereas an empty derivation may simply mean
+ * nobody ever filed a ledger. Rendering both as "nothing hanging" makes the
+ * assertion worthless, which is what `no_loops` exists to prevent.
+ */
+function renderNoOpenLoops(newestSession: LoadedSession | undefined): string {
+  if (newestSession?.frontmatter.no_loops === true) {
+    return `Nothing hanging — the ${endedDate(newestSession.ended)} session asserted the ledger is clear.`;
+  }
+  return 'Nothing hanging — no unresolved loops, but no session has asserted the ledger is clear.';
+}
+
+/**
+ * A file that would not parse both drops the loops it opened and re-opens the
+ * ones it closed, so a silently short ledger is worse than a noisy one.
+ */
+function malformedNote(malformed: MalformedSession[]): string {
+  if (malformed.length === 0) return '';
+  return ` (${malformed.length} session file(s) unreadable — run \`active-work doctor\`)`;
+}
 
 /** Prefix the loop text with its target so a task/PR loop is actionable at a glance. */
 function loopLabel(loop: OpenLoop): string {
@@ -338,8 +337,15 @@ function loopLabel(loop: OpenLoop): string {
  * rather than an abbreviated session id because it is the handle `wrap
  * --resolve` takes.
  */
-function renderOpenLoops(loops: OpenLoop[]): string {
-  if (loops.length === 0) return `# Open loops\n${NO_OPEN_LOOPS}`;
+function renderOpenLoops(
+  loops: OpenLoop[],
+  malformed: MalformedSession[],
+  newestSession: LoadedSession | undefined,
+): string {
+  const note = malformedNote(malformed);
+  if (loops.length === 0) {
+    return `# Open loops${note}\n${renderNoOpenLoops(newestSession)}`;
+  }
   const labels = loops.map(loopLabel);
   const ageWidth = Math.max(...loops.map((l) => String(l.ageDays).length));
   const labelWidth = Math.max(...labels.map((l) => l.length));
@@ -350,7 +356,7 @@ function renderOpenLoops(loops: OpenLoop[]): string {
     return `- ${age} ${label}   (from ${from}, ref ${loop.ref})`;
   });
   const oldest = loops[0]!.ageDays;
-  return `# Open loops (${loops.length} hanging, oldest ${oldest}d)\n${lines.join('\n')}`;
+  return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
 }
 
 const LIVE_RENDER_LIMIT = 10;
@@ -664,15 +670,16 @@ export async function assembleBootstrap(
     slug,
   );
 
-  const [sessions, tasks, artifacts] = await Promise.all([
-    loadSessions(initiativeDir),
+  const [loaded, tasks, artifacts] = await Promise.all([
+    loadSessionsNewestFirst(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
   ]);
+  const { sessions, malformed } = loaded;
 
   // `mergedPrs` is deliberately unsupplied: derivation must stay offline
   // because bootstrap runs it on every launch.
-  const openLoops = await deriveOpenLoops(initiativeDir, { now, tasks });
+  const openLoops = deriveOpenLoopsFrom(loaded, { now, tasks });
 
   const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
   // No canonical session recorded for this initiative — fall back to the
@@ -715,7 +722,7 @@ export async function assembleBootstrap(
       : `Starting a session on \`${slug}\` (${brief.title}).`,
   );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
-  sections.push(renderOpenLoops(openLoops));
+  sections.push(renderOpenLoops(openLoops, malformed, sessions[0]));
 
   if (narrativeSession) {
     const sessionExcerpt =
@@ -781,7 +788,7 @@ export async function assembleBootstrap(
   };
   if (narrativeSession) {
     metadata.last_session = {
-      filename: narrativeSession.filename,
+      filename: `${narrativeSession.sessionFile}.md`,
       ended: narrativeSession.frontmatter.ended,
     };
   }

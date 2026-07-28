@@ -10,7 +10,7 @@ import {
 } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
-import { BriefFrontmatterSchema } from '../schemas/brief.js';
+import { BriefFrontmatterSchema, TaskSeqSchema } from '../schemas/brief.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
@@ -31,6 +31,7 @@ type Args = z.infer<typeof ArgsSchema>;
 const PREFIX_RE = /^[A-Z][A-Z0-9]*$/;
 
 interface Brief {
+  slug: string;
   path: string;
   frontmatter: Record<string, unknown>;
   body: string;
@@ -54,7 +55,13 @@ async function loadBrief(slug: string): Promise<Brief> {
       `Brief at ${briefPath} is missing a valid task_prefix`,
     );
   }
-  return { path: briefPath, frontmatter: raw.frontmatter, body: raw.body, prefix };
+  return {
+    slug,
+    path: briefPath,
+    frontmatter: raw.frontmatter,
+    body: raw.body,
+    prefix,
+  };
 }
 
 async function listTaskFiles(slug: string): Promise<string[]> {
@@ -92,6 +99,39 @@ function maxOnDiskTaskNumber(prefix: string, existing: Task[]): number {
   return max;
 }
 
+// `Infinity` and `NaN` both stringify to `null` through JSON, which would hide
+// the very value the operator has to find in the file.
+function describeValue(value: unknown): string {
+  return typeof value === 'number' ? String(value) : JSON.stringify(value);
+}
+
+function taskSeqRepair(brief: Brief, value: unknown, onDisk: number): string {
+  return (
+    `Invalid task_seq (${describeValue(value)}) in ${brief.path}. ` +
+    'task_seq is the high-water mark for task ids and must be a positive whole ' +
+    'number no larger than Number.MAX_SAFE_INTEGER. Task ids cannot be allocated ' +
+    `until it is repaired: the highest id on disk is ${brief.prefix}-${onDisk}, so run ` +
+    `\`active-work set ${brief.slug} task_seq <n>\` with n at least ${Math.max(onDisk, 1)} ` +
+    '— higher if ids above that were issued and their tasks later deleted.'
+  );
+}
+
+/**
+ * ABSENT is a legitimate back-compat path: briefs written before the field
+ * existed allocate from the on-disk max. Any other invalid value is corruption,
+ * and silently falling back would "repair" it *downward* — below an id that has
+ * already been issued — so it is reported instead of guessed at.
+ */
+function readTaskSeq(brief: Brief, onDisk: number): number {
+  const raw = brief.frontmatter.task_seq;
+  if (raw === undefined) return 0;
+  const parsed = TaskSeqSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ValidationError(taskSeqRepair(brief, raw, onDisk));
+  }
+  return parsed.data;
+}
+
 // Ids must never be reissued, even after `task delete` removes the file
 // that used the highest number. Allocate from the persisted `task_seq`
 // high-water mark (falling back to the on-disk max for briefs written
@@ -100,12 +140,8 @@ async function allocateTaskNumber(
   brief: Brief,
   existing: Task[],
 ): Promise<number> {
-  const persisted =
-    typeof brief.frontmatter.task_seq === 'number'
-      ? brief.frontmatter.task_seq
-      : 0;
   const onDisk = maxOnDiskTaskNumber(brief.prefix, existing);
-  const next = Math.max(persisted, onDisk) + 1;
+  const next = Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
   const frontmatter: Record<string, unknown> = {
     ...brief.frontmatter,
     task_seq: next,

@@ -34,6 +34,27 @@ function baseArgs(overrides: Record<string, unknown> = {}) {
   });
 }
 
+/**
+ * Write an earlier session carrying one open loop and return `<stem>#p1` — the
+ * only kind of ref a later wrap can legitimately close.
+ */
+async function seedPriorLoop(
+  activeRoot: string,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const prior = await wrap.run(
+    baseArgs({
+      session_id: 'sess-prior',
+      started: '2026-05-11T09:00:00Z',
+      ended: '2026-05-11T10:00:00Z',
+      next_steps: [{ id: 'p1', text: 'an earlier loop', kind: 'prose' }],
+      ...overrides,
+    }),
+    makeCtx(activeRoot),
+  );
+  return `${prior.filename.replace(/\.md$/, '')}#p1`;
+}
+
 async function readFrontmatter(file: string): Promise<Record<string, unknown>> {
   const raw = await fs.readFile(file, 'utf8');
   const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
@@ -48,17 +69,19 @@ describe('wrap', () => {
 
   it('writes the session ledger and bumps brief.updated in one call', async () => {
     await withTempActiveRoot(async (activeRoot) => {
+      const priorRef = await seedPriorLoop(activeRoot);
       const result = await wrap.run(
         baseArgs({
           next_steps: NEXT_STEPS,
-          resolves: [{ ref: '2026-05-10-1430-fixture001#n1', outcome: 'done' }],
+          resolves: [{ ref: priorRef, outcome: 'done' }],
         }),
         makeCtx(activeRoot),
       );
 
       expect(result.filename).toBe('2026-05-12-0900-sess-wrap.md');
       expect(result.next_steps).toBe(2);
-      expect(result.resolves).toBe(1);
+      expect(result.resolves_applied).toBe(1);
+      expect(result.resolves_rejected).toEqual([]);
       expect(result.updated).toBe(today());
 
       const frontmatter = await readFrontmatter(result.path);
@@ -76,12 +99,13 @@ describe('wrap', () => {
 
   it('accepts next_steps and resolves as JSON strings from the CLI', async () => {
     await withTempActiveRoot(async (activeRoot) => {
+      const priorRef = await seedPriorLoop(activeRoot);
       const result = await wrap.run(
         baseArgs({
           session_id: 'sess-json',
           next_steps: JSON.stringify(NEXT_STEPS),
           resolves: JSON.stringify([
-            { ref: 'aaa#n1', outcome: 'abandoned', note: 'superseded' },
+            { ref: priorRef, outcome: 'abandoned', note: 'superseded' },
           ]),
         }),
         makeCtx(activeRoot),
@@ -90,7 +114,7 @@ describe('wrap', () => {
       const frontmatter = await readFrontmatter(result.path);
       expect(frontmatter.next_steps).toEqual(NEXT_STEPS);
       expect(frontmatter.resolves).toEqual([
-        { ref: 'aaa#n1', outcome: 'abandoned', note: 'superseded' },
+        { ref: priorRef, outcome: 'abandoned', note: 'superseded' },
       ]);
     });
   });
@@ -153,15 +177,16 @@ describe('wrap', () => {
 
   it('accepts a resolves-only ledger', async () => {
     await withTempActiveRoot(async (activeRoot) => {
+      const priorRef = await seedPriorLoop(activeRoot);
       const result = await wrap.run(
         baseArgs({
           session_id: 'sess-resolves-only',
-          resolves: [{ ref: '2026-05-10-1430-fixture001#n1', outcome: 'done' }],
+          resolves: [{ ref: priorRef, outcome: 'done' }],
         }),
         makeCtx(activeRoot),
       );
       expect(result.next_steps).toBe(0);
-      expect(result.resolves).toBe(1);
+      expect(result.resolves_applied).toBe(1);
     });
   });
 
@@ -369,6 +394,108 @@ describe('wrap', () => {
             makeCtx(activeRoot),
           ),
         ).rejects.toThrow(/Frontmatter validation failed/);
+      });
+    });
+  });
+
+  // AW-53: a `resolves` ref that closes nothing used to be counted as applied
+  // and exit 0, so the agent that filed it never learned the close missed.
+  describe('rejected resolves (AW-53)', () => {
+    it('reports a ref that names no loop, and still writes the session', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'sess-missing',
+              resolves: [{ ref: 'no-such-stem#n1', outcome: 'done' }],
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/no-such-stem#n1 \(missing\)/);
+
+        // Write-and-report: the narrative survives the bad ref.
+        const written = path.join(
+          activeRoot,
+          SLUG,
+          'sessions',
+          '2026-05-12-0900-sess-missing.md',
+        );
+        expect(await readFrontmatter(written)).toMatchObject({
+          session_id: 'sess-missing',
+        });
+      });
+    });
+
+    it('reports a loop opened by a session that did not end earlier', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const tiedRef = await seedPriorLoop(activeRoot, {
+          session_id: 'sess-tied',
+          started: STARTED,
+          ended: ENDED,
+        });
+
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'sess-parallel',
+              resolves: [{ ref: tiedRef, outcome: 'done' }],
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/\(not-prior\)/);
+      });
+    });
+
+    it('reports a session trying to close its own loop', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'sess-self',
+              next_steps: [{ id: 'n1', text: 'mine', kind: 'prose' }],
+              resolves: [
+                { ref: '2026-05-12-0900-sess-self#n1', outcome: 'done' },
+              ],
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/2026-05-12-0900-sess-self#n1 \(self\)/);
+      });
+    });
+
+    it('counts only the refs that closed a loop when some are bad', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const priorRef = await seedPriorLoop(activeRoot);
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'sess-mixed',
+              resolves: [
+                { ref: priorRef, outcome: 'done' },
+                { ref: 'typo#p1', outcome: 'done' },
+              ],
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/1 of 2 --resolves entries closed no loop/);
+      });
+    });
+
+    it('leaves the resolved loop closed for deriveOpenLoops', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const priorRef = await seedPriorLoop(activeRoot);
+        await wrap.run(
+          baseArgs({
+            session_id: 'sess-closer',
+            resolves: [{ ref: priorRef, outcome: 'done' }],
+          }),
+          makeCtx(activeRoot),
+        );
+
+        const loops = await deriveOpenLoops(path.join(activeRoot, SLUG), {
+          now: new Date('2026-05-14T10:30:00Z'),
+        });
+        expect(loops.map((l) => l.ref)).not.toContain(priorRef);
       });
     });
   });
