@@ -555,19 +555,24 @@ function endedDate(iso: string): string {
 }
 
 /**
- * Sessions on a non-canonical track that ended after the newest canonical one.
+ * Sessions on a non-canonical track that ended after the narrative session
+ * (the one rendered in `# Last session`).
  *
  * These ran alongside the mainline thread, so they're worth surfacing — but
- * only as pointers: full bodies would crowd out the mainline context.
+ * only as pointers: full bodies would crowd out the mainline context. The
+ * narrative session itself is excluded so it isn't both the mainline block
+ * and a parallel pointer (matters when it was chosen via the no-canonical
+ * fallback, since it's then a non-canonical session too).
  */
 function selectParallelSessions(
   sessions: LoadedSession[],
-  latestCanonical: LoadedSession | undefined,
+  narrativeSession: LoadedSession | undefined,
 ): LoadedSession[] {
-  if (!latestCanonical) return [];
-  const cutoff = new Date(latestCanonical.frontmatter.ended).getTime();
+  if (!narrativeSession) return [];
+  const cutoff = new Date(narrativeSession.frontmatter.ended).getTime();
   return sessions.filter(
     (s) =>
+      s !== narrativeSession &&
       s.frontmatter.track !== 'canonical' &&
       new Date(s.frontmatter.ended).getTime() > cutoff,
   );
@@ -632,9 +637,14 @@ export async function assembleBootstrap(
     loadArtifacts(initiativeDir),
   ]);
 
-  const latestSession = sessions.find((s) => s.frontmatter.track === 'canonical');
+  const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
+  // No canonical session recorded for this initiative — fall back to the
+  // newest session of any track rather than reporting "no sessions" when
+  // sidecar/adhoc sessions exist (AW-42).
+  const narrativeSession = latestCanonical ?? sessions[0];
+  const usedFallbackTrack = !latestCanonical && narrativeSession !== undefined;
   const parallelBody = renderParallelSessions(
-    selectParallelSessions(sessions, latestSession),
+    selectParallelSessions(sessions, narrativeSession),
   );
   const briefExcerpt = truncateLines(briefBody, BRIEF_BODY_MAX_LINES) || '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks);
@@ -657,8 +667,8 @@ export async function assembleBootstrap(
     }
   }
 
-  const timeSinceHuman = latestSession
-    ? formatTimeSince(new Date(latestSession.frontmatter.ended), now)
+  const timeSinceHuman = narrativeSession
+    ? formatTimeSince(new Date(narrativeSession.frontmatter.ended), now)
     : undefined;
 
   const sections: string[] = [];
@@ -669,13 +679,19 @@ export async function assembleBootstrap(
   );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
 
-  if (latestSession) {
+  if (narrativeSession) {
     const sessionExcerpt =
-      truncateLines(latestSession.body, SESSION_BODY_MAX_LINES) ||
+      truncateLines(narrativeSession.body, SESSION_BODY_MAX_LINES) ||
       '_(empty session body)_';
-    const ended = endedDate(latestSession.frontmatter.ended);
+    const ended = endedDate(narrativeSession.frontmatter.ended);
+    // Label the heading with the track when it's not canonical, so a
+    // fallback session (no canonical recorded yet) isn't mistaken for
+    // mainline continuity.
+    const trackLabel = usedFallbackTrack
+      ? ` (${narrativeSession.frontmatter.track})`
+      : '';
     sections.push(
-      `# Last session (${ended}, ${latestSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
+      `# Last session${trackLabel} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
     );
   } else {
     sections.push(`# Last session\nNo previous sessions recorded.`);
@@ -724,10 +740,10 @@ export async function assembleBootstrap(
     recently_done_count: recentlyDoneCount,
     bootstrap_at: bootstrapAt,
   };
-  if (latestSession) {
+  if (narrativeSession) {
     metadata.last_session = {
-      filename: latestSession.filename,
-      ended: latestSession.frontmatter.ended,
+      filename: narrativeSession.filename,
+      ended: narrativeSession.frontmatter.ended,
     };
   }
   if (timeSinceHuman) {

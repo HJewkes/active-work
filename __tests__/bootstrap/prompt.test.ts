@@ -152,6 +152,52 @@ describe('assembleBootstrap', () => {
     });
   });
 
+  it('falls back to the newest sidecar session when no canonical exists (AW-42)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const sessionsDir = path.join(activeRoot, SAMPLE_SLUG, 'sessions');
+      const entries = await fs.readdir(sessionsDir);
+      for (const file of entries) {
+        await fs.unlink(path.join(sessionsDir, file));
+      }
+      await writeSession(activeRoot, {
+        session_id: 'side-old',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T10:00:00Z',
+        track: 'sidecar',
+        body: '- Older sidecar session\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'side-new',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'sidecar',
+        body: '- Newest sidecar session\n',
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      // Newest session of any track becomes the narrative, labeled by track
+      // so it isn't mistaken for mainline continuity.
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-11-0900-side-new.md',
+      );
+      expect(prompt).toContain('# Last session (sidecar) (2026-05-11, side-new)');
+      expect(prompt).toContain('Newest sidecar session');
+
+      // The chosen narrative session must not also appear as a parallel
+      // pointer — it would be both the mainline block and a listed pointer.
+      const parallelIdx = prompt.indexOf('# Parallel sessions');
+      if (parallelIdx !== -1) {
+        expect(prompt.slice(parallelIdx)).not.toContain('side-new');
+      }
+    });
+  });
+
   it('lists open tasks sorted by priority', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const tasksDir = path.join(activeRoot, SAMPLE_SLUG, 'tasks');
