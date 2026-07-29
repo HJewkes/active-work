@@ -6,14 +6,26 @@ import {
 } from '../schemas/brief.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
 import {
-  SessionFrontmatterSchema,
-  type SessionFrontmatter,
-} from '../schemas/session.js';
-import {
   ArtifactsSchema,
   type Artifacts,
   type BranchEntry,
 } from '../schemas/artifacts.js';
+import {
+  deriveOpenLoopsFrom,
+  deriveResolvedLoopsFrom,
+  loadSessionsFromDir,
+  normalizePrRef,
+  type LoadedSession,
+  type LoadedSessions,
+  type MalformedSession,
+  type OpenLoop,
+  type ResolvedLoop,
+} from '../sessions/open-loops.js';
+import {
+  loadNotesFromDir,
+  type LoadedNote,
+  type LoadedNotes,
+} from '../notes/note-file.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -100,6 +112,7 @@ export interface BootstrapMetadata {
   last_session?: { filename: string; ended: string };
   time_since_last_session_human?: string;
   open_task_count: number;
+  open_loop_count: number;
   recently_done_count: number;
   bootstrap_at: string;
 }
@@ -107,12 +120,6 @@ export interface BootstrapMetadata {
 export interface BootstrapOutput {
   prompt: string;
   metadata: BootstrapMetadata;
-}
-
-interface LoadedSession {
-  filename: string;
-  frontmatter: SessionFrontmatter;
-  body: string;
 }
 
 const FRONTMATTER_DELIM = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
@@ -150,43 +157,31 @@ export async function readMarkdownWithSchema<T>(
 }
 
 /**
- * Read all canonical sessions for an initiative, newest-`ended` first.
- *
- * Sidecar tracks and files that fail to parse are skipped silently — the
- * bootstrap is best-effort and must never crash on a malformed session.
+ * Order sessions newest first, breaking `ended` ties on `started` so a long
+ * mainline session that overlaps a short parallel one still sorts ahead of it.
  */
-async function loadCanonicalSessions(
-  initiativeDir: string,
-): Promise<LoadedSession[]> {
-  const sessionsDir = path.join(initiativeDir, 'sessions');
-  let entries: string[];
-  try {
-    entries = await fs.readdir(sessionsDir);
-  } catch {
-    return [];
-  }
-  const mdFiles = entries.filter((n) => n.endsWith('.md'));
-  const loaded: LoadedSession[] = [];
-  for (const filename of mdFiles) {
-    const fullPath = path.join(sessionsDir, filename);
-    try {
-      const { frontmatter, body } = await readMarkdownWithSchema(
-        fullPath,
-        SessionFrontmatterSchema,
-      );
-      if (frontmatter.track === 'canonical') {
-        loaded.push({ filename, frontmatter, body });
-      }
-    } catch {
-      // Skip malformed sessions; bootstrap should remain best-effort.
-    }
-  }
-  loaded.sort(
-    (a, b) =>
-      new Date(b.frontmatter.ended).getTime() -
-      new Date(a.frontmatter.ended).getTime(),
+function compareSessionsNewestFirst(a: LoadedSession, b: LoadedSession): number {
+  const endedDelta =
+    new Date(b.frontmatter.ended).getTime() -
+    new Date(a.frontmatter.ended).getTime();
+  if (endedDelta !== 0) return endedDelta;
+  return (
+    new Date(b.frontmatter.started).getTime() -
+    new Date(a.frontmatter.started).getTime()
   );
-  return loaded;
+}
+
+/**
+ * Every session for an initiative, newest first, regardless of track.
+ *
+ * Parsing is delegated to `loadSessionsFromDir` — the same loader derivation
+ * uses — so bootstrap can never render a session whose loops the ledger
+ * dropped, or vice versa. Unparseable files are not skipped silently: they
+ * come back as `malformed` and are surfaced in the Open loops heading.
+ */
+async function loadSessionsNewestFirst(initiativeDir: string): Promise<LoadedSessions> {
+  const { sessions, malformed } = await loadSessionsFromDir(initiativeDir);
+  return { sessions: [...sessions].sort(compareSessionsNewestFirst), malformed };
 }
 
 async function loadTasks(initiativeDir: string): Promise<Task[]> {
@@ -217,7 +212,7 @@ async function loadArtifacts(initiativeDir: string): Promise<Artifacts> {
   try {
     return await readYaml(artifactsPath, ArtifactsSchema);
   } catch {
-    return { branches: [], stashes: [] };
+    return { branches: [], stashes: [], worktrees: [] };
   }
 }
 
@@ -311,6 +306,138 @@ function renderRecentlyDone(
   if (done.length === 0) return { body: null, count: 0 };
   const body = done.map((t) => `- [${t.id}] ${t.title} — done ${t.done_at}`).join('\n');
   return { body, count: done.length };
+}
+
+/**
+ * Notes are capped by count, never by age. A process lesson from six months ago
+ * is precisely the one about to be re-learned the hard way, so it must not
+ * scroll out of the bootstrap the way "recently done" does. The cap keeps the
+ * section bounded; one compact line each keeps it cheap.
+ */
+const DURABLE_NOTES_LIMIT = 12;
+
+function renderNoteLine(note: LoadedNote): string {
+  const { kind, title, created } = note.frontmatter;
+  return `- [${kind}] ${title} (${created})`;
+}
+
+function renderDurableNotes(loaded: LoadedNotes, slug: string): string | null {
+  const { notes, malformed } = loaded;
+  if (notes.length === 0 && malformed.length === 0) return null;
+  const shown = notes.slice(0, DURABLE_NOTES_LIMIT);
+  const lines = shown.map(renderNoteLine);
+  const overflow = notes.length - shown.length;
+  if (overflow > 0) {
+    lines.push(`(+${overflow} older — \`active-work note list ${slug}\`)`);
+  }
+  if (malformed.length > 0) {
+    lines.push(
+      `(${malformed.length} note file(s) unreadable — run \`active-work note list ${slug}\`)`,
+    );
+  }
+  const heading =
+    overflow > 0
+      ? `# Durable notes (newest ${shown.length} of ${notes.length})`
+      : `# Durable notes (${notes.length})`;
+  return `${heading}\n${lines.join('\n')}`;
+}
+
+/**
+ * An empty ledger has two very different meanings and the operator has to be
+ * able to tell them apart: a session that ran `wrap --no-loops` positively
+ * asserted nothing was hanging, whereas an empty derivation may simply mean
+ * nobody ever filed a ledger. Rendering both as "nothing hanging" makes the
+ * assertion worthless, which is what `no_loops` exists to prevent.
+ */
+function renderNoOpenLoops(newestSession: LoadedSession | undefined): string {
+  if (newestSession?.frontmatter.no_loops === true) {
+    return `Nothing hanging — the ${endedDate(newestSession.ended)} session asserted the ledger is clear.`;
+  }
+  return 'Nothing hanging — no unresolved loops, but no session has asserted the ledger is clear.';
+}
+
+/**
+ * A file that would not parse both drops the loops it opened and re-opens the
+ * ones it closed, so a silently short ledger is worse than a noisy one.
+ */
+function malformedNote(malformed: MalformedSession[]): string {
+  if (malformed.length === 0) return '';
+  return ` (${malformed.length} session file(s) unreadable — run \`active-work doctor\`)`;
+}
+
+/**
+ * Whether the text already opens with `ref`, so prefixing would print it twice.
+ *
+ * Only a match at the head counts. A loop filed against `AW-65` whose text
+ * opens `AW-59 is done` is a ledger/text *disagreement* the operator needs to
+ * see, not noise to collapse — suppressing there would hide which task the loop
+ * actually concerns. The trailing boundary check keeps `AW-2` from matching text
+ * about `AW-28` (AW-71).
+ */
+function textOpensWithRef(text: string, ref: string, kind: OpenLoop['kind']): boolean {
+  const head = text.replace(/^\s*(PR\s*)?#?/i, '');
+  // A pasted `.../pull/57` at the head is the same restatement in another form.
+  if (kind === 'pr' && normalizePrRef(head.split(/\s/)[0] ?? '') === ref) return true;
+  if (!head.toLowerCase().startsWith(ref.toLowerCase())) return false;
+  const next = head.charAt(ref.length);
+  return next === '' || !/[A-Za-z0-9]/.test(next);
+}
+
+/** Prefix the loop text with its target so a task/PR loop is actionable at a glance. */
+function loopLabel(loop: OpenLoop): string {
+  if (loop.targetRef === undefined) return loop.text;
+  const ref = loop.kind === 'pr' ? normalizePrRef(loop.targetRef) : loop.targetRef;
+  if (textOpensWithRef(loop.text, ref, loop.kind)) return loop.text;
+  return loop.kind === 'pr' ? `PR #${ref} ${loop.text}` : `${ref} ${loop.text}`;
+}
+
+/**
+ * Loops are already unresolved and oldest-first; `ageDays` comes from the
+ * derivation so the render never recomputes time. The full `ref` is printed
+ * rather than an abbreviated session id because it is the handle `wrap
+ * --resolve` takes.
+ */
+function renderOpenLoops(
+  loops: OpenLoop[],
+  malformed: MalformedSession[],
+  newestSession: LoadedSession | undefined,
+): string {
+  const note = malformedNote(malformed);
+  if (loops.length === 0) {
+    return `# Open loops${note}\n${renderNoOpenLoops(newestSession)}`;
+  }
+  const labels = loops.map(loopLabel);
+  const ageWidth = Math.max(...loops.map((l) => String(l.ageDays).length));
+  const labelWidth = Math.max(...labels.map((l) => l.length));
+  const lines = loops.map((loop, i) => {
+    const age = `[${String(loop.ageDays).padStart(ageWidth)}d]`;
+    const label = labels[i]!.padEnd(labelWidth);
+    const from = loop.openedAt.slice(0, 10);
+    return `- ${age} ${label}   (from ${from}, ref ${loop.ref})`;
+  });
+  const oldest = loops[0]!.ageDays;
+  return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
+}
+
+/**
+ * Only abandonments are rendered, and only recent ones. A loop closed `done`
+ * needs no explanation — the work happened. A loop closed `abandoned` is a
+ * decision not to do something, and a future session that cannot see it will
+ * propose the abandoned thing again.
+ */
+function renderAbandonedLoops(
+  resolved: ResolvedLoop[],
+  windowDays: number,
+): string | null {
+  const abandoned = resolved.filter(
+    (loop) => loop.outcome === 'abandoned' && loop.ageDays <= windowDays,
+  );
+  if (abandoned.length === 0) return null;
+  const lines = abandoned.map((loop) => {
+    const head = `- ${loop.text} (dropped ${loop.closedAt.slice(0, 10)})`;
+    return loop.note ? `${head}\n  why: ${loop.note}` : head;
+  });
+  return `# Abandoned in the last ${windowDays} days (${abandoned.length})\n${lines.join('\n')}`;
 }
 
 const LIVE_RENDER_LIMIT = 10;
@@ -547,6 +674,40 @@ function endedDate(iso: string): string {
   return iso.slice(0, 10);
 }
 
+/**
+ * Sessions on a non-canonical track that ended after the narrative session
+ * (the one rendered in `# Last session`).
+ *
+ * These ran alongside the mainline thread, so they're worth surfacing — but
+ * only as pointers: full bodies would crowd out the mainline context. The
+ * narrative session itself is excluded so it isn't both the mainline block
+ * and a parallel pointer (matters when it was chosen via the no-canonical
+ * fallback, since it's then a non-canonical session too).
+ */
+function selectParallelSessions(
+  sessions: LoadedSession[],
+  narrativeSession: LoadedSession | undefined,
+): LoadedSession[] {
+  if (!narrativeSession) return [];
+  const cutoff = new Date(narrativeSession.frontmatter.ended).getTime();
+  return sessions.filter(
+    (s) =>
+      s !== narrativeSession &&
+      s.frontmatter.track !== 'canonical' &&
+      new Date(s.frontmatter.ended).getTime() > cutoff,
+  );
+}
+
+function renderParallelSessions(sessions: LoadedSession[]): string | null {
+  if (sessions.length === 0) return null;
+  const lines = sessions.map((s) => {
+    const { ended, session_id, track } = s.frontmatter;
+    const summary = firstLine(s.body) ?? '_(empty session body)_';
+    return `- ${endedDate(ended)} (${track}, ${session_id}) — ${summary}`;
+  });
+  return `# Parallel sessions since then\n${lines.join('\n')}`;
+}
+
 async function loadBrief(
   initiativeDir: string,
   slug: string,
@@ -590,13 +751,28 @@ export async function assembleBootstrap(
     slug,
   );
 
-  const [sessions, tasks, artifacts] = await Promise.all([
-    loadCanonicalSessions(initiativeDir),
+  const [loaded, tasks, artifacts, notes] = await Promise.all([
+    loadSessionsNewestFirst(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
+    loadNotesFromDir(initiativeDir),
   ]);
+  const { sessions, malformed } = loaded;
 
-  const latestSession = sessions[0];
+  // `mergedPrs` is deliberately unsupplied: derivation must stay offline
+  // because bootstrap runs it on every launch.
+  const openLoops = deriveOpenLoopsFrom(loaded, { now, tasks });
+  const resolvedLoops = deriveResolvedLoopsFrom(loaded, { now, tasks });
+
+  const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
+  // No canonical session recorded for this initiative — fall back to the
+  // newest session of any track rather than reporting "no sessions" when
+  // sidecar/adhoc sessions exist (AW-42).
+  const narrativeSession = latestCanonical ?? sessions[0];
+  const usedFallbackTrack = !latestCanonical && narrativeSession !== undefined;
+  const parallelBody = renderParallelSessions(
+    selectParallelSessions(sessions, narrativeSession),
+  );
   const briefExcerpt = truncateLines(briefBody, BRIEF_BODY_MAX_LINES) || '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
@@ -618,8 +794,8 @@ export async function assembleBootstrap(
     }
   }
 
-  const timeSinceHuman = latestSession
-    ? formatTimeSince(new Date(latestSession.frontmatter.ended), now)
+  const timeSinceHuman = narrativeSession
+    ? formatTimeSince(new Date(narrativeSession.frontmatter.ended), now)
     : undefined;
 
   const sections: string[] = [];
@@ -629,18 +805,30 @@ export async function assembleBootstrap(
       : `Starting a session on \`${slug}\` (${brief.title}).`,
   );
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
+  sections.push(renderOpenLoops(openLoops, malformed, sessions[0]));
 
-  if (latestSession) {
+  const abandonedBody = renderAbandonedLoops(resolvedLoops, recentlyDoneDays);
+  if (abandonedBody) sections.push(abandonedBody);
+
+  if (narrativeSession) {
     const sessionExcerpt =
-      truncateLines(latestSession.body, SESSION_BODY_MAX_LINES) ||
+      truncateLines(narrativeSession.body, SESSION_BODY_MAX_LINES) ||
       '_(empty session body)_';
-    const ended = endedDate(latestSession.frontmatter.ended);
+    const ended = endedDate(narrativeSession.frontmatter.ended);
+    // Label the heading with the track when it's not canonical, so a
+    // fallback session (no canonical recorded yet) isn't mistaken for
+    // mainline continuity.
+    const trackLabel = usedFallbackTrack
+      ? ` (${narrativeSession.frontmatter.track})`
+      : '';
     sections.push(
-      `# Last session (${ended}, ${latestSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
+      `# Last session${trackLabel} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
     );
   } else {
     sections.push(`# Last session\nNo previous sessions recorded.`);
   }
+
+  if (parallelBody) sections.push(parallelBody);
 
   sections.push(`# Tasks (top ${topNTasks} open by priority)\n${tasksBody}`);
 
@@ -656,6 +844,9 @@ export async function assembleBootstrap(
     );
   }
 
+  const notesBody = renderDurableNotes(notes, slug);
+  if (notesBody) sections.push(notesBody);
+
   if (artifactsBody) {
     sections.push(`# Open artifacts\n${artifactsBody}`);
   }
@@ -670,8 +861,8 @@ export async function assembleBootstrap(
 
   sections.push(
     adhoc
-      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work session record\`.`
-      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and capture the session via \`active-work session record\` when wrapping up.`,
+      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
+      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and close the session out via \`active-work wrap\` when wrapping up — it records the session, files the loops you leave open, and stamps the brief in one step.`,
   );
 
   const prompt = sections.join('\n\n') + '\n';
@@ -680,13 +871,14 @@ export async function assembleBootstrap(
     slug,
     brief_title: brief.title,
     open_task_count: openTaskCount,
+    open_loop_count: openLoops.length,
     recently_done_count: recentlyDoneCount,
     bootstrap_at: bootstrapAt,
   };
-  if (latestSession) {
+  if (narrativeSession) {
     metadata.last_session = {
-      filename: latestSession.filename,
-      ended: latestSession.frontmatter.ended,
+      filename: `${narrativeSession.sessionFile}.md`,
+      ended: narrativeSession.frontmatter.ended,
     };
   }
   if (timeSinceHuman) {

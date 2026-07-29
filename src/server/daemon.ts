@@ -20,6 +20,7 @@ import {
   isProcessAlive,
   readPidFile,
   removePidFile,
+  resolveDaemonPort,
   writePidFile,
 } from './lifecycle.js';
 
@@ -27,19 +28,13 @@ export interface RunDaemonOptions {
   port?: number;
 }
 
-const DEFAULT_PORT = 7400;
 const HOSTNAME = '127.0.0.1';
 
 function resolvePort(options: RunDaemonOptions): number {
   if (typeof options.port === 'number' && Number.isFinite(options.port)) {
     return options.port;
   }
-  const envPort = process.env.AW_PORT;
-  if (envPort) {
-    const n = Number.parseInt(envPort, 10);
-    if (Number.isFinite(n)) return n;
-  }
-  return DEFAULT_PORT;
+  return resolveDaemonPort();
 }
 
 async function assertNotAlreadyRunning(): Promise<void> {
@@ -50,8 +45,9 @@ async function assertNotAlreadyRunning(): Promise<void> {
     );
   }
   if (existing) {
-    // Stale PID file — clean it up so writePidFile lands cleanly.
-    await removePidFile();
+    // Stale PID file — clean it up so writePidFile lands cleanly. Naming the
+    // dead pid keeps the removal scoped to the file we just inspected.
+    await removePidFile(existing.pid);
   }
 }
 
@@ -158,11 +154,9 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   const activeRoot = getActiveRoot();
   let watcher: TreeWatcher | null = null;
   try {
-    watcher = watchTree(
-      activeRoot,
-      () => hub.broadcast({ event: 'change', data: 'active-root' }),
-      { onError: (err) => log.warn({ err }, 'file watcher error') },
-    );
+    watcher = watchTree(activeRoot, () => hub.broadcast({ event: 'change', data: 'active-root' }), {
+      onError: (err) => log.warn({ err }, 'file watcher error'),
+    });
     log.info({ activeRoot }, 'watching active root for live reload');
   } catch (err) {
     // Live reload is a nicety; never let a watcher failure abort the daemon.
@@ -194,7 +188,8 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
           log.error({ err }, 'error closing server');
         }
         try {
-          await removePidFile();
+          // Only ours: a launchd successor may already own the PID file.
+          await removePidFile(process.pid);
         } catch (err) {
           log.error({ err }, 'error removing pid file');
         }

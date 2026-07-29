@@ -1,10 +1,6 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import {
-  isProcessAlive,
-  readPidFile,
-  removePidFile,
-} from '../server/lifecycle.js';
+import { isProcessAlive, readPidFile, removePidFile } from '../server/lifecycle.js';
 
 /**
  * `active-work mcp stop` — send SIGTERM to the daemon and wait for it to exit.
@@ -46,7 +42,7 @@ export default defineCommand<Args, Result>({
     }
     const { pid } = pidEntry;
     if (!isProcessAlive(pid)) {
-      await removePidFile();
+      await removePidFile(pid);
       return { stopped: false, reason: 'not running' };
     }
     try {
@@ -54,13 +50,14 @@ export default defineCommand<Args, Result>({
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ESRCH') {
-        await removePidFile();
+        await removePidFile(pid);
         return { stopped: false, reason: 'not running' };
       }
       throw err;
     }
     await waitForExit(pid, SHUTDOWN_TIMEOUT_MS);
-    await removePidFile();
+    // Scoped to the pid we killed: a supervisor may have already replaced it.
+    await removePidFile(pid);
     return { stopped: true, pid };
   },
 });

@@ -5,6 +5,10 @@ import {
   type BriefFrontmatter,
 } from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
+import {
+  defaultWorktreePath,
+  readRegisteredWorktrees,
+} from '../utils/registered-worktrees.js';
 import { defineCommand } from '../registry/index.js';
 import {
   assembleBootstrap,
@@ -132,18 +136,10 @@ async function collectInitiatives(
   return summaries;
 }
 
-function resolveCwdHint(
-  activeRoot: string,
-  slug: string,
-  brief: BriefFrontmatter,
-): string {
-  const worktrees = brief.worktrees ?? {};
-  for (const entry of Object.values(worktrees)) {
-    if (entry.default) return expandTilde(entry.path);
-  }
-  const entries = Object.values(worktrees);
-  if (entries.length === 1) return expandTilde(entries[0]!.path);
-  return path.join(activeRoot, slug);
+async function resolveCwdHint(activeRoot: string, slug: string): Promise<string> {
+  const registered = await readRegisteredWorktrees(path.join(activeRoot, slug));
+  const preferred = defaultWorktreePath(registered);
+  return preferred === null ? path.join(activeRoot, slug) : expandTilde(preferred);
 }
 
 async function bootstrapInitiative(
@@ -163,7 +159,7 @@ async function bootstrapInitiative(
   );
   // When we resolved via cwd, launch in the worktree the user was standing in,
   // not the brief's default worktree.
-  const cwdHint = opts.cwdHintOverride ?? resolveCwdHint(activeRoot, slug, brief);
+  const cwdHint = opts.cwdHintOverride ?? (await resolveCwdHint(activeRoot, slug));
   const archivedTaskIds = await archiveStaleTasks(
     path.join(activeRoot, slug),
     { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },

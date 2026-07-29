@@ -12,8 +12,17 @@ import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import os from 'node:os';
 import { getActiveRoot } from './utils/paths.js';
-import { readPidFile, isProcessAlive } from './server/lifecycle.js';
+import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
+import { listInitiativeSlugs } from './lint/index.js';
+import { loadTasks } from './lint/load-tasks.js';
+import {
+  deriveOpenLoops,
+  findSessionIssues,
+  type DanglingKind,
+  type DanglingResolve,
+  type MalformedSession,
+} from './sessions/open-loops.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 
@@ -34,6 +43,8 @@ export interface DaemonProbe {
   port?: number;
   version?: string;
   pid?: number;
+  /** True when `/health` answered but no PID file names the daemon. */
+  orphaned?: boolean;
 }
 
 export interface DoctorDeps {
@@ -50,36 +61,32 @@ export interface DoctorDeps {
   supervisorActive?: () => Promise<{ kind: string; active: boolean } | null>;
 }
 
-const HEALTH_TIMEOUT_MS = 500;
-
-interface HealthResponse {
-  version: string;
-  pid: number;
-  uptime_ms: number;
-  port: number;
-}
-
-async function probeHealth(port: number): Promise<HealthResponse | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    return (await res.json()) as HealthResponse;
-  } catch {
-    return null;
-  }
+/**
+ * Probe by port alone, for when the PID file is absent or names a dead
+ * process. A missing file used to read as "not running" outright, which is how
+ * a live daemon whose file its predecessor clobbered became indistinguishable
+ * from no daemon at all (AW-76). Something answering `/health` outranks the
+ * bookkeeping, so adopt the pid/port/version it reports.
+ */
+async function probeByPort(port: number): Promise<DaemonProbe> {
+  const health = await probeHealth(port);
+  if (!health) return { running: false, healthy: false, port };
+  return {
+    running: true,
+    healthy: true,
+    orphaned: true,
+    pid: health.pid,
+    port: health.port,
+    version: health.version,
+  };
 }
 
 async function defaultProbeDaemon(): Promise<DaemonProbe> {
   const entry = await readPidFile();
-  if (!entry) return { running: false, healthy: false };
-  const alive = isProcessAlive(entry.pid);
-  if (!alive) {
-    return { running: false, healthy: false, pid: entry.pid, port: entry.meta.port };
+  if (!entry) return probeByPort(resolveDaemonPort());
+  if (!isProcessAlive(entry.pid)) {
+    // A pre-meta pid file records port 0; fall back to where a daemon would be.
+    return probeByPort(entry.meta.port || resolveDaemonPort());
   }
   const health = await probeHealth(entry.meta.port);
   if (health) {
@@ -128,10 +135,7 @@ async function fileExists(fs: typeof fsp, target: string): Promise<boolean> {
 // either name.
 const MCP_SERVER_NAMES = ['@hjewkes/active-work', 'active-work'];
 
-async function readMcpRegistered(
-  fs: typeof fsp,
-  homeDir: string,
-): Promise<boolean> {
+async function readMcpRegistered(fs: typeof fsp, homeDir: string): Promise<boolean> {
   const configPath = nodePath.join(homeDir, '.claude.json');
   try {
     const raw = await fs.readFile(configPath, 'utf8');
@@ -182,12 +186,20 @@ async function checkActiveRoot(deps: DoctorDeps): Promise<DoctorCheck> {
 
 async function checkDaemon(deps: DoctorDeps): Promise<DoctorCheck> {
   const probe = await (deps.probeDaemon ?? defaultProbeDaemon)();
-  if (probe.running && probe.healthy) {
+  const where = `pid ${probe.pid ?? '?'}, port ${probe.port ?? '?'}, v${probe.version ?? '?'}`;
+  if (probe.running && probe.healthy && probe.orphaned === true) {
+    // Answering but unfiled: `mcp stop`/`mcp restart` key off the PID file and
+    // will not find it, so this needs saying even though the daemon is fine.
     return {
       name: 'daemon',
-      status: 'ok',
-      detail: `running (pid ${probe.pid ?? '?'}, port ${probe.port ?? '?'}, v${probe.version ?? '?'})`,
+      status: 'warn',
+      detail:
+        `running (${where}) but no pid file — \`mcp stop\`/\`mcp restart\` ` +
+        'cannot see it; restart it through your supervisor to re-file it',
     };
+  }
+  if (probe.running && probe.healthy) {
+    return { name: 'daemon', status: 'ok', detail: `running (${where})` };
   }
   if (probe.running && !probe.healthy) {
     return {
@@ -196,10 +208,13 @@ async function checkDaemon(deps: DoctorDeps): Promise<DoctorCheck> {
       detail: `pid ${probe.pid ?? '?'} is alive but /health did not answer`,
     };
   }
+  // Name the port we probed: a daemon started on a non-default `--port` with
+  // no pid file to record it is invisible here, and that beats implying none.
+  const probed = probe.port === undefined ? '' : ` (nothing answered port ${probe.port})`;
   return {
     name: 'daemon',
     status: 'warn',
-    detail: 'not running — start it with `active-work mcp serve --detach`',
+    detail: `not running${probed} — start it with \`active-work mcp serve --detach\``,
   };
 }
 
@@ -249,15 +264,120 @@ async function checkSupervisor(deps: DoctorDeps): Promise<DoctorCheck> {
   };
 }
 
+/** Each rejection kind has a different remedy, so each gets its own sentence. */
+const DANGLING_REMEDY: Record<DanglingKind, string> = {
+  missing: 'no such next_step — fix or drop the ref',
+  'not-prior':
+    'target session ended at or after the resolver, so the close was rejected — re-file the resolve from a later session',
+  self: 'a session cannot resolve its own loop — resolve it from a later session',
+};
+
+function describeDangling(kind: DanglingKind, entries: string[]): string {
+  return `${DANGLING_REMEDY[kind]}: ${entries.join(', ')}`;
+}
+
+function openLoopsCheck(byKind: Map<DanglingKind, string[]>): DoctorCheck {
+  if (byKind.size === 0) {
+    return { name: 'open-loops', status: 'ok', detail: 'no dangling resolves' };
+  }
+  const parts = [...byKind.entries()].map(([kind, refs]) => describeDangling(kind, refs));
+  return { name: 'open-loops', status: 'warn', detail: parts.join('; ') };
+}
+
+function taskRefsCheck(entries: string[]): DoctorCheck {
+  if (entries.length === 0) {
+    return { name: 'task-refs', status: 'ok', detail: 'every next_steps task ref resolves' };
+  }
+  return {
+    name: 'task-refs',
+    status: 'warn',
+    // Mirrors dangling resolves, but for the other half of the ledger: unlike
+    // a bad `resolves` ref, a bad `next_steps` ref is never rejected — the
+    // loop just stays open and silent forever.
+    detail: `next_steps reference a task that does not exist: ${entries.join('; ')}`,
+  };
+}
+
+/** `kind: 'task'` open loops whose `ref` names no task in this initiative. */
+async function collectBadTaskRefs(
+  slug: string,
+  initiativeDir: string,
+  now: Date,
+): Promise<string[]> {
+  const tasks = await loadTasks(initiativeDir);
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const loops = await deriveOpenLoops(initiativeDir, { now, tasks });
+  return loops
+    .filter((loop) => loop.kind === 'task' && loop.targetRef !== undefined)
+    .filter((loop) => !taskIds.has(loop.targetRef as string))
+    .map(
+      (loop) =>
+        `${slug}/sessions/${loop.sessionFile}.md ${loop.ref} -> ${loop.targetRef} (no such task)`,
+    );
+}
+
+function sessionFilesCheck(malformed: string[]): DoctorCheck {
+  if (malformed.length === 0) {
+    return { name: 'session-files', status: 'ok', detail: 'every session file parses' };
+  }
+  return {
+    name: 'session-files',
+    status: 'warn',
+    // These files are invisible in the ledger: their loops vanish and the loops
+    // they closed come back. Only this check can surface them.
+    detail: `${malformed.length} session file(s) unreadable — their loops are missing from the ledger: ${malformed.join('; ')}`,
+  };
+}
+
+/**
+ * Walk every initiative once and report both integrity signals derivation
+ * cannot express in the ledger: rejected `resolves` and unparseable sessions.
+ */
+async function checkSessions(deps: DoctorDeps): Promise<DoctorCheck[]> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const slugs = await listInitiativeSlugs(activeRoot);
+  const byKind = new Map<DanglingKind, string[]>();
+  const malformed: string[] = [];
+  const badTaskRefs: string[] = [];
+  const now = new Date();
+  for (const slug of slugs) {
+    const initiativeDir = nodePath.join(activeRoot, slug);
+    const issues = await findSessionIssues(initiativeDir);
+    for (const entry of issues.dangling) collectDangling(byKind, slug, entry);
+    for (const entry of issues.malformed) malformed.push(describeMalformed(slug, entry));
+    badTaskRefs.push(...(await collectBadTaskRefs(slug, initiativeDir, now)));
+  }
+  return [openLoopsCheck(byKind), sessionFilesCheck(malformed), taskRefsCheck(badTaskRefs)];
+}
+
+function collectDangling(
+  byKind: Map<DanglingKind, string[]>,
+  slug: string,
+  entry: DanglingResolve,
+): void {
+  const line = `${slug}/sessions/${entry.sessionFile}.md resolves ${entry.ref}`;
+  const existing = byKind.get(entry.kind);
+  if (existing) existing.push(line);
+  else byKind.set(entry.kind, [line]);
+}
+
+function describeMalformed(slug: string, entry: MalformedSession): string {
+  return `${slug}/sessions/${entry.file} (${entry.reason})`;
+}
+
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const checks = await Promise.all([
-    checkNode(deps),
-    checkActiveRoot(deps),
-    checkDaemon(deps),
-    checkMcp(deps),
-    checkSkill(deps),
-    checkSupervisor(deps),
+  const [installChecks, sessionChecks] = await Promise.all([
+    Promise.all([
+      checkNode(deps),
+      checkActiveRoot(deps),
+      checkDaemon(deps),
+      checkMcp(deps),
+      checkSkill(deps),
+      checkSupervisor(deps),
+    ]),
+    checkSessions(deps),
   ]);
+  const checks = [...installChecks, ...sessionChecks];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }

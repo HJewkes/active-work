@@ -9,7 +9,9 @@ import touchCmd from '../../src/commands/touch.js';
 import pathsCmd from '../../src/commands/paths.js';
 import renameCmd from '../../src/commands/rename.js';
 import archiveCmd from '../../src/commands/archive.js';
+import YAML from 'yaml';
 import { BriefFrontmatterSchema } from '../../src/schemas/brief.js';
+import { ArtifactsSchema } from '../../src/schemas/artifacts.js';
 import { NotFoundError, UsageError, ValidationError } from '../../src/errors.js';
 import { today } from '../../src/utils/today.js';
 
@@ -35,7 +37,6 @@ describe('new', () => {
 
       const briefPath = path.join(root, 'alpha-init', 'brief.md');
       expect((await fs.stat(briefPath)).isFile()).toBe(true);
-      expect((await fs.stat(path.join(root, 'alpha-init', 'handoff.md'))).isFile()).toBe(true);
       expect(
         (await fs.stat(path.join(root, 'alpha-init', 'artifacts.yml'))).isFile(),
       ).toBe(true);
@@ -58,9 +59,16 @@ describe('new', () => {
         expect(result.data.rank).toBe(1);
         expect(result.data.task_prefix).toBe('AI');
         expect(result.data.state).toBe('focused');
-        expect(result.data.worktrees?.main.path).toBe('~/code/alpha');
-        expect(result.data.worktrees?.main.default).toBe(true);
       }
+      // The worktree is registered in artifacts.yml, not the brief (AW-67).
+      const artifacts = ArtifactsSchema.parse(
+        YAML.parse(
+          await fs.readFile(path.join(root, 'alpha-init', 'artifacts.yml'), 'utf8'),
+        ),
+      );
+      expect(artifacts.worktrees).toEqual([
+        { path: '~/code/alpha', repo: '~/code/alpha', name: 'main', default: true },
+      ]);
     });
   });
 
@@ -111,12 +119,13 @@ describe('set', () => {
     });
   });
 
-  it('updates a nested field via dot syntax', async () => {
+  // The brief carried exactly one nested field, `worktrees`, and it moved to
+  // artifacts.yml in v4 (AW-67). This guards the collapse: `set` must not be a
+  // back door that resurrects it, silently splitting worktree state across two
+  // files again.
+  it('does not let dot syntax resurrect brief.worktrees', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await newCmd.run(
-        { slug: 'nest', title: 'N', worktree: '~/old' },
-        ctxFor(root),
-      );
+      await newCmd.run({ slug: 'nest', title: 'N', worktree: '~/old' }, ctxFor(root));
       await setCmd.run(
         { slug: 'nest', field: 'worktrees.main.path', value: '~/new-path' },
         ctxFor(root),
@@ -124,9 +133,15 @@ describe('set', () => {
       const parsed = matter(
         await fs.readFile(path.join(root, 'nest', 'brief.md'), 'utf8'),
       );
-      const data = parsed.data as Record<string, Record<string, Record<string, unknown>>>;
-      expect(data.worktrees.main.path).toBe('~/new-path');
-      expect(data.worktrees.main.default).toBe(true);
+      expect(parsed.data).not.toHaveProperty('worktrees');
+
+      // The real registration is untouched.
+      const artifacts = ArtifactsSchema.parse(
+        YAML.parse(await fs.readFile(path.join(root, 'nest', 'artifacts.yml'), 'utf8')),
+      );
+      expect(artifacts.worktrees).toEqual([
+        { path: '~/old', repo: '~/old', name: 'main', default: true },
+      ]);
     });
   });
 
@@ -181,14 +196,13 @@ describe('touch', () => {
 });
 
 describe('paths', () => {
-  it('returns the 6 expected paths', async () => {
+  it('returns the 5 expected paths', async () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'pth', title: 'P' }, ctxFor(root));
       const out = await pathsCmd.run({ slug: 'pth' }, ctxFor(root));
       const dir = path.join(root, 'pth');
       expect(out).toEqual({
         brief: path.join(dir, 'brief.md'),
-        handoff: path.join(dir, 'handoff.md'),
         tasks_dir: path.join(dir, 'tasks'),
         sessions_dir: path.join(dir, 'sessions'),
         artifacts: path.join(dir, 'artifacts.yml'),

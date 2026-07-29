@@ -7,10 +7,6 @@ rank: 1
 ship_target: 2026-Q3
 owner: hjewkes
 task_prefix: SI
-worktrees:
-  main:
-    path: ~/code/sample
-    default: true
 ---
 
 # Sample Initiative

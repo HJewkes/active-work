@@ -34,6 +34,22 @@ async function readArtifacts(
   return readYaml(path.join(initiativeDir(root), 'artifacts.yml'), ArtifactsSchema);
 }
 
+/** Replace the fixture artifacts.yml with one carrying a single worktree. */
+async function writeWorktreeArtifacts(root: string): Promise<void> {
+  const doc = [
+    'branches: []',
+    'stashes: []',
+    'worktrees:',
+    '  - path: /tmp/wt-sample',
+    '    repo: ~/code/sample',
+    '    branch: feat/persisted',
+    '    holding: half-migrated schemas',
+    '    pr: 42',
+    '',
+  ].join('\n');
+  await fs.writeFile(path.join(initiativeDir(root), 'artifacts.yml'), doc, 'utf8');
+}
+
 async function writeSource(root: string, name: string, body = 'hello'): Promise<string> {
   const inbox = path.join(root, '_inbox');
   await fs.mkdir(inbox, { recursive: true });
@@ -392,6 +408,59 @@ describe('artifact.status', () => {
       expect(res.branches).toHaveLength(1);
       expect(res.branches[0]!.present).toBe(false);
       expect(res.branches[0]!.pr).toBeNull();
+    });
+  });
+
+  it('reports an empty worktrees list for a pre-worktrees artifacts.yml', async () => {
+    await withTempActiveRoot(async (root) => {
+      // Written without a `worktrees:` key, as files predating the field are.
+      await fs.writeFile(
+        path.join(root, SLUG, 'artifacts.yml'),
+        'branches: []\nstashes: []\n',
+        'utf8',
+      );
+      setGitRunner(async () => ({ code: 1, stdout: '', stderr: 'boom' }));
+      setGhRunner(async () => ({ code: 1, stdout: '', stderr: 'boom' }));
+      const res = await artifactStatusCmd.run({ slug: SLUG }, ctx);
+      expect(res.worktrees).toEqual([]);
+    });
+  });
+
+  it('merges persisted worktree identity with live git state', async () => {
+    await withTempActiveRoot(async (root) => {
+      await writeWorktreeArtifacts(root);
+      let revListCalls = 0;
+      setGitRunner(async (_bin, args) => {
+        if (args.includes('--is-inside-work-tree')) {
+          return { code: 0, stdout: 'true\n', stderr: '' };
+        }
+        if (args.includes('status')) {
+          return { code: 0, stdout: ' M a.ts\n M b.ts\n M c.ts\n', stderr: '' };
+        }
+        if (args.includes('rev-parse') && args.includes('--abbrev-ref')) {
+          return { code: 0, stdout: 'feat/live\n', stderr: '' };
+        }
+        if (args.includes('rev-list')) {
+          return { code: 0, stdout: revListCalls++ === 0 ? '2\n' : '5\n', stderr: '' };
+        }
+        return { code: 1, stdout: '', stderr: 'unhandled' };
+      });
+      setGhRunner(async () => ({ code: 1, stdout: '', stderr: 'boom' }));
+      const res = await artifactStatusCmd.run({ slug: SLUG }, ctx);
+      expect(res.worktrees).toHaveLength(1);
+      expect(res.worktrees[0]).toEqual({
+        path: '/tmp/wt-sample',
+        repo: '~/code/sample',
+        branch: 'feat/live',
+        holding: 'half-migrated schemas',
+        pr: 42,
+        present: true,
+        dirty: true,
+        files_changed: 3,
+        ahead: 2,
+        behind: 5,
+        has_upstream: true,
+      });
     });
   });
 });

@@ -31,9 +31,15 @@ import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
 
 // Sessions
+import loops from './loops.js';
+import preflight from './preflight.js';
 import sessionList from './session-list.js';
-import sessionRecord from './session-record.js';
 import sessionsBrowser from './sessions-browser.js';
+import wrap from './wrap.js';
+
+// Notes
+import noteAdd from './note-add.js';
+import noteList from './note-list.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -74,6 +80,7 @@ import mcpLogs from './mcp-logs.js';
 import setup from './setup.js';
 import uninstall from './uninstall.js';
 import doctor from './doctor.js';
+import migrate from './migrate.js';
 import sync from './sync.js';
 
 const ALL_COMMANDS: AnyCommand[] = [
@@ -97,9 +104,14 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskReorder,
   taskDelete,
   // sessions
-  sessionRecord,
   sessionList,
   sessionsBrowser,
+  loops,
+  preflight,
+  wrap,
+  // notes
+  noteAdd,
+  noteList,
   // sources / artifacts
   sourceAdd,
   artifactAddBranch,
@@ -133,6 +145,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   setup,
   uninstall,
   doctor,
+  migrate,
   sync,
 ];
 
