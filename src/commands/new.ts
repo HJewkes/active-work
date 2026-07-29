@@ -99,9 +99,6 @@ export default defineCommand({
       task_prefix,
       ...(args.ship_target ? { ship_target: args.ship_target } : {}),
       ...(args.owner ? { owner: args.owner } : {}),
-      ...(args.worktree
-        ? { worktrees: { main: { path: args.worktree, default: true } } }
-        : {}),
     };
 
     await fs.mkdir(dir, { recursive: true });
@@ -119,7 +116,20 @@ export default defineCommand({
 
     await writeYaml(
       path.join(dir, 'artifacts.yml'),
-      ArtifactsSchema.parse({}),
+      ArtifactsSchema.parse({
+        // A worktree given at creation is registered, not merely observed, so
+        // `aw` resolves a cwd into it and starts there (AW-67).
+        worktrees: args.worktree
+          ? [
+              {
+                path: args.worktree,
+                repo: args.worktree,
+                name: 'main',
+                default: true,
+              },
+            ]
+          : [],
+      }),
       ArtifactsSchema,
     );
 

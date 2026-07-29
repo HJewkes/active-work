@@ -1,8 +1,9 @@
 import { promises as fs } from 'node:fs';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
-import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
+import { BriefFrontmatterSchema } from '../schemas/brief.js';
 import { expandTilde } from '../utils/paths.js';
+import { readRegisteredWorktrees } from '../utils/registered-worktrees.js';
 import { NotFoundError } from '../errors.js';
 import { readMarkdownWithSchema } from '../bootstrap/prompt.js';
 
@@ -95,16 +96,17 @@ export async function resolveSlugFromCwd(
 
   for (const slug of slugs) {
     const briefPath = path.join(activeRoot, slug, 'brief.md');
-    let brief: BriefFrontmatter;
     try {
-      ({ frontmatter: brief } = await readMarkdownWithSchema(
-        briefPath,
-        BriefFrontmatterSchema,
-      ));
+      // Read purely as a validity gate: an initiative whose brief will not
+      // parse is skipped rather than resolved into.
+      await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
     } catch {
       continue;
     }
-    for (const entry of Object.values(brief.worktrees ?? {})) {
+    // Only *registered* worktrees resolve a cwd. Swept ones are observations,
+    // not a claim that this directory belongs to the initiative (AW-67).
+    const registered = await readRegisteredWorktrees(path.join(activeRoot, slug));
+    for (const entry of registered) {
       const displayPath = expandTilde(entry.path);
       if (!path.isAbsolute(displayPath)) continue;
       const canonical = await canonicalize(displayPath);

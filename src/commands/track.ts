@@ -77,10 +77,6 @@ export default defineCommand({
     const title = args.title ?? deriveTitle(args.slug);
     const briefBody = buildBriefBody(title, args.ref);
 
-    const worktrees = args.worktree
-      ? { main: { path: args.worktree, default: true } }
-      : undefined;
-
     await writeFrontmatter(
       path.join(dir, 'brief.md'),
       {
@@ -91,13 +87,17 @@ export default defineCommand({
         ...(args.ship_target ? { ship_target: args.ship_target } : {}),
         ...(args.owner ? { owner: args.owner } : {}),
         task_prefix: derivePrefix(args.slug),
-        ...(worktrees ? { worktrees } : {}),
       },
       briefBody,
       BriefFrontmatterSchema,
     );
 
-    const artifacts = ArtifactsSchema.parse({});
+    // A worktree given at track time is registered, not merely observed (AW-67).
+    const artifacts = ArtifactsSchema.parse({
+      worktrees: args.worktree
+        ? [{ path: args.worktree, repo: args.worktree, name: 'main', default: true }]
+        : [],
+    });
     await atomicWrite(path.join(dir, 'artifacts.yml'), yamlStringify(artifacts));
     await atomicWrite(path.join(dir, 'sources', '.gitkeep'), '');
 

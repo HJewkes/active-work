@@ -4,6 +4,10 @@ import type { Dirent } from 'node:fs';
 import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
+import {
+  readRegisteredWorktrees,
+  type RegisteredWorktree,
+} from '../utils/registered-worktrees.js';
 import { readFrontmatter } from '../utils/gray-matter-io.js';
 import { defineCommand } from '../registry/index.js';
 
@@ -45,6 +49,8 @@ const STATE_ORDER: Record<BriefFrontmatter['state'], number> = {
 export interface ScanEntry {
   slug: string;
   frontmatter: BriefFrontmatter;
+  /** Registered worktrees, which moved to artifacts.yml in v4 (AW-67). */
+  worktrees: RegisteredWorktree[];
 }
 
 export interface ScanError {
@@ -83,7 +89,8 @@ export async function scanInitiatives(activeRoot: string): Promise<ScanResult> {
         briefPath,
         BriefFrontmatterSchema,
       );
-      entries.push({ slug, frontmatter });
+      const worktrees = await readRegisteredWorktrees(path.join(activeRoot, slug));
+      entries.push({ slug, frontmatter, worktrees });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       errors.push({ slug, error: message });
@@ -97,10 +104,10 @@ function detectWorktreeConflicts(
   entries: ScanEntry[],
 ): Array<{ path: string; slugs: string[] }> {
   const byPath = new Map<string, Set<string>>();
-  for (const { slug, frontmatter } of entries) {
-    const worktrees = frontmatter.worktrees;
-    if (!worktrees) continue;
-    for (const entry of Object.values(worktrees)) {
+  for (const { slug, worktrees } of entries) {
+    // Only registered worktrees conflict. Two initiatives whose sweeps both
+    // observed the same directory have not laid claim to it.
+    for (const entry of worktrees) {
       const resolved = path.resolve(expandTilde(entry.path));
       let bucket = byPath.get(resolved);
       if (!bucket) {

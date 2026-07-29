@@ -412,7 +412,13 @@ describe('artifact.status', () => {
   });
 
   it('reports an empty worktrees list for a pre-worktrees artifacts.yml', async () => {
-    await withTempActiveRoot(async () => {
+    await withTempActiveRoot(async (root) => {
+      // Written without a `worktrees:` key, as files predating the field are.
+      await fs.writeFile(
+        path.join(root, SLUG, 'artifacts.yml'),
+        'branches: []\nstashes: []\n',
+        'utf8',
+      );
       setGitRunner(async () => ({ code: 1, stdout: '', stderr: 'boom' }));
       setGhRunner(async () => ({ code: 1, stdout: '', stderr: 'boom' }));
       const res = await artifactStatusCmd.run({ slug: SLUG }, ctx);

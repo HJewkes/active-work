@@ -136,10 +136,26 @@ describe('sweepInitiative repo set', () => {
 
   it('skips org/repo values that have no local clone', async () => {
     await withTempActiveRoot(async (root) => {
-      await writeArtifacts(root, 'branches:\n  - repo: acme/widgets\n    name: main\nstashes: []\n');
+      // The registered worktree seeds the repo set. It lives in artifacts.yml
+      // since v4 (AW-67), so overwriting the file must carry it along.
+      await writeArtifacts(
+        root,
+        [
+          'branches:',
+          '  - repo: acme/widgets',
+          '    name: main',
+          'stashes: []',
+          'worktrees:',
+          '  - path: ~/code/sample',
+          '    repo: ~/code/sample',
+          '    name: main',
+          '    default: true',
+          '',
+        ].join('\n'),
+      );
       setGitRunner(makeGitRunner({}));
       const res = await sweepInitiative(SLUG, root, '/tmp/elsewhere');
-      // Only the brief's worktree and cwd remain; `acme/widgets` has no path.
+      // Only the registered worktree and cwd remain; `acme/widgets` has no path.
       expect(res.repos).toEqual([SAMPLE_REPO, '/tmp/elsewhere']);
     });
   });
@@ -165,8 +181,10 @@ describe('sweepInitiative detection', () => {
         }),
       );
       const res = await sweepInitiative(SLUG, root, SAMPLE_REPO);
+      // The registered worktree is already in artifacts.yml, so only the
+      // genuinely unrecorded one is reported (AW-67) — before the collapse it
+      // was recorded in the brief and re-appended here as if new.
       expect(res.unrecorded.worktrees).toEqual([
-        { path: SAMPLE_REPO, repo: '~/code/sample', branch: 'main' },
         { path: '/tmp/wt-feature', repo: '~/code/sample', branch: 'feat/new' },
       ]);
       expect(res.dirty).toEqual([
@@ -453,7 +471,8 @@ describe('sweepInitiative repo-set dedupe', () => {
       setSharedRepoGit();
       const res = await sweepInitiative(SLUG, root, LINKED);
       expect(res.repos).toEqual([SAMPLE_REPO]);
-      expect(res.unrecorded.worktrees.map((w) => w.path)).toEqual([SAMPLE_REPO, LINKED]);
+      // SAMPLE_REPO is the registered worktree, already recorded (AW-67).
+      expect(res.unrecorded.worktrees.map((w) => w.path)).toEqual([LINKED]);
       expect(res.unrecorded.branches).toEqual([
         { repo: '~/code/sample', name: 'feat/linked' },
       ]);
@@ -504,6 +523,8 @@ describe('recordUnrecorded', () => {
       ]);
       expect(artifacts.stashes).toHaveLength(1);
       expect(artifacts.worktrees).toEqual([
+        // The fixture's registered worktree survives the append.
+        { path: '~/code/sample', repo: '~/code/sample', name: 'main', default: true },
         { path: '/tmp/wt-feature', repo: '~/code/sample', branch: 'feat/new' },
       ]);
     });

@@ -3,3 +3,8 @@ branches:
     name: feat/sample
     note: scaffolding for sample initiative
 stashes: []
+worktrees:
+  - path: ~/code/sample
+    repo: ~/code/sample
+    name: main
+    default: true
