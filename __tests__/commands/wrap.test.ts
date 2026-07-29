@@ -762,7 +762,21 @@ describe('wrap', () => {
 
   describe('auto-recorded git state', () => {
     it('appends unrecorded worktrees, branches and stashes to artifacts.yml', async () => {
-      setGitRunner(GIT_WITH_WORK);
+      // The fixture registers ~/code/sample, so point the sweep at a linked
+      // worktree it has never seen — otherwise there is nothing left to append
+      // and the test would pass without exercising the write (AW-67).
+      const LINKED = '/tmp/wt-unregistered';
+      setGitRunner((bin, args) => {
+        const sub = args.slice(2).join(' ');
+        if (args[1] === sampleRepo() && sub.startsWith('worktree list')) {
+          return Promise.resolve({
+            code: 0,
+            stdout: `worktree ${LINKED}\nbranch refs/heads/feat/new-thing\n`,
+            stderr: '',
+          });
+        }
+        return GIT_WITH_WORK(bin, args[1] === LINKED ? [args[0]!, sampleRepo(), ...args.slice(2)] : args);
+      });
       await withTempActiveRoot(async (activeRoot) => {
         const ctx = makeCtx(activeRoot);
         const result = await wrap.run(
@@ -775,7 +789,9 @@ describe('wrap', () => {
 
         const artifacts = await readArtifacts(activeRoot);
         expect(artifacts.worktrees).toEqual([
-          { path: sampleRepo(), repo: '~/code/sample', branch: 'feat/new-thing' },
+          // The registered worktree survives; the swept one is appended.
+          { path: '~/code/sample', repo: '~/code/sample', name: 'main', default: true },
+          { path: LINKED, repo: '~/code/sample', branch: 'feat/new-thing' },
         ]);
         expect(artifacts.branches).toContainEqual({
           repo: '~/code/sample',

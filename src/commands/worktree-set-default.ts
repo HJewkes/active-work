@@ -3,6 +3,10 @@ import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
+import {
+  readArtifactsFile,
+  writeArtifactsFile,
+} from '../utils/registered-worktrees.js';
 import { readFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
@@ -28,7 +32,8 @@ export default defineCommand({
     positional: ['slug', 'label'],
   },
   async run({ slug, label }) {
-    const briefPath = path.join(getActiveRoot(), slug, 'brief.md');
+    const initiativeDir = path.join(getActiveRoot(), slug);
+    const briefPath = path.join(initiativeDir, 'brief.md');
     return withFileLock(getLockPath(slug), async () => {
       let frontmatter: BriefFrontmatter;
       let body: string;
@@ -40,28 +45,24 @@ export default defineCommand({
       } catch (err) {
         throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
-      const worktrees = frontmatter.worktrees;
-      if (!worktrees || !Object.prototype.hasOwnProperty.call(worktrees, label)) {
+      const artifacts = await readArtifactsFile(initiativeDir);
+      if (!artifacts.worktrees.some((entry) => entry.name === label)) {
         throw new NotFoundError(
-          `Worktree label "${label}" not found in brief for "${slug}"`,
+          `Worktree label "${label}" is not registered for "${slug}"`,
         );
       }
-      const nextWorktrees: NonNullable<typeof worktrees> = {};
-      for (const [name, entry] of Object.entries(worktrees)) {
-        const rest = { ...entry };
-        delete rest.default;
-        if (name === label) {
-          nextWorktrees[name] = { ...rest, default: true };
-        } else {
-          nextWorktrees[name] = rest;
-        }
-      }
-      const next = {
-        ...frontmatter,
-        worktrees: nextWorktrees,
-        updated: today(),
-      };
-      await writeFrontmatter(briefPath, next, body, BriefFrontmatterSchema);
+      const worktrees = artifacts.worktrees.map((entry) => {
+        const next = { ...entry };
+        delete next.default;
+        return entry.name === label ? { ...next, default: true } : next;
+      });
+      await writeArtifactsFile(initiativeDir, { ...artifacts, worktrees });
+      await writeFrontmatter(
+        briefPath,
+        { ...frontmatter, updated: today() },
+        body,
+        BriefFrontmatterSchema,
+      );
       return { slug, default_label: label };
     });
   },

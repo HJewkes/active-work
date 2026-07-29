@@ -21,10 +21,8 @@ const positiveInt = z.number().int().positive();
 // field — whole-brief validation only ever produces an anonymous zod dump.
 export const TaskSeqSchema = positiveInt;
 
-const worktreeEntry = z.object({
-  path: z.string().min(1),
-  default: z.boolean().optional(),
-});
+// `worktrees` lived here until schema v4 (AW-67). It now shares one list with
+// the swept worktrees in `artifacts.yml`; see `src/schemas/artifacts.ts`.
 
 // An MCP push-channel target enabled at `aw`/`open` launch via
 // `claude --dangerously-load-development-channels <target>`. Accepts an
@@ -55,7 +53,6 @@ export const BriefFrontmatterSchema = z
       .regex(/^[A-Z][A-Z0-9]*$/, {
         message: 'task_prefix must be uppercase letters/digits starting with a letter',
       }),
-    worktrees: z.record(z.string(), worktreeEntry).optional(),
     channels: z.array(channelTarget).optional(),
     // High-water mark for task ids: the largest numeric suffix ever issued
     // for this initiative's task_prefix. Optional so pre-existing brief.md

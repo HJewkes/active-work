@@ -56,18 +56,16 @@ async function makeInitiativeWithWorktree(
       'updated: 2026-05-12',
       'state: backburner',
       `task_prefix: ${taskPrefix}`,
-      'worktrees:',
-      '  main:',
-      `    path: ${worktreePath}`,
       '---',
       '',
       `# ${title}`,
       '',
     ].join('\n'),
   );
+  // Registered worktrees live in artifacts.yml since v4 (AW-67).
   await fs.writeFile(
     path.join(dir, 'artifacts.yml'),
-    'branches: []\nstashes: []\n',
+    `branches: []\nstashes: []\nworktrees:\n  - path: ${worktreePath}\n    repo: ${worktreePath}\n    name: main\n    default: true\n`,
   );
 }
 
@@ -173,9 +171,6 @@ describe('open command', () => {
             'updated: 2026-05-12',
             'state: backburner',
             'task_prefix: LI',
-            'worktrees:',
-            '  main:',
-            `    path: ${realWork}`,
             '---',
             '',
             '# Linked Init',
@@ -184,7 +179,7 @@ describe('open command', () => {
         );
         await fs.writeFile(
           path.join(dir, 'artifacts.yml'),
-          'branches: []\nstashes: []\n',
+          `branches: []\nstashes: []\nworktrees:\n  - path: ${realWork}\n    repo: ${realWork}\n    name: main\n    default: true\n`,
         );
 
         const out = await openCommand.run(
@@ -289,6 +284,7 @@ describe('open command', () => {
           path.join(dir, 'brief.md'),
           `---\n${body}\n---\n\n# ${title}\n`,
         );
+        // These exist only to exercise picker ordering; no worktrees needed.
         await fs.writeFile(
           path.join(dir, 'artifacts.yml'),
           'branches: []\nstashes: []\n',

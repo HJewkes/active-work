@@ -7,8 +7,7 @@ import {
   type StashEntry,
   type WorktreeEntry,
 } from '../schemas/artifacts.js';
-import { BriefFrontmatterSchema } from '../schemas/brief.js';
-import { readFrontmatter } from '../utils/gray-matter-io.js';
+import { registeredOf } from '../utils/registered-worktrees.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { expandTilde } from '../utils/paths.js';
 import { resolveLocalRepoPath } from '../utils/git-gh.js';
@@ -122,16 +121,13 @@ async function readArtifacts(initiativeDir: string): Promise<Artifacts> {
   return readYaml(file, ArtifactsSchema);
 }
 
-async function readBriefWorktreePaths(initiativeDir: string): Promise<string[]> {
-  try {
-    const { frontmatter } = await readFrontmatter(
-      path.join(initiativeDir, 'brief.md'),
-      BriefFrontmatterSchema,
-    );
-    return Object.values(frontmatter.worktrees ?? {}).map((entry) => entry.path);
-  } catch {
-    return [];
-  }
+/**
+ * Registered worktree paths seed the repo set. Since v4 these live in
+ * artifacts.yml alongside the swept ones (AW-67), so they arrive with the rest
+ * of the artifacts read and need no separate file.
+ */
+function registeredWorktreePaths(artifacts: Artifacts): string[] {
+  return registeredOf(artifacts).map((entry) => entry.path);
 }
 
 /**
@@ -330,8 +326,7 @@ export async function sweepInitiative(
 ): Promise<SweepResult> {
   const initiativeDir = path.join(activeRoot, slug);
   const artifacts = await readArtifacts(initiativeDir);
-  const briefPaths = await readBriefWorktreePaths(initiativeDir);
-  const labels = collectRepoLabels(artifacts, briefPaths, cwd);
+  const labels = collectRepoLabels(artifacts, registeredWorktreePaths(artifacts), cwd);
   const swept = await Promise.all(
     [...labels].map(([repoPath, label]) => sweepRepo(repoPath, label)),
   );

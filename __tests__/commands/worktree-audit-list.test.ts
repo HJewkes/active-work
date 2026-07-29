@@ -13,7 +13,9 @@ import type {
   Command,
   CommandContext,
 } from '../../src/registry/types.js';
+import YAML from 'yaml';
 import { BriefFrontmatterSchema } from '../../src/schemas/brief.js';
+import { ArtifactsSchema } from '../../src/schemas/artifacts.js';
 
 function makeCtx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
@@ -58,12 +60,23 @@ async function scaffoldInitiative(
     ...(input.restart_trigger ? { restart_trigger: input.restart_trigger } : {}),
     ...(input.ship_target ? { ship_target: input.ship_target } : {}),
     task_prefix: input.task_prefix,
-    ...(input.worktrees ? { worktrees: input.worktrees } : {}),
   };
   // Validate via schema so test inputs stay consistent with production.
   BriefFrontmatterSchema.parse(frontmatter);
   const briefPath = path.join(dir, 'brief.md');
   await fs.writeFile(briefPath, matter.stringify(body, frontmatter));
+  // Registered worktrees moved to artifacts.yml in v4 (AW-67); callers still
+  // describe them in the label-keyed shape the brief used.
+  const worktrees = Object.entries(input.worktrees ?? {}).map(([name, entry]) => ({
+    path: entry.path,
+    repo: entry.path,
+    name,
+    ...(entry.default ? { default: true } : {}),
+  }));
+  await fs.writeFile(
+    path.join(dir, 'artifacts.yml'),
+    YAML.stringify(ArtifactsSchema.parse({ worktrees })),
+  );
   return briefPath;
 }
 
@@ -91,16 +104,17 @@ describe('worktree.set-default', () => {
         default_label: 'spike',
       });
 
-      const raw = await fs.readFile(
-        path.join(activeRoot, 'two-worktrees', 'brief.md'),
-        'utf8',
+      const artifacts = ArtifactsSchema.parse(
+        YAML.parse(
+          await fs.readFile(
+            path.join(activeRoot, 'two-worktrees', 'artifacts.yml'),
+            'utf8',
+          ),
+        ),
       );
-      const parsed = matter(raw);
-      const fm = parsed.data as {
-        worktrees: Record<string, { path: string; default?: boolean }>;
-      };
-      expect(fm.worktrees.spike.default).toBe(true);
-      expect(fm.worktrees.main.default).toBeUndefined();
+      const byName = new Map(artifacts.worktrees.map((e) => [e.name, e]));
+      expect(byName.get('spike')?.default).toBe(true);
+      expect(byName.get('main')?.default).toBeUndefined();
     });
   });
 
