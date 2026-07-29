@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { isProcessAlive, readPidFile } from '../server/lifecycle.js';
+import {
+  isProcessAlive,
+  probeHealth,
+  readPidFile,
+  resolveDaemonPort,
+} from '../server/lifecycle.js';
 
 /**
  * `active-work mcp status` — report whether the daemon is running, plus a
@@ -17,31 +22,30 @@ const ResultSchema = z.object({
   version: z.string().optional(),
   uptime_ms: z.number().optional(),
   healthy: z.boolean().optional(),
+  /** Answering `/health` with no PID file naming it — see `removePidFile`. */
+  orphaned: z.boolean().optional(),
 });
 type Result = z.infer<typeof ResultSchema>;
 
-const HEALTH_TIMEOUT_MS = 500;
-
-interface HealthResponse {
-  version: string;
-  pid: number;
-  uptime_ms: number;
-  port: number;
-}
-
-async function probeHealth(port: number): Promise<HealthResponse | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    return (await res.json()) as HealthResponse;
-  } catch {
-    return null;
-  }
+/**
+ * No usable PID file: probe the port anyway. Reporting "not running" purely
+ * because the file is gone is how a live daemon disappeared from this command
+ * while still serving requests (AW-76). `port` on a negative answer names what
+ * we actually tried, since a daemon on a non-default `--port` with no file to
+ * record it cannot be found from here.
+ */
+async function statusByPort(port: number): Promise<Result> {
+  const health = await probeHealth(port);
+  if (!health) return { running: false, port };
+  return {
+    running: true,
+    healthy: true,
+    orphaned: true,
+    pid: health.pid,
+    port: health.port,
+    version: health.version,
+    uptime_ms: health.uptime_ms,
+  };
 }
 
 export default defineCommand<Args, Result>({
@@ -52,12 +56,12 @@ export default defineCommand<Args, Result>({
   async run() {
     const entry = await readPidFile();
     if (!entry) {
-      return { running: false };
+      return statusByPort(resolveDaemonPort());
     }
     const { pid, meta } = entry;
-    const alive = isProcessAlive(pid);
-    if (!alive) {
-      return { running: false, pid, port: meta.port };
+    if (!isProcessAlive(pid)) {
+      // A pre-meta pid file records port 0; fall back to where a daemon would be.
+      return statusByPort(meta.port || resolveDaemonPort());
     }
     const health = await probeHealth(meta.port);
     if (health) {

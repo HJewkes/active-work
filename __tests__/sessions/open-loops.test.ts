@@ -266,6 +266,33 @@ describe('deriveOpenLoops', () => {
     expect(loops.map((l) => l.ref)).toEqual([`${opener}#n2`]);
   });
 
+  it('auto-resolves a pr loop filed as a full GitHub URL (AW-71)', async () => {
+    const opener = await writeSession({
+      session_id: 'urls',
+      ended: '2026-07-01T00:00:00Z',
+      next_steps: [
+        {
+          id: 'n1',
+          text: 'awaiting review',
+          kind: 'pr',
+          ref: 'https://github.com/HJewkes/agent-chat/pull/3',
+        },
+        {
+          id: 'n2',
+          text: 'awaiting review',
+          kind: 'pr',
+          ref: 'https://github.com/HJewkes/agent-chat/pull/4',
+        },
+      ],
+    });
+
+    const loops = await deriveOpenLoops(initiativeDir, {
+      now: NOW,
+      mergedPrs: ['#3'],
+    });
+    expect(loops.map((l) => l.ref)).toEqual([`${opener}#n2`]);
+  });
+
   it('skips malformed session files without failing', async () => {
     await fs.writeFile(
       path.join(initiativeDir, 'sessions', '2026-07-01-broken.md'),
@@ -561,10 +588,7 @@ describe('deriveOpenLoopsFrom', () => {
     });
 
     const fromDir = await deriveOpenLoops(initiativeDir, { now: NOW });
-    const preloaded = deriveOpenLoopsFrom(
-      await loadSessionsFromDir(initiativeDir),
-      { now: NOW },
-    );
+    const preloaded = deriveOpenLoopsFrom(await loadSessionsFromDir(initiativeDir), { now: NOW });
 
     expect(preloaded).toEqual(fromDir);
     expect(preloaded.map((l) => l.ref)).toEqual([`${opener}#n2`]);
@@ -587,9 +611,7 @@ describe('loadSessionsFromDir', () => {
     );
     const { sessions, malformed } = await loadSessionsFromDir(initiativeDir);
     expect(sessions).toEqual([]);
-    expect(malformed).toEqual([
-      { file: 'broken.md', reason: 'no frontmatter block' },
-    ]);
+    expect(malformed).toEqual([{ file: 'broken.md', reason: 'no frontmatter block' }]);
   });
 });
 
@@ -606,9 +628,7 @@ describe('deriveResolvedLoops', () => {
     await writeSession({
       session_id: 'b',
       ended: '2026-07-22T10:00:00Z',
-      resolves: [
-        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'scope was wrong' },
-      ],
+      resolves: [{ ref: `${opener}#n1`, outcome: 'abandoned', note: 'scope was wrong' }],
     });
 
     const resolved = await deriveResolvedLoops(initiativeDir, { now: NOW });
@@ -654,9 +674,7 @@ describe('deriveResolvedLoops', () => {
     await writeSession({
       session_id: 'c',
       ended: '2026-07-23T10:00:00Z',
-      resolves: [
-        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted, not worth it' },
-      ],
+      resolves: [{ ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted, not worth it' }],
     });
 
     const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });
@@ -684,9 +702,7 @@ describe('deriveResolvedLoops', () => {
       session_id: 'c',
       file: '2026-07-22-c',
       ended: '2026-07-22T04:00:00-07:00',
-      resolves: [
-        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted an hour later' },
-      ],
+      resolves: [{ ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted an hour later' }],
     });
 
     const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });

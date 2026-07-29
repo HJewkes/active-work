@@ -725,7 +725,9 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         // is finally a real task ref.
         {
           id: 'n1',
-          text: "FIRST: VW-114 — VMCP-01.72 part (b), implement `session.set_exercise` so one workout can hold multiple exercises without fragmenting across session rows. Part (a) is merged (1f010d9, #220): the eight per-exercise read paths now scope by the set's own `exercise_id`. Both user decisions on shape are recorded on the ticket. The original defect: a session's exercise was write-once at session.start and set.start took no exercise argument, so advancing exercises required session.end → session.start.",
+          // Text must not restate its own ref — the bootstrap label already
+          // supplies it, and restating renders it twice (AW-71).
+          text: "FIRST — VMCP-01.72 part (b): implement `session.set_exercise` so one workout can hold multiple exercises without fragmenting across session rows. Part (a) is merged (1f010d9, #220): the eight per-exercise read paths now scope by the set's own `exercise_id`. Both user decisions on shape are recorded on the ticket. The original defect: a session's exercise was write-once at session.start and set.start took no exercise argument, so advancing exercises required session.end → session.start.",
           kind: 'task',
           ref: 'VW-114',
         },
@@ -767,7 +769,7 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         },
         {
           id: 'n7',
-          text: 'RP build order: VW-90 (B15 drift guard, the foundation) → B56/B57 baselines → VW-91 (B04 two-session underperformance/MRV detector, rated highest value: high impact, small effort, buildable now, zero new instrumentation) → B16 → B09/B14. Also real and stalled: VMCP-02.25, plan_suggest_progression is VBT-blind and recommends +5 lb after near-failure sets.',
+          text: 'RP build order, starting with this one: B15 drift guard is the foundation → B56/B57 baselines → VW-91 (B04 two-session underperformance/MRV detector, rated highest value: high impact, small effort, buildable now, zero new instrumentation) → B16 → B09/B14. Also real and stalled: VMCP-02.25, plan_suggest_progression is VBT-blind and recommends +5 lb after near-failure sets.',
           kind: 'task',
           ref: 'VW-90',
         },

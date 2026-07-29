@@ -10,9 +10,10 @@ import { color } from '../utils/color.js';
  * `active-work migrate --dry-run` — report exactly what the pending v2→v3
  * open-loops migration would change, per initiative, writing nothing.
  *
- * The migration otherwise runs unattended at startup. This surface exists
- * because v3 rewrites session history: it is reviewed before it runs, and a
- * dry run is the review artifact. Applying is opt-in (`--apply`) so the
+ * The migration otherwise runs unattended under `active-work setup`, which is
+ * the only command that migrates — no ordinary command does. This surface
+ * exists because v3 rewrites session history: it is reviewed before it runs,
+ * and a dry run is the review artifact. Applying is opt-in (`--apply`) so the
  * command cannot mutate data by being run bare.
  */
 
@@ -45,19 +46,14 @@ const ResultSchema = z.object({
   applied: z.boolean(),
   proposal: z.string(),
   initiatives: z.array(InitiativeSchema),
-  repairs: z.array(
-    z.object({ action: z.string(), file: z.string(), detail: z.string() }),
-  ),
+  repairs: z.array(z.object({ action: z.string(), file: z.string(), detail: z.string() })),
   uncovered: z.array(z.string()),
 });
 type Result = z.infer<typeof ResultSchema>;
 
 type Initiative = z.infer<typeof InitiativeSchema>;
 
-function describe(
-  plan: Awaited<ReturnType<typeof planV2ToV3>>,
-  applied: boolean,
-): Result {
+function describe(plan: Awaited<ReturnType<typeof planV2ToV3>>, applied: boolean): Result {
   const initiatives: Initiative[] = plan.initiatives.map((i) => ({
     slug: i.slug,
     sessions: i.sessions.map((s) => ({
@@ -88,10 +84,7 @@ function describe(
 }
 
 function renderSession(s: Initiative['sessions'][number]): string {
-  const what =
-    s.kind === 'open'
-      ? `opens ${s.loops} loop(s)`
-      : `abandons ${s.resolves} loop(s)`;
+  const what = s.kind === 'open' ? `opens ${s.loops} loop(s)` : `abandons ${s.resolves} loop(s)`;
   const verb = s.action === 'exists' ? 'already present — skip' : 'write';
   return `session (${s.kind}) ${verb}: ${s.file} — ${what}, ended ${s.ended}`;
 }
@@ -163,7 +156,9 @@ export default defineCommand<Args, Result>({
     if (before !== CURRENT_VERSION - 1) {
       throw new UsageError(
         `--apply runs only the v2→v3 step, but this root is at schema v${before}. ` +
-          'Run any earlier migrations first (they run automatically on the next command).',
+          'Run `active-work setup` to work through the pending chain first — it is ' +
+          'the only command that migrates; ordinary commands (`list`, `open`, …) ' +
+          'do not.',
       );
     }
     const plan = await planV2ToV3(ctx.activeRoot);

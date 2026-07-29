@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -14,6 +14,34 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const DAEMON_PATH = path.join(REPO_ROOT, 'src', 'server', 'daemon.ts').replaceAll('\\', '\\\\');
 const ENTRY_SRC = `import('${DAEMON_PATH}').then((m) => m.runDaemon({ port: Number(process.env.AW_PORT) })).catch((e) => { console.error(e); process.exit(1); });`;
+
+/** A pid high enough that nothing on the box owns it. */
+const SUCCESSOR_PID = 999_999;
+
+/**
+ * Spawn a daemon with every path env var pointed inside `stateRoot` — HOME
+ * included, so macOS env-paths cannot reach the real install.
+ */
+function spawnDaemon(port: number, stateRoot: string, activeRoot: string): ChildProcess {
+  const child = spawn(TSX_BIN, ['-e', ENTRY_SRC], {
+    env: {
+      ...process.env,
+      AW_PORT: String(port),
+      XDG_STATE_HOME: stateRoot,
+      XDG_DATA_HOME: stateRoot,
+      XDG_CONFIG_HOME: stateRoot,
+      XDG_CACHE_HOME: stateRoot,
+      ACTIVE_ROOT: activeRoot,
+      HOME: stateRoot,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stderr?.on('data', (chunk: Buffer) => {
+    // Surface daemon logs if the test fails.
+    process.stderr.write(`[daemon] ${chunk.toString()}`);
+  });
+  return child;
+}
 
 function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -67,26 +95,9 @@ describe('integration: daemon over HTTP', () => {
     const stateRoot = mkdtempSync(path.join(tmpdir(), 'aw-daemon-int-'));
     const activeRoot = mkdtempSync(path.join(tmpdir(), 'aw-daemon-int-data-'));
 
-    const child = spawn(TSX_BIN, ['-e', ENTRY_SRC], {
-      env: {
-        ...process.env,
-        AW_PORT: String(port),
-        XDG_STATE_HOME: stateRoot,
-        XDG_DATA_HOME: stateRoot,
-        XDG_CONFIG_HOME: stateRoot,
-        XDG_CACHE_HOME: stateRoot,
-        ACTIVE_ROOT: activeRoot,
-        HOME: stateRoot, // for macOS env-paths fallback
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawnDaemon(port, stateRoot, activeRoot);
 
     try {
-      child.stderr?.on('data', (chunk: Buffer) => {
-        // Surface daemon logs if the test fails.
-        process.stderr.write(`[daemon] ${chunk.toString()}`);
-      });
-
       await waitForHealth(port, 15_000);
 
       const healthRes = await fetch(`http://127.0.0.1:${port}/health`);
@@ -143,6 +154,33 @@ describe('integration: daemon over HTTP', () => {
       // Just assert no daemon.pid file remains under any state location.
       const lingering = findDaemonPidFile(stateRoot);
       expect(lingering).toBeNull();
+      rmSync(stateRoot, { recursive: true, force: true });
+      rmSync(activeRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('leaves a successor PID file in place on shutdown (AW-76)', async () => {
+    const port = await findFreePort();
+    const stateRoot = mkdtempSync(path.join(tmpdir(), 'aw-daemon-succ-'));
+    const activeRoot = mkdtempSync(path.join(tmpdir(), 'aw-daemon-succ-data-'));
+    const child = spawnDaemon(port, stateRoot, activeRoot);
+
+    try {
+      await waitForHealth(port, 15_000);
+      const pidFile = findDaemonPidFile(stateRoot);
+      expect(pidFile).not.toBeNull();
+
+      // Stand in for a launchd successor that filed itself before this
+      // instance's SIGTERM handler ran.
+      writeFileSync(pidFile!, String(SUCCESSOR_PID), 'utf8');
+
+      child.kill('SIGTERM');
+      await waitForExit(child, 10_000);
+
+      expect(findDaemonPidFile(stateRoot)).toBe(pidFile);
+      expect(readFileSync(pidFile!, 'utf8').trim()).toBe(String(SUCCESSOR_PID));
+    } finally {
+      if (child.exitCode === null) child.kill('SIGKILL');
       rmSync(stateRoot, { recursive: true, force: true });
       rmSync(activeRoot, { recursive: true, force: true });
     }

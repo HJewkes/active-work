@@ -49,6 +49,8 @@ Then sweep your own session for everything durable and file it:
 | Process improvements, gotchas, "avoid this next time", non-actionable FYIs | `--notes` (lands in `sources/notes/`, indexed in every future bootstrap) |
 | Uncommitted work, unpushed branches, stashes, worktree state | recorded automatically by `wrap`; add `holding` context if the bare fact isn't enough |
 
+Write `--next-steps` text that does **not** restate the task or PR the loop targets — put the id in the step's `ref` field and let the text open with the action. The bootstrap prefixes the ref itself, so text of "AW-28 drain the miner backlog" filed against `ref: AW-28` renders as "AW-28 AW-28 drain the miner backlog" in every future session (AW-71).
+
 Every category needs an **explicit** answer. Omitting a flag is an error, not a shortcut — the assert-nothing forms (`--no-loops`, `--no-notes`, `--no-tasks`) exist so that "there was nothing here" is a claim you make deliberately rather than by forgetting. Use them only when they are actually true.
 
 **active-work is the source of truth — not `~/.claude` memory, not `CLAUDE.md`.** A process lesson written to memory is invisible to the next session on this initiative and to every other surface. File it as a note.

@@ -62,13 +62,74 @@ export async function readPidFile(): Promise<PidFileContents | null> {
   return { pid, meta };
 }
 
-export async function removePidFile(): Promise<void> {
+/**
+ * Delete the PID file — but only while it still names `expectedPid`.
+ *
+ * launchd restarts overlap by design: the successor binds the port and
+ * writes its own PID file before the departing instance's SIGTERM handler
+ * gets to clean up. An unconditional unlink there deletes the *successor's*
+ * file, leaving a live daemon that `mcp status`, `doctor`, `mcp stop` and
+ * `mcp restart` all report as absent, recoverable only via launchctl
+ * (AW-76). Every caller therefore names the pid whose file it means to
+ * clear; a mismatch means someone else owns the daemon now, so we leave it.
+ *
+ * Returns whether the file was removed.
+ */
+export async function removePidFile(expectedPid: number): Promise<boolean> {
+  const current = await readPidFile();
+  if (current === null) return false;
+  if (current.pid !== expectedPid) return false;
   for (const p of [pidPath(), metaPath()]) {
     try {
       await fs.unlink(p);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
+  }
+  return true;
+}
+
+export const DEFAULT_DAEMON_PORT = 7400;
+
+/**
+ * The port a daemon would be listening on absent an explicit `--port`.
+ *
+ * Callers that have lost the PID file (see `removePidFile`) still need
+ * somewhere to aim a health probe; the installed launchd/systemd unit runs
+ * `mcp serve` with no port argument, so this is the port in practice.
+ */
+export function resolveDaemonPort(): number {
+  const envPort = process.env.AW_PORT;
+  if (envPort) {
+    const n = Number.parseInt(envPort, 10);
+    if (Number.isFinite(n)) return n;
+  }
+  return DEFAULT_DAEMON_PORT;
+}
+
+export interface DaemonHealth {
+  version: string;
+  pid: number;
+  uptime_ms: number;
+  port: number;
+}
+
+const HEALTH_TIMEOUT_MS = 500;
+
+/** GET `/health` on the loopback daemon; null on any failure. */
+export async function probeHealth(port: number): Promise<DaemonHealth | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as DaemonHealth;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

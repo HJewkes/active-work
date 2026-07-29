@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import {
+  DEFAULT_DAEMON_PORT,
   isProcessAlive,
   readPidFile,
   removePidFile,
@@ -25,7 +26,6 @@ type Result = z.infer<typeof ResultSchema>;
 
 const SHUTDOWN_TIMEOUT_MS = 3000;
 const POLL_INTERVAL_MS = 100;
-const DEFAULT_PORT = 7400;
 
 async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -47,7 +47,8 @@ async function stopExisting(): Promise<number | undefined> {
     }
     await waitForExit(pid, SHUTDOWN_TIMEOUT_MS);
   }
-  await removePidFile();
+  // Scoped to the pid we killed: a supervisor may have already replaced it.
+  await removePidFile(pid);
   return meta.port;
 }
 
@@ -80,7 +81,7 @@ export default defineCommand<Args, Result>({
   },
   async run(args) {
     const prevPort = await stopExisting();
-    const port = args.port ?? prevPort ?? DEFAULT_PORT;
+    const port = args.port ?? prevPort ?? DEFAULT_DAEMON_PORT;
     return detachedSpawn(port);
   },
 });
