@@ -1,13 +1,17 @@
 import { mkdtempSync, cpSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, dirname, resolve, sep } from 'node:path';
+// Namespace import, not `{ homedir }`: `sandbox-home.ts` redirects home by
+// REPLACING `os.homedir`, and a named import binds the original function, which
+// under the threads pool does not track a runtime `$HOME` write. Every src file
+// calls `os.homedir()` for the same reason — keep it that way.
+import os from 'node:os';
+import { basename, join, dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const FIXTURE_DIR = join(__dirname, '..', 'fixtures', 'mini-active-root');
 
-const TEMP_PREFIX = join(tmpdir(), 'aw-test-');
+const TEMP_PREFIX = join(os.tmpdir(), 'aw-test-');
 
 /**
  * Refuse to recursively delete anything that is not one of our own temp dirs.
@@ -22,17 +26,38 @@ const TEMP_PREFIX = join(tmpdir(), 'aw-test-');
  *
  * Compares realpaths because macOS resolves `/tmp` through `/private/tmp`, so
  * a plain prefix match on the un-resolved path would reject valid temp dirs.
+ * Resolution has to tolerate a path that does not exist, though: `realpathSync`
+ * throws `ENOENT`, and an opaque `ENOENT` in place of this function's actual
+ * message would obscure the very mistake it exists to name.
  */
+function resolveForCompare(p: string): string {
+  const absolute = resolve(p);
+  try {
+    return realpathSync(absolute);
+  } catch {
+    return absolute;
+  }
+}
+
 export function assertSafeToRemove(dir: string): void {
-  const resolved = realpathSync(resolve(dir));
-  const tempBase = realpathSync(tmpdir());
-  const withinTemp = resolved.startsWith(tempBase + sep);
-  const looksLikeOurs = resolved.includes('aw-test-');
-  if (!withinTemp || !looksLikeOurs) {
+  const resolved = resolveForCompare(dir);
+  const tempBase = resolveForCompare(os.tmpdir());
+  const home = resolveForCompare(os.homedir());
+
+  // A DIRECT child of the temp dir whose name carries the prefix — exactly the
+  // shape `mkdtempSync(TEMP_PREFIX)` produces. A mere `startsWith` on the temp
+  // base plus a substring test would be too loose: CI sandboxes HOME to a path
+  // literally named `aw-test-home`, so if TMPDIR ever pointed at its parent, a
+  // substring rule would have cleared the home directory.
+  const isOurTempDir = dirname(resolved) === tempBase && basename(resolved).startsWith('aw-test-');
+  // Belt and braces: never the home directory, and never an ancestor of it.
+  const touchesHome = resolved === home || home.startsWith(resolved + sep);
+
+  if (!isOurTempDir || touchesHome) {
     throw new Error(
       `test-helpers refused to delete ${resolved}: not an aw-test- temp dir ` +
-        `under ${tempBase}. Tests must never write to or remove the real ` +
-        `active root — override it with ACTIVE_ROOT, never XDG_DATA_HOME.`,
+        `directly under ${tempBase}. Tests must never write to or remove the ` +
+        `real active root — override it with ACTIVE_ROOT, never XDG_DATA_HOME.`,
     );
   }
 }
