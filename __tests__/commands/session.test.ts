@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import sessionRecord from '../../src/commands/session-record.js';
+import wrap from '../../src/commands/wrap.js';
 import sessionList from '../../src/commands/session-list.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 import type { CommandContext } from '../../src/registry/index.js';
@@ -10,188 +10,39 @@ function makeCtx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
 }
 
-const STARTED = '2026-05-12T09:00:00Z';
-const ENDED = '2026-05-12T10:30:00Z';
-
-describe('session.record', () => {
-  it('writes a file with computed filename derived from started (UTC)', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      const result = await sessionRecord.run(
-        {
-          slug: 'sample-initiative',
-          session_id: 'sess-001',
-          started: STARTED,
-          ended: ENDED,
-          track: 'canonical',
-          body: '- bullet one\n- bullet two\n',
-        },
-        makeCtx(activeRoot),
-      );
-
-      expect(result.filename).toBe('2026-05-12-0900-sess-001.md');
-      const expectedPath = path.join(
-        activeRoot,
-        'sample-initiative',
-        'sessions',
-        '2026-05-12-0900-sess-001.md',
-      );
-      expect(result.path).toBe(expectedPath);
-
-      const raw = await fs.readFile(expectedPath, 'utf8');
-      expect(raw).toContain('session_id: sess-001');
-      expect(raw).toContain('track: canonical');
-      expect(raw).toContain('- bullet one');
-    });
-  });
-
-  it('appends -1 suffix on collision', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      const args = {
-        slug: 'sample-initiative',
-        session_id: 'collide',
-        started: STARTED,
-        ended: ENDED,
-        track: 'canonical' as const,
-        body: 'first\n',
-      };
-      const first = await sessionRecord.run(args, makeCtx(activeRoot));
-      const second = await sessionRecord.run(
-        { ...args, body: 'second\n' },
-        makeCtx(activeRoot),
-      );
-
-      expect(first.filename).toBe('2026-05-12-0900-collide.md');
-      expect(second.filename).toBe('2026-05-12-0900-collide-1.md');
-
-      await fs.access(first.path);
-      await fs.access(second.path);
-    });
-  });
-
-  it('rejects invalid track value', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      await expect(
-        sessionRecord.run(
-          {
-            slug: 'sample-initiative',
-            session_id: 'bad-track',
-            started: STARTED,
-            ended: ENDED,
-            // @ts-expect-error testing bad input
-            track: 'nope',
-            body: '',
-          },
-          makeCtx(activeRoot),
-        ),
-      ).rejects.toThrow(/Frontmatter validation failed/);
-    });
-  });
-
-  it('defaults track to canonical when omitted', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      const parsed = sessionRecord.args.parse({
-        slug: 'sample-initiative',
-        session_id: 'default-track',
-        started: STARTED,
-        ended: ENDED,
-        body: 'hi\n',
-      });
-      const result = await sessionRecord.run(parsed, makeCtx(activeRoot));
-      const raw = await fs.readFile(result.path, 'utf8');
-      expect(raw).toContain('track: canonical');
-    });
-  });
-
-  it('reads body from --body-file when --body is omitted', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      const bodyPath = path.join(activeRoot, 'body.md');
-      await fs.writeFile(bodyPath, 'from-file body\n- bullet\n', 'utf8');
-      const parsed = sessionRecord.args.parse({
-        slug: 'sample-initiative',
-        session_id: 'body-from-file',
-        started: STARTED,
-        ended: ENDED,
-        track: 'canonical',
-        body_file: bodyPath,
-      });
-      const result = await sessionRecord.run(parsed, makeCtx(activeRoot));
-      const raw = await fs.readFile(result.path, 'utf8');
-      expect(raw).toContain('from-file body');
-      expect(raw).toContain('- bullet');
-    });
-  });
-
-  it('rejects when neither --body nor --body-file is provided', () => {
-    expect(() =>
-      sessionRecord.args.parse({
-        slug: 'sample-initiative',
-        session_id: 'no-body',
-        started: STARTED,
-        ended: ENDED,
-        track: 'canonical',
-      }),
-    ).toThrow(/Exactly one of --body or --body-file/);
-  });
-
-  it('rejects when both --body and --body-file are provided', () => {
-    expect(() =>
-      sessionRecord.args.parse({
-        slug: 'sample-initiative',
-        session_id: 'both-body',
-        started: STARTED,
-        ended: ENDED,
-        track: 'canonical',
-        body: 'inline',
-        body_file: '/tmp/whatever.md',
-      }),
-    ).toThrow(/mutually exclusive/);
-  });
-
-  it('rejects ended < started', async () => {
-    await withTempActiveRoot(async (activeRoot) => {
-      await expect(
-        sessionRecord.run(
-          {
-            slug: 'sample-initiative',
-            session_id: 'reverse',
-            started: ENDED,
-            ended: STARTED,
-            track: 'canonical',
-            body: '',
-          },
-          makeCtx(activeRoot),
-        ),
-      ).rejects.toThrow(/Frontmatter validation failed/);
-    });
-  });
-});
+/** `wrap` is the only way to write a session file; use it to seed the list. */
+function writeSession(
+  activeRoot: string,
+  overrides: Record<string, unknown>,
+): Promise<{ path: string; filename: string }> {
+  return wrap.run(
+    wrap.args.parse({
+      slug: 'sample-initiative',
+      track: 'canonical',
+      no_loops: true,
+      ...overrides,
+    }),
+    makeCtx(activeRoot),
+  );
+}
 
 describe('session.list', () => {
   it('returns sessions sorted by ended desc', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       // Fixture has 2026-05-10-1430-fixture001.md ended at 16:00.
-      await sessionRecord.run(
-        {
-          slug: 'sample-initiative',
-          session_id: 'newer',
-          started: '2026-05-11T08:00:00Z',
-          ended: '2026-05-11T09:00:00Z',
-          track: 'canonical',
-          body: 'newer body\n',
-        },
-        makeCtx(activeRoot),
-      );
-      await sessionRecord.run(
-        {
-          slug: 'sample-initiative',
-          session_id: 'newest',
-          started: '2026-05-12T08:00:00Z',
-          ended: '2026-05-12T09:00:00Z',
-          track: 'sidecar',
-          body: 'newest body\n',
-        },
-        makeCtx(activeRoot),
-      );
+      await writeSession(activeRoot, {
+        session_id: 'newer',
+        started: '2026-05-11T08:00:00Z',
+        ended: '2026-05-11T09:00:00Z',
+        body: 'newer body\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'newest',
+        started: '2026-05-12T08:00:00Z',
+        ended: '2026-05-12T09:00:00Z',
+        track: 'sidecar',
+        body: 'newest body\n',
+      });
 
       const result = await sessionList.run(
         { slug: 'sample-initiative' },
@@ -209,17 +60,12 @@ describe('session.list', () => {
 
   it('truncates to limit', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      await sessionRecord.run(
-        {
-          slug: 'sample-initiative',
-          session_id: 'extra',
-          started: '2026-05-12T08:00:00Z',
-          ended: '2026-05-12T09:00:00Z',
-          track: 'canonical',
-          body: 'x\n',
-        },
-        makeCtx(activeRoot),
-      );
+      await writeSession(activeRoot, {
+        session_id: 'extra',
+        started: '2026-05-12T08:00:00Z',
+        ended: '2026-05-12T09:00:00Z',
+        body: 'x\n',
+      });
 
       const result = await sessionList.run(
         { slug: 'sample-initiative', limit: 1 },
@@ -234,17 +80,12 @@ describe('session.list', () => {
   it('extracts first non-empty body line, truncated to 120 chars', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const longLine = 'a'.repeat(200);
-      await sessionRecord.run(
-        {
-          slug: 'sample-initiative',
-          session_id: 'preview',
-          started: '2026-05-12T08:00:00Z',
-          ended: '2026-05-12T09:00:00Z',
-          track: 'canonical',
-          body: `\n\n${longLine}\nsecond line\n`,
-        },
-        makeCtx(activeRoot),
-      );
+      await writeSession(activeRoot, {
+        session_id: 'preview',
+        started: '2026-05-12T08:00:00Z',
+        ended: '2026-05-12T09:00:00Z',
+        body: `\n\n${longLine}\nsecond line\n`,
+      });
 
       const result = await sessionList.run(
         { slug: 'sample-initiative', limit: 1 },

@@ -9,7 +9,8 @@ import {
   getLockPath,
 } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
-import { readRawFrontmatter } from '../utils/gray-matter-io.js';
+import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
+import { BriefFrontmatterSchema, TaskSeqSchema } from '../schemas/brief.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
@@ -29,9 +30,17 @@ type Args = z.infer<typeof ArgsSchema>;
 
 const PREFIX_RE = /^[A-Z][A-Z0-9]*$/;
 
-async function readBriefPrefix(slug: string): Promise<string> {
+interface Brief {
+  slug: string;
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+  prefix: string;
+}
+
+async function loadBrief(slug: string): Promise<Brief> {
   const briefPath = path.join(getInitiativeDir(slug), 'brief.md');
-  let raw: { frontmatter: Record<string, unknown> };
+  let raw: { frontmatter: Record<string, unknown>; body: string };
   try {
     raw = await readRawFrontmatter(briefPath);
   } catch (err) {
@@ -46,7 +55,13 @@ async function readBriefPrefix(slug: string): Promise<string> {
       `Brief at ${briefPath} is missing a valid task_prefix`,
     );
   }
-  return prefix;
+  return {
+    slug,
+    path: briefPath,
+    frontmatter: raw.frontmatter,
+    body: raw.body,
+    prefix,
+  };
 }
 
 async function listTaskFiles(slug: string): Promise<string[]> {
@@ -71,7 +86,7 @@ async function loadExistingTasks(slug: string): Promise<Task[]> {
   return tasks;
 }
 
-function nextTaskNumber(prefix: string, existing: Task[]): number {
+function maxOnDiskTaskNumber(prefix: string, existing: Task[]): number {
   let max = 0;
   const re = new RegExp(`^${prefix}-(\\d+)$`);
   for (const t of existing) {
@@ -81,7 +96,63 @@ function nextTaskNumber(prefix: string, existing: Task[]): number {
       if (n > max) max = n;
     }
   }
-  return max + 1;
+  return max;
+}
+
+// `Infinity` and `NaN` both stringify to `null` through JSON, which would hide
+// the very value the operator has to find in the file.
+function describeValue(value: unknown): string {
+  return typeof value === 'number' ? String(value) : JSON.stringify(value);
+}
+
+function taskSeqRepair(brief: Brief, value: unknown, onDisk: number): string {
+  return (
+    `Invalid task_seq (${describeValue(value)}) in ${brief.path}. ` +
+    'task_seq is the high-water mark for task ids and must be a positive whole ' +
+    'number no larger than Number.MAX_SAFE_INTEGER. Task ids cannot be allocated ' +
+    `until it is repaired: the highest id on disk is ${brief.prefix}-${onDisk}, so run ` +
+    `\`active-work set ${brief.slug} task_seq <n>\` with n at least ${Math.max(onDisk, 1)} ` +
+    '— higher if ids above that were issued and their tasks later deleted.'
+  );
+}
+
+/**
+ * ABSENT is a legitimate back-compat path: briefs written before the field
+ * existed allocate from the on-disk max. Any other invalid value is corruption,
+ * and silently falling back would "repair" it *downward* — below an id that has
+ * already been issued — so it is reported instead of guessed at.
+ */
+function readTaskSeq(brief: Brief, onDisk: number): number {
+  const raw = brief.frontmatter.task_seq;
+  if (raw === undefined) return 0;
+  const parsed = TaskSeqSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ValidationError(taskSeqRepair(brief, raw, onDisk));
+  }
+  return parsed.data;
+}
+
+// Ids must never be reissued, even after `task delete` removes the file
+// that used the highest number. Allocate from the persisted `task_seq`
+// high-water mark (falling back to the on-disk max for briefs written
+// before the field existed) and persist the new mark before returning.
+async function allocateTaskNumber(
+  brief: Brief,
+  existing: Task[],
+): Promise<number> {
+  const onDisk = maxOnDiskTaskNumber(brief.prefix, existing);
+  const next = Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
+  const frontmatter: Record<string, unknown> = {
+    ...brief.frontmatter,
+    task_seq: next,
+  };
+  await writeFrontmatter(
+    brief.path,
+    frontmatter,
+    brief.body,
+    BriefFrontmatterSchema,
+  );
+  return next;
 }
 
 function nextPriority(existing: Task[]): number {
@@ -119,10 +190,10 @@ export default defineCommand<Args, Task>({
     // Touch activeRoot so it's resolved before locking.
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
-      const prefix = await readBriefPrefix(args.slug);
+      const brief = await loadBrief(args.slug);
       const existing = await loadExistingTasks(args.slug);
-      const n = nextTaskNumber(prefix, existing);
-      const id = `${prefix}-${n}`;
+      const n = await allocateTaskNumber(brief, existing);
+      const id = `${brief.prefix}-${n}`;
       const priority = args.priority ?? nextPriority(existing);
       const date = today();
       const task: Task = {

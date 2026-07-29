@@ -10,7 +10,6 @@ const ArgsSchema = z.object({
 
 const ResultSchema = z.object({
   brief: z.string(),
-  handoff: z.string(),
   tasks_dir: z.string(),
   sessions_dir: z.string(),
   artifacts: z.string(),
@@ -40,7 +39,6 @@ export default defineCommand({
 
     return {
       brief: path.join(dir, 'brief.md'),
-      handoff: path.join(dir, 'handoff.md'),
       tasks_dir: path.join(dir, 'tasks'),
       sessions_dir: path.join(dir, 'sessions'),
       artifacts: path.join(dir, 'artifacts.yml'),

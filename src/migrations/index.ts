@@ -1,6 +1,7 @@
 import { ConfigError } from '../errors.js';
 import type { Migration } from './types.js';
 import { v1ToV2Artifacts } from './v1-to-v2-artifacts.js';
+import { v2ToV3OpenLoops } from './v2-to-v3-open-loops.js';
 
 export type { Migration } from './types.js';
 
@@ -11,7 +12,7 @@ export type { Migration } from './types.js';
  * entry to {@link MIGRATIONS} that walks data from the previous version
  * to the new one.
  */
-export const CURRENT_VERSION = 2;
+export const CURRENT_VERSION = 3;
 
 /**
  * Migrations registry. Add an entry when bumping {@link CURRENT_VERSION}.
@@ -22,7 +23,7 @@ export const CURRENT_VERSION = 2;
  * stamps `CURRENT_VERSION` on first run; an existing `.schema-version`
  * file containing `0` is treated as an error so the user notices.
  */
-export const MIGRATIONS: Migration[] = [v1ToV2Artifacts];
+export const MIGRATIONS: Migration[] = [v1ToV2Artifacts, v2ToV3OpenLoops];
 
 /**
  * Runs every migrator needed to bring `activeRoot` from `fromVersion`

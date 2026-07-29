@@ -105,18 +105,18 @@ describe('edit command', () => {
     });
   });
 
-  it('skips schema validation for handoff target', async () => {
+  it('edits brief.md when no target is given (handoff was retired in v3)', async () => {
     await withTempActiveRoot(async (root) => {
-      const handoffPath = path.join(root, 'sample-initiative', 'handoff.md');
+      const briefPath = path.join(root, 'sample-initiative', 'brief.md');
       const { spawner } = recordingSpawner(0);
 
       const result = await runEdit(
-        { slug: 'sample-initiative', target: 'handoff' },
-        { resolveEditor: fakeResolver('vi', [handoffPath]), spawner },
+        { slug: 'sample-initiative', target: 'brief' },
+        { resolveEditor: fakeResolver('vi', [briefPath]), spawner },
       );
 
       expect(result.validated).toBe(true);
-      expect(result.file).toBe(handoffPath);
+      expect(result.file).toBe(briefPath);
     });
   });
 });

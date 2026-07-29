@@ -9,14 +9,17 @@ import { readFrontmatter } from '../utils/gray-matter-io.js';
 import { NotFoundError, ValidationError } from '../errors.js';
 import { defineCommand } from '../registry/index.js';
 
+// `handoff` was the other target until v3 retired handoff.md. The enum is
+// kept (rather than dropped for a bare slug) so the CLI shape survives and a
+// stale `edit <slug> handoff` fails with a schema error naming the target.
 const ArgsSchema = z.object({
   slug: z.string().min(1),
-  target: z.enum(['brief', 'handoff']),
+  target: z.enum(['brief']).default('brief'),
 });
 
 const ResultSchema = z.object({
   slug: z.string(),
-  target: z.enum(['brief', 'handoff']),
+  target: z.enum(['brief']),
   file: z.string(),
   validated: z.boolean(),
   aborted: z.boolean().optional(),
@@ -94,9 +97,8 @@ const defaultDeps: RunEditDeps = {
   spawner: defaultSpawner,
 };
 
-function targetFile(slug: string, target: Args['target']): string {
-  const dir = getInitiativeDir(slug);
-  return path.join(dir, target === 'brief' ? 'brief.md' : 'handoff.md');
+function targetFile(slug: string): string {
+  return path.join(getInitiativeDir(slug), 'brief.md');
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -112,10 +114,10 @@ export async function runEdit(
   args: Args,
   deps: RunEditDeps = defaultDeps,
 ): Promise<Result> {
-  const file = targetFile(args.slug, args.target);
+  const file = targetFile(args.slug);
   if (!(await fileExists(file))) {
     throw new NotFoundError(
-      `${args.target}.md not found for initiative "${args.slug}" (expected ${file})`,
+      `brief.md not found for initiative "${args.slug}" (expected ${file})`,
     );
   }
 
@@ -134,19 +136,13 @@ export async function runEdit(
     };
   }
 
-  if (args.target === 'brief') {
-    try {
-      await readFrontmatter(file, BriefFrontmatterSchema);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new ValidationError(
-        `Brief frontmatter is invalid after editing. Re-run \`active-work edit ${args.slug} brief\` to fix.\n${message}`,
-        { cause: err },
-      );
-    }
-  } else if (!(await fileExists(file))) {
-    throw new NotFoundError(
-      `handoff.md disappeared during edit (expected ${file})`,
+  try {
+    await readFrontmatter(file, BriefFrontmatterSchema);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ValidationError(
+      `Brief frontmatter is invalid after editing. Re-run \`active-work edit ${args.slug}\` to fix.\n${message}`,
+      { cause: err },
     );
   }
 
@@ -160,12 +156,12 @@ export async function runEdit(
 
 const edit = defineCommand<Args, Result>({
   name: 'edit',
-  description: "Open the operator's editor on brief.md or handoff.md.",
+  description: "Open the operator's editor on brief.md.",
   args: ArgsSchema,
   result: ResultSchema,
   cli: {
     positional: ['slug', 'target'],
-    usage: 'active-work edit <slug> <brief|handoff>',
+    usage: 'active-work edit <slug> [brief]',
   },
   async run(args) {
     return runEdit(args);

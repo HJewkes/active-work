@@ -115,7 +115,7 @@ describe('stepWriteSchemaVersion', () => {
       path.join(paths.activeRoot, '.schema-version'),
       'utf8',
     );
-    expect(stamped.trim()).toBe('2');
+    expect(stamped.trim()).toBe('3');
   });
 });
 

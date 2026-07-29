@@ -13,6 +13,83 @@ const FIXTURE_NOW = new Date('2026-05-12T16:00:00Z');
 
 const offlineOpts = { includeLiveStatus: false } as const;
 
+interface NextStepFixture {
+  id: string;
+  text: string;
+  kind: 'task' | 'pr' | 'prose';
+  ref?: string;
+}
+
+interface ResolveFixture {
+  ref: string;
+  outcome: 'done' | 'abandoned';
+  note?: string;
+}
+
+interface SessionFixture {
+  session_id: string;
+  started: string;
+  ended: string;
+  track: 'canonical' | 'sidecar' | 'adhoc';
+  body: string;
+  next_steps?: NextStepFixture[];
+  resolves?: ResolveFixture[];
+  no_loops?: true;
+}
+
+function nextStepLines(steps: NextStepFixture[]): string[] {
+  if (steps.length === 0) return [];
+  const lines = ['next_steps:'];
+  for (const step of steps) {
+    lines.push(`  - id: ${step.id}`);
+    lines.push(`    text: ${step.text}`);
+    lines.push(`    kind: ${step.kind}`);
+    // Quoted: a bare `57` would parse as a number and fail the string schema.
+    if (step.ref !== undefined) lines.push(`    ref: '${step.ref}'`);
+  }
+  return lines;
+}
+
+function resolveLines(entries: ResolveFixture[]): string[] {
+  if (entries.length === 0) return [];
+  const lines = ['resolves:'];
+  for (const entry of entries) {
+    lines.push(`  - ref: ${entry.ref}`);
+    lines.push(`    outcome: ${entry.outcome}`);
+    if (entry.note !== undefined) lines.push(`    note: ${entry.note}`);
+  }
+  return lines;
+}
+
+/**
+ * Write a session file into the fixture initiative, named like `wrap` does.
+ * Returns the filename stem — the identity half of a loop `ref`.
+ */
+async function writeSession(
+  activeRoot: string,
+  session: SessionFixture,
+): Promise<string> {
+  const hhmm = session.started.slice(11, 13) + session.started.slice(14, 16);
+  const stem = `${session.started.slice(0, 10)}-${hhmm}-${session.session_id}`;
+  const front = [
+    '---',
+    `session_id: ${session.session_id}`,
+    `started: ${session.started}`,
+    `ended: ${session.ended}`,
+    `track: ${session.track}`,
+    ...(session.no_loops ? ['no_loops: true'] : []),
+    ...nextStepLines(session.next_steps ?? []),
+    ...resolveLines(session.resolves ?? []),
+    '---',
+    '',
+  ].join('\n');
+  await fs.writeFile(
+    path.join(activeRoot, SAMPLE_SLUG, 'sessions', `${stem}.md`),
+    front + session.body,
+  );
+  return stem;
+}
+
 describe('assembleBootstrap', () => {
   it('returns a prompt that includes the slug and brief title', async () => {
     await withTempActiveRoot(async (activeRoot) => {
@@ -119,6 +196,52 @@ describe('assembleBootstrap', () => {
       expect(prompt).toContain('No previous sessions recorded.');
       expect(metadata.last_session).toBeUndefined();
       expect(metadata.time_since_last_session_human).toBeUndefined();
+    });
+  });
+
+  it('falls back to the newest sidecar session when no canonical exists (AW-42)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const sessionsDir = path.join(activeRoot, SAMPLE_SLUG, 'sessions');
+      const entries = await fs.readdir(sessionsDir);
+      for (const file of entries) {
+        await fs.unlink(path.join(sessionsDir, file));
+      }
+      await writeSession(activeRoot, {
+        session_id: 'side-old',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T10:00:00Z',
+        track: 'sidecar',
+        body: '- Older sidecar session\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'side-new',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'sidecar',
+        body: '- Newest sidecar session\n',
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      // Newest session of any track becomes the narrative, labeled by track
+      // so it isn't mistaken for mainline continuity.
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-11-0900-side-new.md',
+      );
+      expect(prompt).toContain('# Last session (sidecar) (2026-05-11, side-new)');
+      expect(prompt).toContain('Newest sidecar session');
+
+      // The chosen narrative session must not also appear as a parallel
+      // pointer — it would be both the mainline block and a listed pointer.
+      const parallelIdx = prompt.indexOf('# Parallel sessions');
+      if (parallelIdx !== -1) {
+        expect(prompt.slice(parallelIdx)).not.toContain('side-new');
+      }
     });
   });
 
@@ -303,6 +426,379 @@ describe('assembleBootstrap', () => {
       expect(metadata.bootstrap_at).toMatch(
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
       );
+    });
+  });
+
+  it('tells ad-hoc sessions to record on the adhoc track (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        adhoc: true,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('active-work wrap --track adhoc');
+    });
+  });
+
+  it('omits the parallel-sessions block when there are none (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Parallel sessions');
+    });
+  });
+
+  it('lists adhoc and sidecar sessions newer than the last canonical one (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'adhoc001',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T10:00:00Z',
+        track: 'adhoc',
+        body: '\n- Patched the flaky launcher test\n- Second line stays hidden\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'side001',
+        started: '2026-05-11T12:00:00Z',
+        ended: '2026-05-11T13:00:00Z',
+        track: 'sidecar',
+        body: '- Folded in a discovered branch\n',
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      // The narrative slot still belongs to the newest canonical session.
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-10-1430-fixture001.md',
+      );
+      expect(prompt).toContain('# Last session (2026-05-10, fixture001)');
+
+      expect(prompt).toContain('# Parallel sessions since then');
+      expect(prompt).toContain(
+        '- 2026-05-11 (adhoc, adhoc001) — - Patched the flaky launcher test',
+      );
+      expect(prompt).toContain('- 2026-05-11 (sidecar, side001) — - Folded in a discovered branch');
+      expect(prompt).not.toContain('Second line stays hidden');
+    });
+  });
+
+  it('excludes parallel sessions older than the last canonical one (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'old-adhoc',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T10:00:00Z',
+        track: 'adhoc',
+        body: '- Ancient ad-hoc detour\n',
+      });
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).not.toContain('# Parallel sessions');
+      expect(prompt).not.toContain('old-adhoc');
+    });
+  });
+
+  it('breaks equal `ended` ties on `started`, newest first (AW-36)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'long-run',
+        started: '2026-05-11T08:00:00Z',
+        ended: '2026-05-11T18:00:00Z',
+        track: 'canonical',
+        body: '- Long mainline session\n',
+      });
+      await writeSession(activeRoot, {
+        session_id: 'short-run',
+        started: '2026-05-11T17:30:00Z',
+        ended: '2026-05-11T18:00:00Z',
+        track: 'canonical',
+        body: '- Short mainline session\n',
+      });
+      const { metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(metadata.last_session?.filename).toBe(
+        '2026-05-11-1730-short-run.md',
+      );
+    });
+  });
+});
+
+describe('assembleBootstrap open loops', () => {
+  it('lists unresolved loops oldest first with their age', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'loop-old',
+        started: '2026-04-27T09:00:00Z',
+        ended: '2026-04-27T16:00:00Z',
+        track: 'canonical',
+        body: '- Old session\n',
+        next_steps: [
+          { id: 's1', text: 'SQLite index blocked on eval harness', kind: 'prose' },
+        ],
+      });
+      await writeSession(activeRoot, {
+        session_id: 'loop-new',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- New session\n',
+        next_steps: [
+          { id: 's1', text: 'awaiting review', kind: 'pr', ref: '57' },
+        ],
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('# Open loops (2 hanging, oldest 15d)');
+      expect(prompt).toContain('[15d] SQLite index blocked on eval harness');
+      expect(prompt).toContain('[ 1d] PR #57 awaiting review');
+      expect(prompt).toContain('(from 2026-04-27, ref 2026-04-27-0900-loop-old#s1)');
+      expect(prompt.indexOf('[15d]')).toBeLessThan(prompt.indexOf('[ 1d]'));
+      expect(metadata.open_loop_count).toBe(2);
+    });
+  });
+
+  it('says nothing was asserted clear when no session filed a no_loops marker', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain(
+        '# Open loops\nNothing hanging — no unresolved loops, but no session has asserted the ledger is clear.',
+      );
+      expect(metadata.open_loop_count).toBe(0);
+    });
+  });
+
+  it('credits the newest session when it asserted the ledger is clear', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'all-clear',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Confirmed nothing hanging\n',
+        no_loops: true,
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain(
+        '# Open loops\nNothing hanging — the 2026-05-11 session asserted the ledger is clear.',
+      );
+    });
+  });
+
+  it('drops task loops whose task is already done', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'loop-tasks',
+        started: '2026-05-08T09:00:00Z',
+        ended: '2026-05-08T16:00:00Z',
+        track: 'canonical',
+        body: '- Task loops\n',
+        next_steps: [
+          { id: 'done', text: 'finish second sample task', kind: 'task', ref: 'SI-2' },
+          { id: 'open', text: 'finish first sample task', kind: 'task', ref: 'SI-1' },
+        ],
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('SI-1 finish first sample task');
+      expect(prompt).not.toContain('finish second sample task');
+      expect(metadata.open_loop_count).toBe(1);
+    });
+  });
+
+  it('drops loops closed by a later session', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const stem = await writeSession(activeRoot, {
+        session_id: 'loop-opener',
+        started: '2026-05-05T09:00:00Z',
+        ended: '2026-05-05T16:00:00Z',
+        track: 'canonical',
+        body: '- Opened a loop\n',
+        next_steps: [{ id: 's1', text: 'wire up the daemon', kind: 'prose' }],
+      });
+      await writeSession(activeRoot, {
+        session_id: 'loop-closer',
+        started: '2026-05-06T09:00:00Z',
+        ended: '2026-05-06T16:00:00Z',
+        track: 'canonical',
+        body: '- Closed it\n',
+        resolves: [{ ref: `${stem}#s1`, outcome: 'done' }],
+      });
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).not.toContain('wire up the daemon');
+      expect(metadata.open_loop_count).toBe(0);
+    });
+  });
+
+  it('renders open loops above the last session and the demoted task list', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'loop-order',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T16:00:00Z',
+        track: 'canonical',
+        body: '- Ordering fixture\n',
+        next_steps: [{ id: 's1', text: 'ordering loop', kind: 'prose' }],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      const loopsIdx = prompt.indexOf('# Open loops');
+      const sessionIdx = prompt.indexOf('# Last session');
+      const tasksIdx = prompt.indexOf('# Tasks (top');
+      expect(loopsIdx).toBeGreaterThan(-1);
+      expect(loopsIdx).toBeLessThan(sessionIdx);
+      expect(sessionIdx).toBeLessThan(tasksIdx);
+    });
+  });
+});
+
+/**
+ * Bootstrap and the loop derivation must agree about which session files
+ * parsed. When they disagree, bootstrap renders a healthy recent session while
+ * every loop it opened silently vanishes from the ledger — the failure mode is
+ * invisible precisely because the prompt still looks correct.
+ */
+describe('assembleBootstrap session parsing', () => {
+  const LOOP_FM = [
+    'session_id: edge',
+    'started: 2026-05-09T09:00:00Z',
+    'ended: 2026-05-09T16:00:00Z',
+    'track: canonical',
+    'next_steps:',
+    '  - id: s1',
+    '    text: edge case loop',
+    '    kind: prose',
+  ].join('\n');
+
+  async function bootstrapWithRawSession(
+    activeRoot: string,
+    contents: string,
+  ): Promise<string> {
+    await fs.writeFile(
+      path.join(activeRoot, SAMPLE_SLUG, 'sessions', '2026-05-09-0900-edge.md'),
+      contents,
+      'utf8',
+    );
+    const { prompt } = await assembleBootstrap({
+      activeRoot,
+      slug: SAMPLE_SLUG,
+      now: FIXTURE_NOW,
+      ...offlineOpts,
+    });
+    return prompt;
+  }
+
+  const variants: Record<string, string> = {
+    plain: `---\n${LOOP_FM}\n---\n\n- Edge body\n`,
+    'utf-8 BOM': `\uFEFF---\n${LOOP_FM}\n---\n\n- Edge body\n`,
+    'delimiter with trailing space': `--- \n${LOOP_FM}\n---\n\n- Edge body\n`,
+  };
+
+  for (const [label, contents] of Object.entries(variants)) {
+    it(`renders and derives consistently for a session with a ${label}`, async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const prompt = await bootstrapWithRawSession(activeRoot, contents);
+        // The two consumers agree: the loop reaches the ledger exactly when
+        // bootstrap did not have to report the file as unreadable.
+        const unreadable = prompt.includes('session file(s) unreadable');
+        expect(prompt.includes('edge case loop')).toBe(!unreadable);
+      });
+    });
+  }
+
+  it('annotates the open loops heading when a session file cannot be read', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const prompt = await bootstrapWithRawSession(
+        activeRoot,
+        '---\nsession_id: broken\nended: not-a-timestamp\n---\n\nbroken\n',
+      );
+      expect(prompt).toContain(
+        '# Open loops (1 session file(s) unreadable — run `active-work doctor`)',
+      );
+    });
+  });
+
+  it('renders the malformed file without dropping the loops of readable ones', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'healthy',
+        started: '2026-05-09T09:00:00Z',
+        ended: '2026-05-09T16:00:00Z',
+        track: 'canonical',
+        body: '- Healthy\n',
+        next_steps: [{ id: 's1', text: 'surviving loop', kind: 'prose' }],
+      });
+      await fs.writeFile(
+        path.join(activeRoot, SAMPLE_SLUG, 'sessions', '2026-05-09-1000-bad.md'),
+        'not a session at all\n',
+        'utf8',
+      );
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('surviving loop');
+      expect(prompt).toContain('1 session file(s) unreadable');
+      expect(metadata.open_loop_count).toBe(1);
     });
   });
 });

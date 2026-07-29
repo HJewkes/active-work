@@ -16,6 +16,11 @@ const isoDate = z
 
 const positiveInt = z.number().int().positive();
 
+// Exported so `task add` can validate a hand-edited `task_seq` against the same
+// rule the brief is written with, and reject it with a message that names the
+// field — whole-brief validation only ever produces an anonymous zod dump.
+export const TaskSeqSchema = positiveInt;
+
 const worktreeEntry = z.object({
   path: z.string().min(1),
   default: z.boolean().optional(),
@@ -52,6 +57,11 @@ export const BriefFrontmatterSchema = z
       }),
     worktrees: z.record(z.string(), worktreeEntry).optional(),
     channels: z.array(channelTarget).optional(),
+    // High-water mark for task ids: the largest numeric suffix ever issued
+    // for this initiative's task_prefix. Optional so pre-existing brief.md
+    // files (written before this field existed) keep validating; task.add
+    // falls back to scanning on-disk task files when it's absent.
+    task_seq: TaskSeqSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.state === 'focused' && value.rank === undefined) {

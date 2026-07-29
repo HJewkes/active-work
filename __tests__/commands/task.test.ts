@@ -10,6 +10,7 @@ import taskDelete from '../../src/commands/task-delete.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 import { NotFoundError, UsageError } from '../../src/errors.js';
 import type { CommandContext } from '../../src/registry/index.js';
+import { readRawFrontmatter } from '../../src/utils/gray-matter-io.js';
 
 function ctx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
@@ -66,6 +67,130 @@ describe('task.add', () => {
           ctx(root),
         ),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  it('never reissues an id after the task that held it is deleted', async () => {
+    await withTempActiveRoot(async (root) => {
+      // Fixture starts at SI-1/SI-2. Add SI-3, the current highest.
+      const third = await taskAdd.run(
+        { slug: SLUG, title: 'Third sample task' },
+        ctx(root),
+      );
+      expect(third.id).toBe('SI-3');
+
+      await taskDelete.run({ slug: SLUG, id: 'SI-3' }, ctx(root));
+
+      // Naively recomputing max(on-disk) + 1 would reissue SI-3 here.
+      const fourth = await taskAdd.run(
+        { slug: SLUG, title: 'Fourth sample task' },
+        ctx(root),
+      );
+      expect(fourth.id).toBe('SI-4');
+
+      const { frontmatter } = await readRawFrontmatter(
+        path.join(root, SLUG, 'brief.md'),
+      );
+      expect(frontmatter.task_seq).toBe(4);
+    });
+  });
+
+  it('falls back to the on-disk max when brief.md has no task_seq', async () => {
+    await withTempActiveRoot(async (root) => {
+      // The fixture brief.md predates task_seq; confirm it still allocates
+      // correctly from the on-disk tasks (SI-1, SI-2) alone.
+      const before = await readRawFrontmatter(
+        path.join(root, SLUG, 'brief.md'),
+      );
+      expect(before.frontmatter.task_seq).toBeUndefined();
+
+      const created = await taskAdd.run(
+        { slug: SLUG, title: 'Back-compat task' },
+        ctx(root),
+      );
+      expect(created.id).toBe('SI-3');
+    });
+  });
+
+  // AW-52: a corrupt task_seq used to fall back to max(on-disk) + 1 — the exact
+  // allocator the field replaced — or throw an anonymous zod dump.
+  describe('corrupt task_seq (AW-52)', () => {
+    // Written as raw text: the validating writer would refuse these values,
+    // which is precisely how they only ever arrive by hand-editing.
+    async function injectTaskSeq(root: string, literal: string): Promise<void> {
+      const briefPath = path.join(root, SLUG, 'brief.md');
+      const text = await fs.readFile(briefPath, 'utf8');
+      await fs.writeFile(
+        briefPath,
+        text.replace('task_prefix: SI', `task_prefix: SI\ntask_seq: ${literal}`),
+        'utf8',
+      );
+    }
+
+    it.each([
+      ['negative', '-4'],
+      ['zero', '0'],
+      ['a string', "'twelve'"],
+      ['null', 'null'],
+      ['a float', '3.7'],
+      ['beyond the safe integer range', '9007199254740993'],
+      ['infinite', '1e400'],
+    ])('refuses to allocate when task_seq is %s', async (_label, literal) => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, literal);
+
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(/Invalid task_seq/);
+
+        // The message must name the field, the file, and the repair.
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(
+          /brief\.md.*active-work set sample-initiative task_seq <n>/s,
+        );
+
+        // Nothing is allocated, so no id can be reissued below the mark.
+        const files = await fs.readdir(path.join(root, SLUG, 'tasks'));
+        expect(files.sort()).toEqual(['SI-1.yml', 'SI-2.yml']);
+      });
+    });
+
+    it('names the on-disk high-water mark as the repair floor', async () => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, '-4');
+        await expect(
+          taskAdd.run({ slug: SLUG, title: 'blocked' }, ctx(root)),
+        ).rejects.toThrow(/highest id on disk is SI-2.*at least 2/s);
+      });
+    });
+
+    it('still allocates from a valid persisted mark', async () => {
+      await withTempActiveRoot(async (root) => {
+        await injectTaskSeq(root, '12');
+        const created = await taskAdd.run(
+          { slug: SLUG, title: 'fine' },
+          ctx(root),
+        );
+        expect(created.id).toBe('SI-13');
+      });
+    });
+  });
+
+  it('serializes concurrent adds under the initiative lock', async () => {
+    await withTempActiveRoot(async (root) => {
+      const results = await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          taskAdd.run({ slug: SLUG, title: `Concurrent ${i}` }, ctx(root)),
+        ),
+      );
+      const ids = results.map((t) => t.id).sort();
+      expect(ids).toEqual(['SI-3', 'SI-4', 'SI-5', 'SI-6', 'SI-7']);
+
+      const { frontmatter } = await readRawFrontmatter(
+        path.join(root, SLUG, 'brief.md'),
+      );
+      expect(frontmatter.task_seq).toBe(7);
     });
   });
 });

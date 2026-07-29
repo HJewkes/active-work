@@ -32,8 +32,8 @@ import taskReorder from './task-reorder.js';
 
 // Sessions
 import sessionList from './session-list.js';
-import sessionRecord from './session-record.js';
 import sessionsBrowser from './sessions-browser.js';
+import wrap from './wrap.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -74,6 +74,7 @@ import mcpLogs from './mcp-logs.js';
 import setup from './setup.js';
 import uninstall from './uninstall.js';
 import doctor from './doctor.js';
+import migrate from './migrate.js';
 import sync from './sync.js';
 
 const ALL_COMMANDS: AnyCommand[] = [
@@ -97,9 +98,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskReorder,
   taskDelete,
   // sessions
-  sessionRecord,
   sessionList,
   sessionsBrowser,
+  wrap,
   // sources / artifacts
   sourceAdd,
   artifactAddBranch,
@@ -133,6 +134,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   setup,
   uninstall,
   doctor,
+  migrate,
   sync,
 ];
 

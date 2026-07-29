@@ -28,30 +28,30 @@ describe('runMigrations', () => {
     });
   });
 
-  it('ships with the v1 -> v2 artifacts migrator (AW-15)', () => {
-    expect(MIGRATIONS).toHaveLength(1);
-    expect(MIGRATIONS[0]?.from).toBe(1);
-    expect(MIGRATIONS[0]?.to).toBe(2);
+  it('ships a contiguous chain from v1 up to CURRENT_VERSION', () => {
+    expect(MIGRATIONS).toHaveLength(CURRENT_VERSION - 1);
+    MIGRATIONS.forEach((m, i) => {
+      expect(m.from).toBe(i + 1);
+      expect(m.to).toBe(i + 2);
+    });
   });
 
-  it('runs the v1 -> v2 step when started from v1, via the injected registry', async () => {
+  it('runs every step when started from v1, via the injected registry', async () => {
     await withEmptyActiveRoot(async (root) => {
       const calls: string[] = [];
-      const synthetic: Migration[] = [
-        {
-          from: 1,
-          to: 2,
-          description: 'synthetic v1 -> v2',
-          async run(target) {
-            expect(target).toBe(root);
-            calls.push('1->2');
-          },
+      const synthetic: Migration[] = MIGRATIONS.map((m) => ({
+        from: m.from,
+        to: m.to,
+        description: `synthetic v${m.from} -> v${m.to}`,
+        async run(target) {
+          expect(target).toBe(root);
+          calls.push(`${m.from}->${m.to}`);
         },
-      ];
+      }));
 
       const result = await runMigrations(root, 1, synthetic);
-      expect(result.ran).toHaveLength(1);
-      expect(calls).toEqual(['1->2']);
+      expect(result.ran).toHaveLength(MIGRATIONS.length);
+      expect(calls).toEqual(MIGRATIONS.map((m) => `${m.from}->${m.to}`));
     });
   });
 

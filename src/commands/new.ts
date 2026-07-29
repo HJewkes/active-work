@@ -117,9 +117,6 @@ export default defineCommand({
       BriefFrontmatterSchema,
     );
 
-    const handoffBody = `# Current state\n\n_(write a paragraph here)_\n`;
-    await fs.writeFile(path.join(dir, 'handoff.md'), handoffBody, 'utf8');
-
     await writeYaml(
       path.join(dir, 'artifacts.yml'),
       { branches: [], stashes: [] },

@@ -27,23 +27,23 @@ Engage whenever the user signals they want to inspect, mutate, or hand off persi
 1. **Edits route through the CLI.** Use `active-work new`, `active-work set`, `active-work task add`, `active-work task done`, `active-work artifact add`, etc. Direct `Edit`/`Write` on `tasks/*.yml`, `artifacts.yml`, or the frontmatter of `brief.md` bypasses validation and corrupts the schema. Prose bodies (`brief.md` body, `handoff.md`, session summaries) can be edited directly, but prefer `active-work edit` for `brief.md` because it re-validates frontmatter on save.
 2. **LLM writes prose; CLI handles structure.** Task ordering, session filenames, frontmatter dates, slug normalization, and rank reflow are CLI primitives. Don't compute them yourself.
 3. **`active-work --help` is the canonical command reference.** This skill intentionally doesn't duplicate the surface; run `active-work --help` or `active-work <command> --help` when you need flags.
-4. **Session capture at end.** When wrapping up, run `active-work session record <slug>` with a 3-5 bullet summary of what happened, what changed, and what's next. Auto-prompt this when you detect the user winding down ("I'm done", "let's stop", "wrap up", inactivity after a chunk of work).
+4. **Session capture at end.** When wrapping up, run `active-work wrap <slug>` — it records the session file, files the open-loop ledger, and stamps `brief.updated`, atomically. The body is a 3-5 bullet summary of what happened and what changed; `--next-steps` / `--resolves` carry the loops this session opened and closed. It refuses an empty ledger, so file the loops rather than reaching for the `--no-loops` escape hatch (see `active-work wrap --help`), which asserts that nothing at all is hanging. Auto-prompt this when you detect the user winding down ("I'm done", "let's stop", "wrap up", inactivity after a chunk of work).
 5. **`active-work mcp status` first.** If MCP tools aren't responding, the daemon may not be running. Start it with `active-work mcp serve --detach` before retrying.
 
 ## Bootstrap flow (`aw <slug>` / `active-work open <slug>`)
 
 `aw <slug>` is the operator-facing launcher: it assembles the bootstrap prompt and execs `claude` with the initiative's worktree as cwd. Omit the slug and it resolves the initiative from the caller's cwd (matching against each brief's registered worktrees), falling back to the interactive picker when nothing matches uniquely; `aw --pick` forces the picker. (Register a worktree so this resolution works with `active-work worktree set <slug> <path>`, or at creation via `new --worktree` / `track --worktree`.) `active-work open <slug>` is the same assembly logic, but prints the prompt to stdout instead of spawning Claude — use it from MCP / scripts / any caller that wants to handle the spawn itself (pass `--cwd <dir>` when the caller's process cwd isn't the user's shell cwd, e.g. the daemon). The bootstrap prompt inlines:
 
-- The full `handoff.md` text
-- A brief excerpt (frontmatter summary + first prose paragraph)
+- A brief excerpt (the brief's prose body, truncated to 40 lines)
 - The most recent session summary
 - The top N open tasks (rank-sorted)
+- Recently-done tasks from the last 14 days, if any
 - Open artifacts with status
-- Time since the last session
+- A context block with today's date, bootstrap time, and time since the last session
 
 To re-seed context **mid-session** (a session that wasn't started via `aw`, or one that has drifted), run `active-work prompt` — it prints the same bootstrap prompt to stdout, cwd-resolved and side-effect-free (no auto-archive). The bundled `/aw-prompt` slash command wraps it and injects the output straight into the session.
 
-Because handoff and brief excerpt are already in your context, **do not re-read `brief.md` or `handoff.md`** at the top of the session. Jump straight to the highest-rank open task unless the user redirects you. If the user opens a slug without further instruction, ask "continue with `<top task title>`?" and proceed on confirmation.
+The brief excerpt is already in your context, so **do not re-read `brief.md`** at the top of the session. The bootstrap does not inline `handoff.md` at all — read it directly when you need current-state context beyond what's summarized above. Jump straight to the highest-rank open task unless the user redirects you. If the user opens a slug without further instruction, ask "continue with `<top task title>`?" and proceed on confirmation.
 
 **Ad-hoc sessions** (`aw <slug> --adhoc`, also `open`/`prompt --adhoc`): the opening and closing directives change to say the session is scoped to ad-hoc work on the workstream — the context is background, *not* a directive. Do **not** offer to continue the top task; wait for the user to describe the specific ad-hoc task, then work it with the workstream context in mind. The bootstrap prompt itself carries this instruction, so follow whichever framing it renders.
 

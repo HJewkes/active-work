@@ -83,6 +83,8 @@ export default defineCommand({
         started: startedIso,
         ended: startedIso,
         track: 'sidecar' as const,
+        next_steps: [],
+        resolves: [],
       },
       body,
       SessionFrontmatterSchema,
