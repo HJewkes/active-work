@@ -140,8 +140,44 @@ describe('readWorktreeState', () => {
     );
     const state = await readWorktreeState('/repo/gone');
     expect(state.present).toBe(false);
-    expect(state.dirty).toBe(false);
-    expect(state.files_changed).toBe(0);
+    // Null, not false: there is no tree to be clean (AW-73).
+    expect(state.dirty).toBeNull();
+    expect(state.files_changed).toBeNull();
+  });
+
+  // AW-73: a failed `git status` is not a clean tree. Reporting it as clean
+  // silenced the wrap warning that says uncommitted work is being left behind.
+  it('reports an unreadable working tree as unknown, not as clean', async () => {
+    setGitRunner(
+      gitFake({
+        '--is-inside-work-tree': () => ({ code: 0, stdout: 'true\n' }),
+        status: () => ({ code: 128, stdout: '' }),
+        'rev-parse': () => ({ code: 0, stdout: 'main\n' }),
+        'rev-list': () => ({ code: 0, stdout: '0\n' }),
+      }),
+    );
+    const state = await readWorktreeState('/repo/main');
+    expect(state.present).toBe(true);
+    expect(state.dirty).toBeNull();
+    expect(state.files_changed).toBeNull();
+  });
+
+  // Deriving has_upstream from `ahead !== null` conflated "no upstream" with
+  // "the rev-list call failed", so a transient failure reported a tracked
+  // branch as untracked.
+  it('probes has_upstream instead of inferring it from a failed rev-list', async () => {
+    setGitRunner(
+      gitFake({
+        '--is-inside-work-tree': () => ({ code: 0, stdout: 'true\n' }),
+        status: () => ({ code: 0, stdout: '' }),
+        'rev-list': () => ({ code: 128, stdout: '' }),
+        '@{u}': () => ({ code: 0, stdout: 'origin/main\n' }),
+        'rev-parse': () => ({ code: 0, stdout: 'main\n' }),
+      }),
+    );
+    const state = await readWorktreeState('/repo/main');
+    expect(state.ahead).toBeNull();
+    expect(state.has_upstream).toBe(true);
   });
 
   it('reports a live worktree as present', async () => {

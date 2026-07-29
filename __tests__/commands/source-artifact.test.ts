@@ -453,6 +453,7 @@ describe('artifact.status', () => {
         files_changed: 3,
         ahead: 2,
         behind: 5,
+        has_upstream: true,
       });
     });
   });

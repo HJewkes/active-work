@@ -39,7 +39,8 @@ export interface UnrecordedState {
 export interface DirtyTree {
   path: string;
   repo: string;
-  files_changed: number;
+  /** Null when git could not say — the tree is unknown, not clean. */
+  files_changed: number | null;
 }
 
 export interface UnpushedBranch {
@@ -181,7 +182,11 @@ function collectWorktree(
     repo: label,
     ...(branch ? { branch } : {}),
   });
-  if (state.dirty) {
+  // `dirty: null` means git could not answer, which is reported rather than
+  // skipped: treating an unreadable tree as clean hides exactly the
+  // uncommitted work this sweep exists to surface.
+  const dirtyUnknown = state.dirty === null;
+  if (state.dirty || dirtyUnknown) {
     into.dirty.push({
       path: discovered.path,
       repo: label,
@@ -202,7 +207,9 @@ function collectWorktree(
   // lives nowhere else — unpushed commits or an uncommitted tree. Recording
   // every branch git happens to have checked out would bury the ones that
   // matter.
-  if (state.dirty || isUnpushed) into.branches.push({ repo: label, name: branch });
+  if (state.dirty !== false || isUnpushed) {
+    into.branches.push({ repo: label, name: branch });
+  }
 }
 
 async function sweepRepo(repoPath: string, label: string): Promise<RepoSweep> {
