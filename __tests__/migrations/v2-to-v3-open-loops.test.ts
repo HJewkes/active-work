@@ -267,12 +267,11 @@ describe('the bundled proposal', () => {
   it('validates against ProposalSchema and covers every live initiative', () => {
     const parsed = ProposalSchema.parse(V3_OPEN_LOOPS_PROPOSAL);
     expect(parsed.initiatives).toHaveLength(17);
-    // 97 after the 2026-07-29 AW-65 refresh (was 99): active-work's merged-PR
-    // loop and claude-channels' unverifiable "Service Steps" loop dropped,
-    // voltras' two already-done loops dropped, and CC-31, R-44 and
-    // VMCP-01.72 added.
+    // 100 after AW-65's TWO refresh passes on 2026-07-29 (was 99). Further
+    // sessions kept moving relay and voltras-workspace the same day, so
+    // those entries were re-derived twice; see the data file's header.
     const totalLoops = parsed.initiatives.reduce((n, i) => n + i.next_steps.length, 0);
-    expect(totalLoops).toBe(97);
+    expect(totalLoops).toBe(100);
     // Slugs unique, ids unique within a session, session_ids kebab-case.
     expect(new Set(parsed.initiatives.map((i) => i.slug)).size).toBe(17);
     for (const initiative of parsed.initiatives) {

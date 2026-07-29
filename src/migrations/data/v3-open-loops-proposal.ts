@@ -32,10 +32,19 @@
  * initiatives, and four of them then kept working and rewrote the handoff it
  * had just been derived from: `relay`, `active-work`, `claude-channels` and
  * `voltras-workspace`. Those four entries were re-derived against the handoffs
- * as they now stand; the other 13 predate 12:28 and are untouched. Each
+ * as they then stood; the other 13 predate 12:28 and are untouched. Each
  * changed entry carries a comment saying what moved and why.
  *
- * Three rules the refresh established, worth keeping if this is ever redone:
+ * **It then had to happen a SECOND time the same day.** Between the refresh and
+ * the apply window, further sessions rewrote `relay` (19:27Z) and
+ * `voltras-workspace` (19:09Z) again, closed `R-24` and `CC-31`, and merged
+ * `VMCP-01.72` part (a). A hand-authored proposal cannot stay current for an
+ * initiative that is being actively worked: **re-validate immediately before
+ * applying, in a window where nothing else is running, and treat any gap
+ * between refresh and apply as invalidating.** The mechanical checks below are
+ * the cheap part; the content drift is not.
+ *
+ * Four rules these passes established, worth keeping if this is ever redone:
  *
  * - **A loop for finished work cannot be expressed here.** The only resolve
  *   this file can emit is `abandoned` (`v2-to-v3-open-loops.ts`), so a loop
@@ -49,6 +58,12 @@
  *   `claude-channels` teleport is the live example: CC-20 covered the design
  *   and is closed, but the implementation — second on that board — has no
  *   open task, so it is carried as prose.
+ * - **Re-check every `kind: task` ref against task STATUS at apply time, not
+ *   just existence.** `relay` n9 pointed at R-24, which closed hours after the
+ *   first refresh; the loop would have vanished on arrival and taken the
+ *   recurring obligation with it (it is prose now). Where a task closes and the
+ *   work genuinely is finished, DROP the loop instead — filing one that
+ *   auto-resolves is noise, which is why `claude-channels` n1 is gone.
  */
 export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
   abandoned_at: '2026-07-28T18:00:00Z',
@@ -215,16 +230,15 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
       session_id: 'handoff-migration',
       body: "# Handoff state as of 2026-07-28\n\n**Agent teams work.** CC-17 closed: a spawned agent is a durable, addressable peer that outlives its spawner, launchable headless or in a terminal under normal permissions — and spawned agents have now done real work (one found a lifecycle race, three found a security gap, two live defects, a false test). **CC-30 closed** too: ordinary sessions now have durable identity.\n\n`feat/plugin-packaging` pushed at `a12c1fc`, clean tree, 323 tests green, tsc and prettier clean. The broker runs properly detached in its own process group, so it survives the session that started it. **CC-24 closed** — the headless hang is gone, and the fix was not A8's stream.jsonl: the streams are discarded, because Claude Code already writes a full structured transcript per session and we assign the session id ourselves. §9 and A8 in agent-teams.md are marked superseded.\n\n**CC-28 has since closed**, so confinement is real and the planned wave items stand on their own. Confinement turned out to be schema-level: a denied tool is ABSENT from the model's schema rather than refused, so there is **no denial frame at all** for a toolset-confined agent — whereas settings-level denials ARE observable (`is_error: true` plus a `toolDenialKind` marker). Any feature here must say which of the two it covers.\n\n**CC-31 is the most important new finding of the session:** severing a session's bus produces no noticeable dead bus — Claude Code restarts the MCP server and the session ends up silently absent from a *working* bus, unable to tell.\n\nTeleport (CC-20) is now fully designed, with all five decisions recorded in the task, but **not implemented**.\n\nThe title is legacy: the subject is general agent orchestration, and the logic will eventually fold into relay. Keep the orchestration logic separable from the local broker / event log / registry.\n\n_Refreshed 2026-07-29 (AW-65) against the handoff as it stood at session close._",
       next_steps: [
-        // n1 reused: the old n1 (build the live-spawn harness) duplicated n4's
-        // CC-27 content, which carries the same ground in more detail. The
-        // slot now holds the handoff's actual "Top of the board" item, which
-        // the mid-session proposal predated entirely.
-        {
-          id: 'n1',
-          text: 'Top of the board: CC-31 — a session severed from the bus cannot tell. Before building the likely fix (re-register on MCP start), CHECK WHETHER THE RESTARTED SUBPROCESS ACTUALLY RECEIVES `CLAUDE_CODE_SESSION_ID` — that was never verified, and the whole direction depends on it.',
-          kind: 'task',
-          ref: 'CC-31',
-        },
+        // The original n1 (build the live-spawn harness) duplicated n4's CC-27
+        // content and was dropped. The first 2026-07-29 pass replaced it with
+        // CC-31, the handoff's "Top of the board" item — and CC-31 then CLOSED
+        // later the same day: re-measured, the `CLAUDE_CODE_SESSION_ID` gate
+        // answered, and the two failure states it had conflated separated.
+        // Leaving it as a task ref would file a loop that auto-resolves on
+        // arrival and never surfaces, so the slot is simply empty. Nothing is
+        // lost: this initiative's 14:32 session filed four live loops through
+        // `wrap`, so its current work is already in the ledger.
         {
           id: 'n2',
           text: 'CC-25 — the spawn-rate budget §11.3 promises and that does not exist. Named as a §11 defence that turned out to be prose.',
@@ -508,12 +522,15 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
     },
     {
       slug: 'relay',
-      // Refreshed 2026-07-29 (AW-65). Was 2026-07-28T16:19:00Z, which predates
-      // even the covering session's own `ended` (16:45:00Z). The handoff was
-      // touched again afterwards to file R-47 and add its closing note.
-      ended: '2026-07-28T18:44:00Z',
+      // Refreshed TWICE on 2026-07-29 (AW-65). First pass moved this off
+      // 16:19:00Z, which predated even its covering session's own `ended`. A
+      // further session then ran and rewrote the handoff again at 19:27Z —
+      // later than either of that day's session ends — to record the
+      // R-3-step-2 branch state, R-49/R-50 being filed and R-24 closing. The
+      // loops below were not all true until that edit, so `ended` follows it.
+      ended: '2026-07-29T19:27:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-28\n\nrelay is live, populated, and now has a real attribute model. Production holds 111 imported items plus two test captures (ids 113, 114). Both MCP surfaces are deployed. R-33 is decided and R-38 shipped it: type-specific attributes live in a registry-validated `meta` column enforced by database triggers that both writer doors inherit. `main` is clean — 360 tests across 16 files, tsc clean, four CI gates. Production is Worker version `119a7987`, D1 migrations through 0007.\n\nThe model in four lines: a narrow typed core with type-specific facets in one meta JSON column; `type_schemas` is a TABLE, so registering a kind or attribute is an INSERT; BEFORE INSERT/UPDATE triggers enforce registered keys and allowed values, so both doors and a hand-run `wrangler d1 execute` all obey; hot attributes promote to generated columns, derived so they cannot drift.\n\nThe session that produced this handoff left R-23 Part B half-answered — OAuth completed but the six admin verbs never attached. R-23, R-27 and R-36 all closed later the same day, so the headline NEXT ACTION and the first two operator-only items are no longer live and are excluded below.\n\n**READ THIS BEFORE TRUSTING ANY CLOSED SECURITY TICKET. R-20 closed by RE-SCOPE, not by resolving the risk.** The mascot-madness token still reaches relay's D1 and Worker; the blast radius is unchanged. **R-44 (account separation) is the real precondition**, and the handoff names it as the one thing an operator might want to do first, because the cost grows with every new surface pointed at the hostname.\n\n_Refreshed 2026-07-29 (AW-65) against the handoff as it stood after R-47 was filed._",
+      body: "# Handoff state as of 2026-07-29\n\n**R-3 step 2 is built and fully verified, and it is sitting on an unmerged branch.** Dispatch exists in the schema and the storage seam: an item is handed to an agent by setting its GTD context to `agent`, and a runner claims it by appending to one append-only `events` log. No daemon exists yet, nothing executes, nothing is deployed. 386 tests across 17 files, `tsc` clean, `make check` exit 0, and the compatibility suite at 66/66 local AND hosted — local/hosted divergence still measures zero, now across 66 constructs.\n\n**Production is untouched by this work:** 24 objects, no `events` table, migration 0008 applied to LOCAL D1 only. Production still holds the 111 imported items plus the two test captures (ids 113, 114).\n\nEarlier context that still holds: R-33 is decided and R-38 shipped it — type-specific attributes live in a registry-validated `meta` column enforced by database triggers that both writer doors inherit. Both MCP surfaces are deployed; production is Worker version `119a7987`.\n\nThe model in four lines: a narrow typed core with type-specific facets in one meta JSON column; `type_schemas` is a TABLE, so registering a kind or attribute is an INSERT; BEFORE INSERT/UPDATE triggers enforce registered keys and allowed values, so both doors and a hand-run `wrangler d1 execute` all obey; hot attributes promote to generated columns, derived so they cannot drift.\n\nThe session that produced this handoff left R-23 Part B half-answered — OAuth completed but the six admin verbs never attached. R-23, R-27 and R-36 all closed later the same day, so the headline NEXT ACTION and the first two operator-only items are no longer live and are excluded below.\n\n**READ THIS BEFORE TRUSTING ANY CLOSED SECURITY TICKET. R-20 closed by RE-SCOPE, not by resolving the risk.** The mascot-madness token still reaches relay's D1 and Worker; the blast radius is unchanged. **R-44 (account separation) is the real precondition**, and the handoff names it as the one thing an operator might want to do first, because the cost grows with every new surface pointed at the hostname.\n\n_Refreshed twice on 2026-07-29 (AW-65); this reflects the handoff as rewritten at 19:27Z, after R-3 step 2 was verified, R-49/R-50 were filed and R-24 closed._",
       next_steps: [
         {
           id: 'n1',
@@ -562,11 +579,15 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
           kind: 'task',
           ref: 'R-28',
         },
+        // Was `kind: task, ref: R-24`. R-24 closed 2026-07-29 (66/66 hosted),
+        // so the ref would have auto-resolved this loop the moment the
+        // migration ran and deleted it before anyone read it. What survives
+        // R-24's closure is the RECURRING obligation, which no task carries —
+        // hence prose.
         {
           id: 'n9',
-          text: 'R-24 is operator-only: run `make check-compat-remote`. It refuses a non-TTY by design.',
-          kind: 'task',
-          ref: 'R-24',
+          text: 'Recurring, and owned by nobody: `make check-compat-remote` is operator-only (it refuses a non-TTY by design) and must be re-run after ANY change to the SQL constructs relay depends on. The one-off run closed as R-24 on 2026-07-29 at 66/66 hosted, with local/hosted divergence still measuring zero — but the obligation did not close with it.',
+          kind: 'prose',
         },
         {
           id: 'n10',
@@ -585,9 +606,33 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         },
         {
           id: 'n12',
-          text: "R-44 (account separation) is the one thing an operator might want to do FIRST. R-20 closed by re-scope rather than by resolving the risk — the mascot-madness token still reaches relay's D1 and Worker — and R-44 is the real precondition. Cost grows with every new surface pointed at the hostname, so deferring it gets more expensive, not less.",
+          text: "R-44 (account separation) is the one thing an operator might want to do FIRST. R-20 closed by re-scope rather than by resolving the risk — the mascot-madness token still reaches relay's D1 and Worker — and R-44 is the real precondition, now also gating step 6 specifically. Cost grows with every new surface pointed at the hostname, so deferring it gets more expensive, not less.",
           kind: 'task',
           ref: 'R-44',
+        },
+        // n13-n15 added in the second 2026-07-29 refresh pass. A further
+        // session rewrote this handoff at 19:27Z, and the headline it left —
+        // an entire built-and-verified feature waiting on a merge decision —
+        // was covered by none of the twelve loops above.
+        //
+        // Prose, not `kind: pr`: there is no PR, only an unpushed branch, and
+        // a `kind: pr` loop could never auto-resolve anyway.
+        {
+          id: 'n13',
+          text: 'DECIDE WHETHER R-3 STEP 2 LANDS. `feat/agent-dispatch-events` holds four commits, NOT merged and NOT pushed: agent as a GTD context (not a kind or assignee), an append-only `events` log with an atomic claim, both design docs corrected, and the claim verified on hosted D1 at 66/66. Nothing is mid-flight and nothing needs a restart — the branch is green and self-consistent, so the only open question is merge/push/deploy. Migration 0008 is applied to LOCAL D1 only; production is untouched. One live consequence to weigh: voice cannot set context=agent until R-49 lands.',
+          kind: 'prose',
+        },
+        {
+          id: 'n14',
+          text: 'R-49 — a dedicated voice `dispatch_to_agent` tool, sequenced to land with R-3 step 3. This is what restores the ability to hand an item to an agent by voice once step 2 makes `agent` a context.',
+          kind: 'task',
+          ref: 'R-49',
+        },
+        {
+          id: 'n15',
+          text: 'R-50 — scope note on R-39: the registry drives ATTRIBUTES, never the verb set. Worth reading before starting R-39 so the no-deploy property does not get overstated.',
+          kind: 'task',
+          ref: 'R-50',
         },
       ],
     },
@@ -660,26 +705,38 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
     },
     {
       slug: 'voltras-workspace',
-      // Refreshed 2026-07-29 (AW-65). Was 2026-07-28T17:29:00Z, which matched
-      // only the session-close doc; an undocumented session ran afterwards
-      // (LiveFatiguePanel wiring, VMCP-01.72 discovery, VW-106's 472-file
-      // reorg) and left no session file of its own. This is the handoff's
-      // true last-touch, so that span is at least represented.
-      ended: '2026-07-29T05:45:00Z',
+      // Refreshed TWICE on 2026-07-29 (AW-65). The first pass moved this off
+      // 17:29:00Z, which matched only a session-close doc while an
+      // undocumented session had run afterwards. A second large session then
+      // ran the same day — nine PRs across three repos, three npm releases,
+      // VW-101 and VW-106 closed, VMCP-01.72 part (a) merged — so this now
+      // follows that session's recorded end.
+      ended: '2026-07-29T19:15:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-28 (evening)\n\nThe `LiveFatiguePanel` wiring is DONE, along with the header lockup, the panel-derived idle stage, and the first real-pipeline planned-workout demo. That work surfaced a critical hole in the session model's tool surface, which is now the next action.\n\n`VW-106` is done: `coordination/` is deleted, its 472 files reorganized into this initiative's `sources/` tree, and every path reference across six repos, brain, the skills and these docs rewritten. Snapshot at `~/projects/_archive/voltras-coordination-snapshot-2026-07-29.tar.gz`. **handoff.md is now the session surface — dated `HANDOFF-*.md` / `NEXT-SESSION-*.md` docs are retired and must not be recreated.**\n\nFive branches are unpushed with nothing merged to main; tip is `feat/plan-driven-set-states` (lint 0, typecheck 0 on both tsconfigs, format 0, 2032 tests). Tree and review notes in `VW-105`.\n\nEarlier context that still holds: @titan-design/react-ui@0.12.0 is live on npm and voltras-mcp main is on it (7094aa1, PR #213); VW-99 passed all four rows on the wall. The diverging dual stage is built and merged (VMCP-04.05, voltras-mcp #214, main 3382496) — tempo and the exertion alert are shared rather than per-limb, and sets/reps/load stays on the page-level ExerciseHeader. The SPA works end to end on real hardware single-arm; the dual-arm view is still behind `?variant=live-dual`.\n\nThe 07-27 postmortem is why this file was rewritten: handoff.md was 12 days stale and the brief's in-flight efforts 22 days stale, bootstrap's priority ordering pointed at VW-68 (since demoted to p30), and the file titled \"start here\" was never opened. That cost a full session.\n\n_Refreshed 2026-07-29 (AW-65). Only the headline next action is migrated as a loop; the other 13 open tickets stay in `tasks/` and the handoff's ticket table by decision, to keep the ledger readable._",
+      body: "# Handoff state as of 2026-07-29 (second session)\n\nSix agents, **nine PRs merged across three repos, plus three npm releases**. `voltra-playground` main `e4a5bd1`, `voltras-mcp` main `1f010d9`, `voltra-node-sdk` main `a53804e` with tags v0.12.1/2/3 and npm at `@voltras/node-sdk@0.12.3`. Every repo clean, nothing unpushed, no worktrees left behind — but agents leave an UNTRACKED `.agent-notes/` in `voltras-mcp` that is not gitignored, so their reports do not survive a clean.\n\n**`VW-101` is fully closed, and it took THREE releases — that is the lesson.** 0.12.1 made `voltra-manager.ts`'s requires opaque to Metro; gates were green and Metro's own `collectDependencies` was clean over that file, **and it still did not work**, because `index.ts` value-exports `createBLEAdapter` from the adapters BARREL, which statically re-exports `NobleHost` — a second door nobody looked for. Two instrument lessons worth keeping: the 90-second check that would have caught it first try is bundling the real app with the workaround REMOVED (now the acceptance test: iOS bundles, 2125 modules, `@stoprocent/noble` 0); and read the sourcemap `sources` array, never grep the Hermes `.hbc`, which returned 0 both for the forbidden strings and for strings that had to be there — a blind instrument that reads as a pass.\n\n**`VMCP-01.72` part (a) is merged** (`1f010d9`, #220): the eight per-exercise read paths now scope by the set's own `exercise_id`. Part (b) is `VW-114`.\n\nEarlier the same day: `LiveFatiguePanel` wiring landed, and `VW-106` is done: `coordination/` is deleted, its 472 files reorganized into this initiative's `sources/` tree, and every path reference across six repos, brain, the skills and these docs rewritten. Snapshot at `~/projects/_archive/voltras-coordination-snapshot-2026-07-29.tar.gz`. **handoff.md is now the session surface — dated `HANDOFF-*.md` / `NEXT-SESSION-*.md` docs are retired and must not be recreated.**\n\nThe five-branch stack and `VW-105` have since landed. Earlier context that still holds: @titan-design/react-ui@0.12.0 is live on npm and voltras-mcp main is on it (7094aa1, PR #213); VW-99 passed all four rows on the wall. The diverging dual stage is built and merged (VMCP-04.05, voltras-mcp #214, main 3382496) — tempo and the exertion alert are shared rather than per-limb, and sets/reps/load stays on the page-level ExerciseHeader. The SPA works end to end on real hardware single-arm; the dual-arm view is still behind `?variant=live-dual`.\n\nThe 07-27 postmortem is why this file was rewritten: handoff.md was 12 days stale and the brief's in-flight efforts 22 days stale, bootstrap's priority ordering pointed at VW-68 (since demoted to p30), and the file titled \"start here\" was never opened. That cost a full session.\n\n_Refreshed twice on 2026-07-29 (AW-65). Only headline next actions are migrated as loops; the rest of the open ticket table stays in `tasks/` by decision, to keep the ledger readable._",
       next_steps: [
-        // n1 reused for the current NEXT ACTION. The old n1 (wire
-        // LiveFatiguePanel, ref VW-76) is DONE per the handoff — note that
-        // VW-76.yml is itself stale at `status: open`, so this loop would NOT
-        // have auto-resolved and would have migrated live.
-        //
-        // `kind: prose`, not `task`: VMCP-* tickets are tracked in voltras-mcp,
-        // and there is no VMCP-01.72.yml in this initiative's `tasks/`. A
-        // `kind: task` ref would be dangling.
+        // n1 has now been re-pointed twice. Originally "wire LiveFatiguePanel"
+        // (ref VW-76), which was already done while VW-76.yml still read
+        // `status: open` — so it would NOT have auto-resolved and would have
+        // migrated live. The first refresh replaced it with VMCP-01.72 as
+        // prose, because VMCP-* tickets live in voltras-mcp and a ref would
+        // have dangled. Part (a) has since merged (1f010d9, #220), and the
+        // remainder now HAS a local task — VW-114, priority 1, open — so this
+        // is finally a real task ref.
         {
           id: 'n1',
-          text: "NEXT ACTION: VMCP-01.72 — a session is single-exercise at the TOOL layer (critical). The schema already supports one workout holding many exercises (sets.exercise_id is independent of session_id); the tools cannot produce that state. A session's exercise is write-once at session.start, and set.start takes no exercise argument, so advancing exercises needs session.end → session.start, fragmenting one workout across several session rows. Reproduces on hardware. Audit plan.complete_workout, progression and volume rollups for a baked-in one-exercise-per-session assumption BEFORE choosing a shape.",
+          text: "FIRST: VW-114 — VMCP-01.72 part (b), implement `session.set_exercise` so one workout can hold multiple exercises without fragmenting across session rows. Part (a) is merged (1f010d9, #220): the eight per-exercise read paths now scope by the set's own `exercise_id`. Both user decisions on shape are recorded on the ticket. The original defect: a session's exercise was write-once at session.start and set.start took no exercise argument, so advancing exercises required session.end → session.start.",
+          kind: 'task',
+          ref: 'VW-114',
+        },
+        // Added in the second 2026-07-29 pass. Prose because VMCP-* tickets
+        // are tracked in voltras-mcp, not this initiative's `tasks/`.
+        // Admitted past the narrow-entry policy because it is a fresh
+        // high-severity regression caused BY the merges that just landed —
+        // exactly what a headline-only ledger should surface.
+        {
+          id: 'n2b',
+          text: "REGRESSION from today's merges: VMCP-04.15 (high) — the dual REST stage renders COMPLETELY BLANK, body empty at 0:02 and 0:05. Dual telemetry is now the DEFAULT view for any bilateral rig, so every real two-limb session hits this.",
           kind: 'prose',
         },
         // Old n3 (decide the fate of mapStoreToDualModel) dropped: the handoff
