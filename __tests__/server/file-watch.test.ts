@@ -87,18 +87,40 @@ describe('watchTree', () => {
     let count = 0;
     watcher = watchTree(dir, () => (count += 1), { debounceMs: DEBOUNCE });
 
-    // Create a brand-new subtree; the watcher's rescan must attach a watch on
-    // it. Poll-write into the new dir until a change is observed rather than
-    // sleeping a fixed amount — the rescan/attach timing is load-dependent, so
-    // fixed sleeps are flaky under parallel test load.
     const fresh = path.join(dir, 'new-initiative');
     mkdirSync(fresh);
-    const before = count;
-    const observed = await pollUntil(async () => {
-      writeFileSync(path.join(fresh, `f-${counter++}.md`), 'state');
-      return count > before;
-    }, 4000, DEBOUNCE * 2);
-    expect(observed).toBe(true);
+
+    // A rescan is only ever scheduled by a change on an already-watched dir, so
+    // the mkdir above is the sole event that can attach a watch to `fresh`.
+    // Losing it to the attach race wedges the test permanently: every later
+    // write goes inside `fresh`, which nothing is watching yet. Drive writes at
+    // the ROOT first — they prove the watcher is live and re-trigger the rescan,
+    // so a missed mkdir cannot deadlock the assertion.
+    const live = await pollUntil(
+      async () => {
+        writeFileSync(path.join(dir, `tick-${counter++}.md`), 'tick');
+        return count > 0;
+      },
+      4000,
+      DEBOUNCE * 2,
+    );
+    expect(live).toBe(true);
+
+    // Let the rescan settle so a leftover debounce cannot be mistaken below for
+    // an event originating inside `fresh`.
+    await new Promise((r) => setTimeout(r, DEBOUNCE * 4));
+
+    const attached = await pollUntil(
+      async () => {
+        const before = count;
+        writeFileSync(path.join(fresh, `f-${counter++}.md`), 'state');
+        await new Promise((r) => setTimeout(r, DEBOUNCE * 3));
+        return count > before;
+      },
+      4000,
+      DEBOUNCE,
+    );
+    expect(attached).toBe(true);
   });
 
   it('stops firing after close()', async () => {
