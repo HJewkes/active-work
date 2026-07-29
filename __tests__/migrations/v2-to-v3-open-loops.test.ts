@@ -33,11 +33,7 @@ interface ScaffoldOptions {
   state?: string;
 }
 
-async function scaffold(
-  root: string,
-  slug: string,
-  opts: ScaffoldOptions = {},
-): Promise<void> {
+async function scaffold(root: string, slug: string, opts: ScaffoldOptions = {}): Promise<void> {
   const dir = path.join(root, slug);
   await fs.mkdir(path.join(dir, 'tasks', 'archive'), { recursive: true });
   await fs.mkdir(path.join(dir, 'sources'), { recursive: true });
@@ -59,11 +55,7 @@ async function scaffold(
     await fs.writeFile(path.join(dir, 'tasks', `${id}.yml`), `id: ${id}\n`, 'utf8');
   }
   for (const id of opts.archivedTaskIds ?? []) {
-    await fs.writeFile(
-      path.join(dir, 'tasks', 'archive', `${id}.yml`),
-      `id: ${id}\n`,
-      'utf8',
-    );
+    await fs.writeFile(path.join(dir, 'tasks', 'archive', `${id}.yml`), `id: ${id}\n`, 'utf8');
   }
   if (opts.handoff !== null) {
     await fs.writeFile(
@@ -154,9 +146,7 @@ describe('v2 -> v3 open-loops migration', () => {
 
       expect(await fs.readdir(sessionsDir)).toEqual(afterFirst);
       expect(afterFirst).toEqual([`${STEM}.md`]);
-      expect(await fs.readFile(path.join(root, 'alpha', 'brief.md'), 'utf8')).toBe(
-        briefAfterFirst,
-      );
+      expect(await fs.readFile(path.join(root, 'alpha', 'brief.md'), 'utf8')).toBe(briefAfterFirst);
       const loops = await deriveOpenLoops(path.join(root, 'alpha'), {
         now: new Date('2026-06-11T09:00:00Z'),
       });
@@ -177,9 +167,7 @@ describe('v2 -> v3 open-loops migration', () => {
 
       await expect(v2ToV3OpenLoops.run(root)).rejects.toBeInstanceOf(ValidationError);
 
-      expect(await fs.readdir(path.join(root, 'alpha', 'sessions')).catch(() => [])).toEqual(
-        [],
-      );
+      expect(await fs.readdir(path.join(root, 'alpha', 'sessions')).catch(() => [])).toEqual([]);
       expect(await exists(path.join(root, 'alpha', 'handoff.md'))).toBe(true);
       const brief = await fs.readFile(path.join(root, 'alpha', 'brief.md'), 'utf8');
       expect(brief).not.toContain('task_seq');
@@ -205,9 +193,7 @@ describe('v2 -> v3 open-loops migration', () => {
 
       await expect(v2ToV3OpenLoops.run(root)).rejects.toThrow(/must be unique/);
 
-      expect(await fs.readdir(path.join(root, 'alpha', 'sessions')).catch(() => [])).toEqual(
-        [],
-      );
+      expect(await fs.readdir(path.join(root, 'alpha', 'sessions')).catch(() => [])).toEqual([]);
       expect(await exists(path.join(root, 'alpha', 'handoff.md'))).toBe(true);
     });
   });
@@ -269,12 +255,10 @@ describe('v2 -> v3 open-loops migration', () => {
       expect(rezzy.uncoveredReason).toMatch(/no entry in the migration proposal/);
 
       await v2ToV3OpenLoops.run(root);
-      expect(await exists(path.join(root, 'denver-rezzy', 'sessions', `${STEM}.md`))).toBe(
-        false,
+      expect(await exists(path.join(root, 'denver-rezzy', 'sessions', `${STEM}.md`))).toBe(false);
+      expect(await exists(path.join(root, 'denver-rezzy', 'sources', 'handoff-archive.md'))).toBe(
+        true,
       );
-      expect(
-        await exists(path.join(root, 'denver-rezzy', 'sources', 'handoff-archive.md')),
-      ).toBe(true);
     });
   });
 });
@@ -283,14 +267,31 @@ describe('the bundled proposal', () => {
   it('validates against ProposalSchema and covers every live initiative', () => {
     const parsed = ProposalSchema.parse(V3_OPEN_LOOPS_PROPOSAL);
     expect(parsed.initiatives).toHaveLength(17);
+    // 97 after the 2026-07-29 AW-65 refresh (was 99): active-work's merged-PR
+    // loop and claude-channels' unverifiable "Service Steps" loop dropped,
+    // voltras' two already-done loops dropped, and CC-31, R-44 and
+    // VMCP-01.72 added.
     const totalLoops = parsed.initiatives.reduce((n, i) => n + i.next_steps.length, 0);
-    expect(totalLoops).toBe(99);
+    expect(totalLoops).toBe(97);
     // Slugs unique, ids unique within a session, session_ids kebab-case.
     expect(new Set(parsed.initiatives.map((i) => i.slug)).size).toBe(17);
     for (const initiative of parsed.initiatives) {
       const ids = initiative.next_steps.map((n) => n.id);
       expect(new Set(ids).size).toBe(ids.length);
     }
+  });
+
+  // A `kind: pr` loop can never close on its own: bootstrap leaves
+  // `mergedPrs` unsupplied so derivation stays offline, so `isAutoResolved`
+  // only ever fires for `kind: task`. The proposal shipped one such loop
+  // (active-work → PR #56); the PR merged before the migration ran and the
+  // loop would have hung in the ledger forever. Carry PR work as prose.
+  it('carries no kind:pr loops, which could never auto-resolve', () => {
+    const parsed = ProposalSchema.parse(V3_OPEN_LOOPS_PROPOSAL);
+    const prLoops = parsed.initiatives.flatMap((i) =>
+      i.next_steps.filter((n) => n.kind === 'pr').map((n) => `${i.slug}#${n.id}`),
+    );
+    expect(prLoops).toEqual([]);
   });
 
   it('marks herald as the one abandoned-on-arrival loop', () => {
@@ -385,10 +386,7 @@ describe('abandoned-on-arrival loops', () => {
   it('does not leak the proposal-only `abandoned` key into the session file', async () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
-      const open = await fs.readFile(
-        path.join(root, 'herald', 'sessions', `${STEM}.md`),
-        'utf8',
-      );
+      const open = await fs.readFile(path.join(root, 'herald', 'sessions', `${STEM}.md`), 'utf8');
       expect(open).not.toContain('abandoned:');
     });
   });
@@ -417,9 +415,7 @@ describe('abandoned-on-arrival loops', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(
-        await exists(path.join(root, 'herald', 'sessions', `${ABANDON_STEM}.md`)),
-      ).toBe(true);
+      expect(await exists(path.join(root, 'herald', 'sessions', `${ABANDON_STEM}.md`))).toBe(true);
       const loops = await deriveOpenLoops(path.join(root, 'herald'), {
         now: new Date('2026-07-29T00:00:00Z'),
       });
@@ -572,18 +568,11 @@ describe('known malformed-session repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toContain(
-        'track: adhoc',
-      );
+      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toContain('track: adhoc');
       expect(await exists(path.join(root, ARCHIVED))).toBe(false);
       expect(
         await exists(
-          path.join(
-            root,
-            'voltras-workspace',
-            'sources',
-            'ARCHIVED-handoff-through-2026-07-15.md',
-          ),
+          path.join(root, 'voltras-workspace', 'sources', 'ARCHIVED-handoff-through-2026-07-15.md'),
         ),
       ).toBe(true);
     });

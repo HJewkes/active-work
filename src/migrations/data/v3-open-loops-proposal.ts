@@ -8,8 +8,11 @@
  *
  * Shape: see `ProposalSchema` in `../v3-proposal.ts`.
  *
- * `ended` is each initiative's real last-touch, read off its handoff — never
- * the clock and never file mtime, several of which are months adrift. The
+ * `ended` is each initiative's real last-touch, and never the clock. It is
+ * normally read off the handoff's own content; where that is silent it is
+ * taken from the covering session's recorded `ended`, and only as a last
+ * resort from file mtime (many mtimes are months adrift from the true
+ * last-touch, which is exactly what back-dating exists to preserve). The
  * loops below are therefore born already aged, and the eight initiatives last
  * touched in May trip the 30-day stale-loop warning on day one. That is the
  * intended outcome, not a defect.
@@ -22,15 +25,51 @@
  * archived to `sources/handoff-archive.md`, but no synthetic session is
  * written and its next-actions do not enter the ledger. The migration reports
  * every such skip loudly rather than guessing at content.
+ *
+ * ## Refreshed 2026-07-29 (AW-65)
+ *
+ * This file was authored 2026-07-28 12:28, *mid-session* for several
+ * initiatives, and four of them then kept working and rewrote the handoff it
+ * had just been derived from: `relay`, `active-work`, `claude-channels` and
+ * `voltras-workspace`. Those four entries were re-derived against the handoffs
+ * as they now stand; the other 13 predate 12:28 and are untouched. Each
+ * changed entry carries a comment saying what moved and why.
+ *
+ * Three rules the refresh established, worth keeping if this is ever redone:
+ *
+ * - **A loop for finished work cannot be expressed here.** The only resolve
+ *   this file can emit is `abandoned` (`v2-to-v3-open-loops.ts`), so a loop
+ *   whose work *completed* must be DROPPED, never marked abandoned — that
+ *   would invert the distinction AW-59 added.
+ * - **`kind: pr` never auto-resolves.** Bootstrap leaves `mergedPrs`
+ *   unsupplied on purpose to stay offline (`bootstrap/prompt.ts`), so a PR
+ *   loop hangs forever regardless of merge state. Prefer prose.
+ * - **Never point a loop at a `done` task whose work is not done.** It
+ *   auto-resolves on arrival and deletes the item from the ledger silently.
+ *   `claude-channels` teleport is the live example: CC-20 covered the design
+ *   and is closed, but the implementation — second on that board — has no
+ *   open task, so it is carried as prose.
  */
 export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
   abandoned_at: '2026-07-28T18:00:00Z',
   initiatives: [
     {
       slug: 'active-work',
+      // DELIBERATELY NOT the handoff's last-touch (2026-07-28T18:52Z), unlike
+      // every other entry refreshed on 2026-07-29. The 2026-07-28 session
+      // rewrote this handoff end to end, and the rewrite silently dropped the
+      // miner/release thread below — AW-23, AW-28 and AW-34 are all still
+      // `status: open` and appear nowhere in the current file. 2026-07-15 is
+      // their real hang date; `tasks/` records no such thing. Stamping this
+      // session 07-28 would reset that age to zero and defeat the back-dating.
+      //
+      // The current handoff's own next-actions (AW-65, AW-38, inbox) are NOT
+      // migrated here: the 2026-07-28 and 2026-07-29 wraps already filed them
+      // as live loops, and re-filing would double-count them — the specific
+      // hazard AW-65 was raised to catch.
       ended: '2026-07-15T00:00:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-15\n\nSession-mining tooling now lives in active-work, its proper home, and the miner roadmap is moving. active-work is published to npm as `@titan-design/active-work@0.1.0`; `main` is clean.\n\nTwo PRs are open, neither merged: **active-work#56** (`feat/session-miner-tooling` — the byte-identical miner port into `tools/`, plus AW-24 cost rollups and AW-27 the eval harness, both done) and **titan-design#110** (the design-repo copy, reduced to dashboard specimens). The eval immediately caught a real miner bug — junk branch names `/` and `HEAD:main` — filed as AW-34.\n\nThe v0.1 publish shipped under the org scope, not the planned `@hjewkes` scope, and releasing is now tag-triggered OIDC trusted publishing (#54) with changesets removed (#55). The first tagged run has never been exercised end to end.\n\nOne pre-existing flake: `__tests__/server/file-watch.test.ts` (timing/debounce, matches AW-12), passes on re-run.\n\n_This state is 13 days behind the initiative's newest real session (2026-07-28)._",
+      body: "# Handoff state as of 2026-07-15\n\nSession-mining tooling now lives in active-work, its proper home, and the miner roadmap is moving. active-work is published to npm as `@titan-design/active-work@0.1.0`; `main` is clean.\n\nTwo PRs are open, neither merged: **active-work#56** (`feat/session-miner-tooling` — the byte-identical miner port into `tools/`, plus AW-24 cost rollups and AW-27 the eval harness, both done) and **titan-design#110** (the design-repo copy, reduced to dashboard specimens). The eval immediately caught a real miner bug — junk branch names `/` and `HEAD:main` — filed as AW-34.\n\nThe v0.1 publish shipped under the org scope, not the planned `@hjewkes` scope, and releasing is now tag-triggered OIDC trusted publishing (#54) with changesets removed (#55). The first tagged run has never been exercised end to end.\n\nOne pre-existing flake: `__tests__/server/file-watch.test.ts` (timing/debounce, matches AW-12), passes on re-run.\n\n_This state is 13 days behind the initiative's newest real session (2026-07-28)._\n\n_Refreshed 2026-07-29 (AW-65): the 2026-07-28 handoff rewrite dropped this thread without closing it, so it is carried here from the 07-15 state and ages from there. PR #56 merged 2026-07-29 and its loop was removed rather than migrated._",
       next_steps: [
         {
           id: 'n1',
@@ -50,15 +89,17 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
           kind: 'task',
           ref: 'AW-23',
         },
-        {
-          id: 'n4',
-          text: 'Merge active-work#56 (feat/session-miner-tooling) — still open; the branch is on origin and tools/ is not on main.',
-          kind: 'pr',
-          ref: '56',
-        },
+        // n4 (merge active-work#56) is deliberately absent. The PR merged
+        // 2026-07-29T03:46:53Z, so the loop is dead on arrival — but it
+        // *completed*, and this file can only express `abandoned`
+        // (v2-to-v3-open-loops.ts:261). Recording a merged PR as abandoned
+        // would invert the very distinction AW-59 added. Nor can it be left
+        // live: bootstrap leaves `mergedPrs` unsupplied on purpose so
+        // derivation stays offline (bootstrap/prompt.ts:743), so a `kind: pr`
+        // loop never auto-resolves and this one would hang forever. Dropped.
         {
           id: 'n5',
-          text: 'Merge titan-design#110 alongside #56 — the design-repo copy with miner tools removed; the lab/active-work-dashboard branch is pushed as a full-history archive.',
+          text: 'Merge titan-design#110 — the design-repo copy with miner tools removed; the lab/active-work-dashboard branch is pushed as a full-history archive. Verified still open 2026-07-29 (active-work#56, its former companion, has since merged).',
           kind: 'prose',
         },
         {
@@ -166,14 +207,23 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
     },
     {
       slug: 'claude-channels',
-      ended: '2026-07-28T16:29:00Z',
+      // Refreshed 2026-07-29 (AW-65). Was 2026-07-28T16:29:00Z — authored
+      // mid-session, ~2.7h before the covering session's own recorded
+      // `ended: 2026-07-28T19:10:00Z`, and before CC-30 closed, CC-31 was
+      // filed and teleport was designed. Anchored to the session's end.
+      ended: '2026-07-28T19:10:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-28\n\n**Agent teams work.** CC-17 closed: a spawned agent is a durable, addressable peer that outlives its spawner, launchable headless or in a terminal under normal permissions — and spawned agents have now done real work (one found a lifecycle race, three found a security gap, two live defects, a false test).\n\n`feat/plugin-packaging` pushed at `a12c1fc`, clean tree, 323 tests green, tsc and prettier clean. The broker runs properly detached in its own process group, so it survives the session that started it. **CC-24 closed** — the headless hang is gone, and the fix was not A8's stream.jsonl: the streams are discarded, because Claude Code already writes a full structured transcript per session and we assign the session id ourselves. §9 and A8 in agent-teams.md are marked superseded.\n\nThe next session was planned as a parallel team wave on the agent-teams backlog itself — gatekeeper (CC-28→CC-25), herald (CC-26), proofer (live-spawn harness→CC-27→CC-29) in separate worktrees, merge order gatekeeper→herald→proofer. **CC-28 has since closed**, so confinement is now real and the remaining wave items stand on their own.\n\nThe title is legacy: the subject is general agent orchestration, and the logic will eventually fold into relay. Keep the orchestration logic separable from the local broker / event log / registry.",
+      body: "# Handoff state as of 2026-07-28\n\n**Agent teams work.** CC-17 closed: a spawned agent is a durable, addressable peer that outlives its spawner, launchable headless or in a terminal under normal permissions — and spawned agents have now done real work (one found a lifecycle race, three found a security gap, two live defects, a false test). **CC-30 closed** too: ordinary sessions now have durable identity.\n\n`feat/plugin-packaging` pushed at `a12c1fc`, clean tree, 323 tests green, tsc and prettier clean. The broker runs properly detached in its own process group, so it survives the session that started it. **CC-24 closed** — the headless hang is gone, and the fix was not A8's stream.jsonl: the streams are discarded, because Claude Code already writes a full structured transcript per session and we assign the session id ourselves. §9 and A8 in agent-teams.md are marked superseded.\n\n**CC-28 has since closed**, so confinement is real and the planned wave items stand on their own. Confinement turned out to be schema-level: a denied tool is ABSENT from the model's schema rather than refused, so there is **no denial frame at all** for a toolset-confined agent — whereas settings-level denials ARE observable (`is_error: true` plus a `toolDenialKind` marker). Any feature here must say which of the two it covers.\n\n**CC-31 is the most important new finding of the session:** severing a session's bus produces no noticeable dead bus — Claude Code restarts the MCP server and the session ends up silently absent from a *working* bus, unable to tell.\n\nTeleport (CC-20) is now fully designed, with all five decisions recorded in the task, but **not implemented**.\n\nThe title is legacy: the subject is general agent orchestration, and the logic will eventually fold into relay. Keep the orchestration logic separable from the local broker / event log / registry.\n\n_Refreshed 2026-07-29 (AW-65) against the handoff as it stood at session close._",
       next_steps: [
+        // n1 reused: the old n1 (build the live-spawn harness) duplicated n4's
+        // CC-27 content, which carries the same ground in more detail. The
+        // slot now holds the handoff's actual "Top of the board" item, which
+        // the mid-session proposal predated entirely.
         {
           id: 'n1',
-          text: 'Build the opt-in live-spawn integration harness that really spawns `claude`, gated behind an env var so it never runs on CI or by default. CC-27 and CC-29 both need it. The gating is load-bearing — an ungated test naming iterm-pane opened real windows on the laptop once (fixed in aa08d86).',
-          kind: 'prose',
+          text: 'Top of the board: CC-31 — a session severed from the bus cannot tell. Before building the likely fix (re-register on MCP start), CHECK WHETHER THE RESTARTED SUBPROCESS ACTUALLY RECEIVES `CLAUDE_CODE_SESSION_ID` — that was never verified, and the whole direction depends on it.',
+          kind: 'task',
+          ref: 'CC-31',
         },
         {
           id: 'n2',
@@ -189,27 +239,33 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         },
         {
           id: 'n4',
-          text: "CC-27 — iTerm placement is verified only by hand. The manual probe is watching three spawned panes stack in a column in your anchor's tab while a different tab has focus; if they don't, that is a live regression worth more than the ticket.",
+          text: 'CC-27 — the opt-in iTerm placement test EXISTS (83271dd) but has never had a clean verified end-to-end run; it was stopped partway, on purpose. Run it cleanly and unattended. It stays gated behind an env var so it never fires on CI or by default — that gating is load-bearing, since an ungated iterm-pane test once opened real windows on the laptop (fixed in aa08d86). Do not hand this to an agent: it takes focus (see the ~20-run incident).',
           kind: 'task',
           ref: 'CC-27',
         },
         {
           id: 'n5',
-          text: 'CC-29 — now decidable. Its premise (a headless denial shows up in the transcript) was never verified because the probe hit CC-28 and the agent was never denied at all. CC-28 has closed, so re-run the probe.',
+          text: 'CC-29 needs a DECISION, not more probing — its empirical half is closed (two live probes settled it 2026-07-28). Pairing option (2) `agent logs`, settings-level only, with option (4) surface deny lists at spawn time covers both failure kinds; either alone covers only one.',
           kind: 'task',
           ref: 'CC-29',
         },
         {
           id: 'n6',
-          text: "CC-20 (teleport) and CC-23 (headless↔terminal switching) remain deliverables on the agent-teams substrate rather than standalone builds; CC-23 is partly gated on CC-29, since 'notice an agent is stuck and surface it into a terminal' presupposes noticing.",
-          kind: 'task',
-          ref: 'CC-20',
-        },
-        {
-          id: 'n7',
-          text: 'Service Steps 3 (CLI restructure) and 4 (HTTP reads) can run in parallel with the agent work — that parallelism is what freezing Step 2a bought. Steps 1, 2 and 2a are done (e7321c4, 02eaa4e, 16a3759).',
+          // Deliberately `prose`, NOT `kind: task, ref: CC-20`. CC-20 is
+          // `status: done` — it covered the DESIGN — but teleport is not
+          // implemented: the handoff ranks it second on the board and its
+          // branch `feat/teleport-identity` is 6 commits UNPUSHED. A task ref
+          // here would auto-resolve on migration and delete the #2 item from
+          // the ledger without anyone deciding to. No open task represents
+          // the implementation; this loop is the only thing carrying it.
+          text: "Implement teleport — second on the board behind CC-31. It is fully DESIGNED (CC-20, now closed; all five decisions recorded there), but NOT built: branch `feat/teleport-identity` is 6 commits and UNPUSHED, main untouched on purpose. No open task covers the implementation. Related: CC-23 (headless↔terminal switching) rides the same substrate and is partly gated on CC-29, since 'notice an agent is stuck and surface it into a terminal' presupposes noticing.",
           kind: 'prose',
         },
+        // Old n7 (Service Steps 3/4 parallelism) dropped: "Service Steps",
+        // "CLI restructure" and "HTTP reads" appear nowhere in the current
+        // 93-line handoff, and nothing else corroborates them. Migrating an
+        // unverifiable loop would put a permanently unanswerable item in the
+        // ledger; the text survives in sources/handoff-archive.md if needed.
       ],
     },
     {
@@ -452,9 +508,12 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
     },
     {
       slug: 'relay',
-      ended: '2026-07-28T16:19:00Z',
+      // Refreshed 2026-07-29 (AW-65). Was 2026-07-28T16:19:00Z, which predates
+      // even the covering session's own `ended` (16:45:00Z). The handoff was
+      // touched again afterwards to file R-47 and add its closing note.
+      ended: '2026-07-28T18:44:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-28\n\nrelay is live, populated, and now has a real attribute model. Production holds 111 imported items plus two test captures (ids 113, 114). Both MCP surfaces are deployed. R-33 is decided and R-38 shipped it: type-specific attributes live in a registry-validated `meta` column enforced by database triggers that both writer doors inherit. `main` is clean — 360 tests across 16 files, tsc clean, four CI gates. Production is Worker version `119a7987`, D1 migrations through 0007.\n\nThe model in four lines: a narrow typed core with type-specific facets in one meta JSON column; `type_schemas` is a TABLE, so registering a kind or attribute is an INSERT; BEFORE INSERT/UPDATE triggers enforce registered keys and allowed values, so both doors and a hand-run `wrangler d1 execute` all obey; hot attributes promote to generated columns, derived so they cannot drift.\n\nThe session that produced this handoff left R-23 Part B half-answered — OAuth completed but the six admin verbs never attached. **That has since been resolved: R-20, R-23, R-27 and R-36 all closed later the same day**, so the handoff's headline NEXT ACTION and its first two operator-only items are no longer live and are excluded below.",
+      body: "# Handoff state as of 2026-07-28\n\nrelay is live, populated, and now has a real attribute model. Production holds 111 imported items plus two test captures (ids 113, 114). Both MCP surfaces are deployed. R-33 is decided and R-38 shipped it: type-specific attributes live in a registry-validated `meta` column enforced by database triggers that both writer doors inherit. `main` is clean — 360 tests across 16 files, tsc clean, four CI gates. Production is Worker version `119a7987`, D1 migrations through 0007.\n\nThe model in four lines: a narrow typed core with type-specific facets in one meta JSON column; `type_schemas` is a TABLE, so registering a kind or attribute is an INSERT; BEFORE INSERT/UPDATE triggers enforce registered keys and allowed values, so both doors and a hand-run `wrangler d1 execute` all obey; hot attributes promote to generated columns, derived so they cannot drift.\n\nThe session that produced this handoff left R-23 Part B half-answered — OAuth completed but the six admin verbs never attached. R-23, R-27 and R-36 all closed later the same day, so the headline NEXT ACTION and the first two operator-only items are no longer live and are excluded below.\n\n**READ THIS BEFORE TRUSTING ANY CLOSED SECURITY TICKET. R-20 closed by RE-SCOPE, not by resolving the risk.** The mascot-madness token still reaches relay's D1 and Worker; the blast radius is unchanged. **R-44 (account separation) is the real precondition**, and the handoff names it as the one thing an operator might want to do first, because the cost grows with every new surface pointed at the hostname.\n\n_Refreshed 2026-07-29 (AW-65) against the handoff as it stood after R-47 was filed._",
       next_steps: [
         {
           id: 'n1',
@@ -487,13 +546,13 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         },
         {
           id: 'n6',
-          text: 'R-37 is about an hour and closes the only unassessable storage flip trigger; take it any time. It is the deciding evidence for the one genuine unfixable-on-D1 defect, and index drift has never been observed or ruled out.',
+          text: 'R-37 is about an hour and now covers TWO detectors sequenced together — the index-drift check plus the new R-41 schema-drift check. It is the deciding evidence for the one genuine unfixable-on-D1 defect, and index drift has never been observed or ruled out. Take it any time.',
           kind: 'task',
           ref: 'R-37',
         },
         {
           id: 'n7',
-          text: 'R-34 (R2 blob tier) was paired with R-36 and gated behind R-20; both of those have now closed, so R-34 is unblocked.',
+          text: 'R-34 (R2 blob tier) is gated on R-36 (logan data-handling), which has closed — so it is unblocked. It also inherits the hard preconditions C1/C2 from docs/logan-corpus-decision.md §5; check those before starting. (It was never gated on R-20, despite an earlier note conflating the two.)',
           kind: 'task',
           ref: 'R-34',
         },
@@ -514,10 +573,21 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
           text: 'Voice `list_items` and `complete_item` have still never run from a phone — only capture has. No task covers this verification gap.',
           kind: 'prose',
         },
+        // Was standalone prose reading "delete 113/114 when convenient". The
+        // handoff records that this was pulled into task R-47 precisely
+        // because "when convenient" survived two handoffs unactioned, and
+        // R-47 also covers closing/annotating the already-built #104/#106.
         {
           id: 'n11',
-          text: 'Housekeeping: delete production test captures ids 113 and 114 when convenient.',
-          kind: 'prose',
+          text: 'R-47 housekeeping, filed because "delete when convenient" survived two handoffs unactioned: delete production test captures ids 113 and 114, AND close/annotate items #104 and #106, which are already built.',
+          kind: 'task',
+          ref: 'R-47',
+        },
+        {
+          id: 'n12',
+          text: "R-44 (account separation) is the one thing an operator might want to do FIRST. R-20 closed by re-scope rather than by resolving the risk — the mascot-madness token still reaches relay's D1 and Worker — and R-44 is the real precondition. Cost grows with every new surface pointed at the hostname, so deferring it gets more expensive, not less.",
+          kind: 'task',
+          ref: 'R-44',
         },
       ],
     },
@@ -590,24 +660,34 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
     },
     {
       slug: 'voltras-workspace',
-      ended: '2026-07-28T17:29:00Z',
+      // Refreshed 2026-07-29 (AW-65). Was 2026-07-28T17:29:00Z, which matched
+      // only the session-close doc; an undocumented session ran afterwards
+      // (LiveFatiguePanel wiring, VMCP-01.72 discovery, VW-106's 472-file
+      // reorg) and left no session file of its own. This is the handoff's
+      // true last-touch, so that span is at least represented.
+      ended: '2026-07-29T05:45:00Z',
       session_id: 'handoff-migration',
-      body: '# Handoff state as of 2026-07-28 (late)\n\nNothing is blocked any more. The publish blocker that headed this file for weeks is closed: @titan-design/react-ui@0.12.0 is live on npm (provenance-attested, tag-triggered CI) and voltras-mcp main is on it (7094aa1, PR #213). VW-99 passed all four rows on the wall in run 2, which was the gate.\n\nThe diverging dual stage is built and merged (VMCP-04.05, voltras-mcp #214, main 3382496): the dual view renders real per-slot telemetry as one diverging hero rather than a fixture preview. Decisions worth not re-litigating — tempo and the exertion alert are shared, not per-limb, and sets/reps/load stays on the page-level ExerciseHeader. With neither slot bound the page falls back to the single view.\n\nThe SPA works end to end on real hardware, single-arm. The dual-arm view is still behind the ?variant=live-dual query param.\n\nThe 07-27 postmortem in this file is the reason it was rewritten: handoff.md was 12 days stale and the brief\'s in-flight efforts 22 days stale, the bootstrap priority ordering pointed at VW-68 (now demoted to p30), and the file literally titled "start here" was never opened. That cost a full session.',
+      body: "# Handoff state as of 2026-07-28 (evening)\n\nThe `LiveFatiguePanel` wiring is DONE, along with the header lockup, the panel-derived idle stage, and the first real-pipeline planned-workout demo. That work surfaced a critical hole in the session model's tool surface, which is now the next action.\n\n`VW-106` is done: `coordination/` is deleted, its 472 files reorganized into this initiative's `sources/` tree, and every path reference across six repos, brain, the skills and these docs rewritten. Snapshot at `~/projects/_archive/voltras-coordination-snapshot-2026-07-29.tar.gz`. **handoff.md is now the session surface — dated `HANDOFF-*.md` / `NEXT-SESSION-*.md` docs are retired and must not be recreated.**\n\nFive branches are unpushed with nothing merged to main; tip is `feat/plan-driven-set-states` (lint 0, typecheck 0 on both tsconfigs, format 0, 2032 tests). Tree and review notes in `VW-105`.\n\nEarlier context that still holds: @titan-design/react-ui@0.12.0 is live on npm and voltras-mcp main is on it (7094aa1, PR #213); VW-99 passed all four rows on the wall. The diverging dual stage is built and merged (VMCP-04.05, voltras-mcp #214, main 3382496) — tempo and the exertion alert are shared rather than per-limb, and sets/reps/load stays on the page-level ExerciseHeader. The SPA works end to end on real hardware single-arm; the dual-arm view is still behind `?variant=live-dual`.\n\nThe 07-27 postmortem is why this file was rewritten: handoff.md was 12 days stale and the brief's in-flight efforts 22 days stale, bootstrap's priority ordering pointed at VW-68 (since demoted to p30), and the file titled \"start here\" was never opened. That cost a full session.\n\n_Refreshed 2026-07-29 (AW-65). Only the headline next action is migrated as a loop; the other 13 open tickets stay in `tasks/` and the handoff's ticket table by decision, to keep the ledger readable._",
       next_steps: [
+        // n1 reused for the current NEXT ACTION. The old n1 (wire
+        // LiveFatiguePanel, ref VW-76) is DONE per the handoff — note that
+        // VW-76.yml is itself stale at `status: open`, so this loop would NOT
+        // have auto-resolved and would have migrated live.
+        //
+        // `kind: prose`, not `task`: VMCP-* tickets are tracked in voltras-mcp,
+        // and there is no VMCP-01.72.yml in this initiative's `tasks/`. A
+        // `kind: task` ref would be dangling.
         {
           id: 'n1',
-          text: 'NEXT ACTION: wire the real LiveFatiguePanel into the SPA. No hardware needed. It is the last live piece of VW-76 and the final third of VMCP-05.02 (publish done, SPA bump done, fatigue sidebar outstanding). The queue after it is VMCP-04.06 DualGhostSpark, then 04.07 promoting live-dual out of the query param.',
-          kind: 'task',
-          ref: 'VW-76',
-        },
-        {
-          id: 'n2',
-          text: "Read coordination/NEXT-SESSION-2026-07-28.md FIRST — it is the newest session-close doc and carries the concrete first action, delivery queue, open decisions and traps. Standing guard from the 07-27 postmortem: read the newest coordination/NEXT-SESSION-*.md before trusting the bootstrap's priority ordering, because priority is stale by default and two things the operator cared about had no VW-level task at all.",
+          text: "NEXT ACTION: VMCP-01.72 — a session is single-exercise at the TOOL layer (critical). The schema already supports one workout holding many exercises (sets.exercise_id is independent of session_id); the tools cannot produce that state. A session's exercise is write-once at session.start, and set.start takes no exercise argument, so advancing exercises needs session.end → session.start, fragmenting one workout across several session rows. Reproduces on hardware. Audit plan.complete_workout, progression and volume rollups for a baked-in one-exercise-per-session assumption BEFORE choosing a shape.",
           kind: 'prose',
         },
+        // Old n3 (decide the fate of mapStoreToDualModel) dropped: the handoff
+        // records "RESOLVED 2026-07-28 — mapStoreToDualModel is DELETED with
+        // its tests", along with five downstream functions.
         {
-          id: 'n3',
-          text: 'Open decision: mapStoreToDualModel no longer has an app caller. It was kept with a note as the only full per-slot DashboardModel projection — delete it and its tests if the LiveFatiguePanel wiring does not need it.',
+          id: 'n2',
+          text: "The 07-27 postmortem's standing guard — 'read the newest coordination/NEXT-SESSION-*.md before trusting bootstrap's priority ordering' — is INVALIDATED and needs a replacement. VW-106 deleted coordination/ and retired dated session-close docs; handoff.md is the session surface now. The underlying failure the guard existed for is unfixed: priority ordering is stale by default, and two things the operator cared about had no VW-level task at all. Decide what enforces that now.",
           kind: 'prose',
         },
         {
@@ -641,7 +721,7 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
         },
         {
           id: 'n9',
-          text: "The bench sitting is the common unblocker. Run all three checklists — they do NOT supersede each other, and two were written the same evening without referencing each other, so 'newest wins' silently drops a gate. Order: Q1 chains direction (frees the stuck WA 2.0.0 publish) → isometric calibration VMCP-02.82 (5 min) → voice/deaf-window → v9 capture run → rep-count and peak-power → guided-load wedge LAST, it may need a power cycle. The titan visual gate is done (VW-85, VW-99) — do not re-run it.",
+          text: "The bench sitting is the common unblocker. Run all FOUR checklists — they do NOT supersede each other, and two were written the same evening without referencing each other, so 'newest wins' silently drops a gate: validation-runbooks/BENCH-2026-07-26-consolidated.md, the two BENCH-ADDENDUM sweeps, and validation-runbooks/2026-07-27-vw68-write-lease-hardware-bench.md (added 07-27). Order: Q1 chains direction (frees the stuck WA 2.0.0 publish) → isometric calibration VMCP-02.82 (5 min) → voice/deaf-window → v9 capture run → rep-count and peak-power → guided-load wedge LAST, it may need a power cycle. The titan visual gate is done (VW-85, VW-99) — do not re-run it.",
           kind: 'prose',
         },
         {
