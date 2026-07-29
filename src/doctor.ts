@@ -12,7 +12,7 @@ import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import os from 'node:os';
 import { getActiveRoot } from './utils/paths.js';
-import { readPidFile, isProcessAlive } from './server/lifecycle.js';
+import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
 import { listInitiativeSlugs } from './lint/index.js';
 import { loadTasks } from './lint/load-tasks.js';
@@ -43,6 +43,8 @@ export interface DaemonProbe {
   port?: number;
   version?: string;
   pid?: number;
+  /** True when `/health` answered but no PID file names the daemon. */
+  orphaned?: boolean;
 }
 
 export interface DoctorDeps {
@@ -59,36 +61,32 @@ export interface DoctorDeps {
   supervisorActive?: () => Promise<{ kind: string; active: boolean } | null>;
 }
 
-const HEALTH_TIMEOUT_MS = 500;
-
-interface HealthResponse {
-  version: string;
-  pid: number;
-  uptime_ms: number;
-  port: number;
-}
-
-async function probeHealth(port: number): Promise<HealthResponse | null> {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    return (await res.json()) as HealthResponse;
-  } catch {
-    return null;
-  }
+/**
+ * Probe by port alone, for when the PID file is absent or names a dead
+ * process. A missing file used to read as "not running" outright, which is how
+ * a live daemon whose file its predecessor clobbered became indistinguishable
+ * from no daemon at all (AW-76). Something answering `/health` outranks the
+ * bookkeeping, so adopt the pid/port/version it reports.
+ */
+async function probeByPort(port: number): Promise<DaemonProbe> {
+  const health = await probeHealth(port);
+  if (!health) return { running: false, healthy: false, port };
+  return {
+    running: true,
+    healthy: true,
+    orphaned: true,
+    pid: health.pid,
+    port: health.port,
+    version: health.version,
+  };
 }
 
 async function defaultProbeDaemon(): Promise<DaemonProbe> {
   const entry = await readPidFile();
-  if (!entry) return { running: false, healthy: false };
-  const alive = isProcessAlive(entry.pid);
-  if (!alive) {
-    return { running: false, healthy: false, pid: entry.pid, port: entry.meta.port };
+  if (!entry) return probeByPort(resolveDaemonPort());
+  if (!isProcessAlive(entry.pid)) {
+    // A pre-meta pid file records port 0; fall back to where a daemon would be.
+    return probeByPort(entry.meta.port || resolveDaemonPort());
   }
   const health = await probeHealth(entry.meta.port);
   if (health) {
@@ -137,10 +135,7 @@ async function fileExists(fs: typeof fsp, target: string): Promise<boolean> {
 // either name.
 const MCP_SERVER_NAMES = ['@hjewkes/active-work', 'active-work'];
 
-async function readMcpRegistered(
-  fs: typeof fsp,
-  homeDir: string,
-): Promise<boolean> {
+async function readMcpRegistered(fs: typeof fsp, homeDir: string): Promise<boolean> {
   const configPath = nodePath.join(homeDir, '.claude.json');
   try {
     const raw = await fs.readFile(configPath, 'utf8');
@@ -191,12 +186,20 @@ async function checkActiveRoot(deps: DoctorDeps): Promise<DoctorCheck> {
 
 async function checkDaemon(deps: DoctorDeps): Promise<DoctorCheck> {
   const probe = await (deps.probeDaemon ?? defaultProbeDaemon)();
-  if (probe.running && probe.healthy) {
+  const where = `pid ${probe.pid ?? '?'}, port ${probe.port ?? '?'}, v${probe.version ?? '?'}`;
+  if (probe.running && probe.healthy && probe.orphaned === true) {
+    // Answering but unfiled: `mcp stop`/`mcp restart` key off the PID file and
+    // will not find it, so this needs saying even though the daemon is fine.
     return {
       name: 'daemon',
-      status: 'ok',
-      detail: `running (pid ${probe.pid ?? '?'}, port ${probe.port ?? '?'}, v${probe.version ?? '?'})`,
+      status: 'warn',
+      detail:
+        `running (${where}) but no pid file — \`mcp stop\`/\`mcp restart\` ` +
+        'cannot see it; restart it through your supervisor to re-file it',
     };
+  }
+  if (probe.running && probe.healthy) {
+    return { name: 'daemon', status: 'ok', detail: `running (${where})` };
   }
   if (probe.running && !probe.healthy) {
     return {
@@ -205,10 +208,13 @@ async function checkDaemon(deps: DoctorDeps): Promise<DoctorCheck> {
       detail: `pid ${probe.pid ?? '?'} is alive but /health did not answer`,
     };
   }
+  // Name the port we probed: a daemon started on a non-default `--port` with
+  // no pid file to record it is invisible here, and that beats implying none.
+  const probed = probe.port === undefined ? '' : ` (nothing answered port ${probe.port})`;
   return {
     name: 'daemon',
     status: 'warn',
-    detail: 'not running — start it with `active-work mcp serve --detach`',
+    detail: `not running${probed} — start it with \`active-work mcp serve --detach\``,
   };
 }
 
@@ -304,7 +310,10 @@ async function collectBadTaskRefs(
   return loops
     .filter((loop) => loop.kind === 'task' && loop.targetRef !== undefined)
     .filter((loop) => !taskIds.has(loop.targetRef as string))
-    .map((loop) => `${slug}/sessions/${loop.sessionFile}.md ${loop.ref} -> ${loop.targetRef} (no such task)`);
+    .map(
+      (loop) =>
+        `${slug}/sessions/${loop.sessionFile}.md ${loop.ref} -> ${loop.targetRef} (no such task)`,
+    );
 }
 
 function sessionFilesCheck(malformed: string[]): DoctorCheck {

@@ -335,9 +335,16 @@ async function analyze(initiativeDir: string): Promise<Analysis> {
   return analyzeLoaded(await loadSessionsFromDir(initiativeDir));
 }
 
-/** `#57` and `57` are the same PR; normalize before comparing. */
-function normalizePrRef(ref: string): string {
-  return ref.replace(/^#/, '').trim();
+/**
+ * `#57`, `57`, and a full `https://github.com/o/r/pull/57` URL are all the same
+ * PR. Whoever files a loop pastes whichever form is to hand, so both the
+ * merged-PR matching below and the bootstrap's label depend on collapsing them
+ * — an un-collapsed URL rendered as `PR #https://github.com/...` (AW-71).
+ */
+export function normalizePrRef(ref: string): string {
+  const trimmed = ref.trim();
+  const fromUrl = /\/pull\/(\d+)/.exec(trimmed);
+  return fromUrl?.[1] ?? trimmed.replace(/^#/, '');
 }
 
 function isAutoResolved(entry: LoopEntry, opts: DeriveOptions): boolean {

@@ -94,4 +94,18 @@ describe('active-work migrate', () => {
       );
     });
   });
+
+  // AW-61: the old wording claimed earlier migrations "run automatically on the
+  // next command", which sent the operator round in circles re-running `list`.
+  it('names `active-work setup` as the way to run the pending chain', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await fs.writeFile(path.join(root, '.schema-version'), '1\n', 'utf8');
+      const err = await migrate
+        .run({ apply: true }, ctxFor(root))
+        .then(() => null)
+        .catch((e: Error) => e);
+      expect(err?.message).toContain('active-work setup');
+      expect(err?.message).not.toMatch(/automatically/);
+    });
+  });
 });

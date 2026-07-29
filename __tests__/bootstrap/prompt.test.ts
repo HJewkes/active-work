@@ -42,7 +42,8 @@ function nextStepLines(steps: NextStepFixture[]): string[] {
   const lines = ['next_steps:'];
   for (const step of steps) {
     lines.push(`  - id: ${step.id}`);
-    lines.push(`    text: ${step.text}`);
+    // Quoted: an unquoted ` #3` would start a YAML comment and truncate the text.
+    lines.push(`    text: ${JSON.stringify(step.text)}`);
     lines.push(`    kind: ${step.kind}`);
     // Quoted: a bare `57` would parse as a number and fail the string schema.
     if (step.ref !== undefined) lines.push(`    ref: '${step.ref}'`);
@@ -65,10 +66,7 @@ function resolveLines(entries: ResolveFixture[]): string[] {
  * Write a session file into the fixture initiative, named like `wrap` does.
  * Returns the filename stem — the identity half of a loop `ref`.
  */
-async function writeSession(
-  activeRoot: string,
-  session: SessionFixture,
-): Promise<string> {
+async function writeSession(activeRoot: string, session: SessionFixture): Promise<string> {
   const hhmm = session.started.slice(11, 13) + session.started.slice(14, 16);
   const stem = `${session.started.slice(0, 10)}-${hhmm}-${session.session_id}`;
   const front = [
@@ -172,9 +170,7 @@ describe('assembleBootstrap', () => {
         now: FIXTURE_NOW,
         ...offlineOpts,
       });
-      expect(metadata.last_session?.filename).toBe(
-        '2026-05-10-1430-fixture001.md',
-      );
+      expect(metadata.last_session?.filename).toBe('2026-05-10-1430-fixture001.md');
       expect(prompt).toContain('fixture001');
       expect(prompt).toContain('# Last session');
     });
@@ -230,9 +226,7 @@ describe('assembleBootstrap', () => {
 
       // Newest session of any track becomes the narrative, labeled by track
       // so it isn't mistaken for mainline continuity.
-      expect(metadata.last_session?.filename).toBe(
-        '2026-05-11-0900-side-new.md',
-      );
+      expect(metadata.last_session?.filename).toBe('2026-05-11-0900-side-new.md');
       expect(prompt).toContain('# Last session (sidecar) (2026-05-11, side-new)');
       expect(prompt).toContain('Newest sidecar session');
 
@@ -423,9 +417,7 @@ describe('assembleBootstrap', () => {
       expect(prompt).toContain('# Context');
       expect(prompt).toContain('- Today: ');
       expect(prompt).toContain('- Bootstrap: ');
-      expect(metadata.bootstrap_at).toMatch(
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
-      );
+      expect(metadata.bootstrap_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     });
   });
 
@@ -463,9 +455,7 @@ describe('assembleBootstrap', () => {
         started: '2026-05-08T09:00:00Z',
         ended: '2026-05-08T10:00:00Z',
         track: 'canonical',
-        next_steps: [
-          { id: 'n1', text: 'rewrite the picker in ink', kind: 'prose' },
-        ],
+        next_steps: [{ id: 'n1', text: 'rewrite the picker in ink', kind: 'prose' }],
         body: 'opened\n',
       });
       await writeSession(activeRoot, {
@@ -565,9 +555,7 @@ describe('assembleBootstrap', () => {
       });
 
       // The narrative slot still belongs to the newest canonical session.
-      expect(metadata.last_session?.filename).toBe(
-        '2026-05-10-1430-fixture001.md',
-      );
+      expect(metadata.last_session?.filename).toBe('2026-05-10-1430-fixture001.md');
       expect(prompt).toContain('# Last session (2026-05-10, fixture001)');
 
       expect(prompt).toContain('# Parallel sessions since then');
@@ -621,9 +609,7 @@ describe('assembleBootstrap', () => {
         now: FIXTURE_NOW,
         ...offlineOpts,
       });
-      expect(metadata.last_session?.filename).toBe(
-        '2026-05-11-1730-short-run.md',
-      );
+      expect(metadata.last_session?.filename).toBe('2026-05-11-1730-short-run.md');
     });
   });
 });
@@ -637,9 +623,7 @@ describe('assembleBootstrap open loops', () => {
         ended: '2026-04-27T16:00:00Z',
         track: 'canonical',
         body: '- Old session\n',
-        next_steps: [
-          { id: 's1', text: 'SQLite index blocked on eval harness', kind: 'prose' },
-        ],
+        next_steps: [{ id: 's1', text: 'SQLite index blocked on eval harness', kind: 'prose' }],
       });
       await writeSession(activeRoot, {
         session_id: 'loop-new',
@@ -647,9 +631,7 @@ describe('assembleBootstrap open loops', () => {
         ended: '2026-05-11T16:00:00Z',
         track: 'canonical',
         body: '- New session\n',
-        next_steps: [
-          { id: 's1', text: 'awaiting review', kind: 'pr', ref: '57' },
-        ],
+        next_steps: [{ id: 's1', text: 'awaiting review', kind: 'pr', ref: '57' }],
       });
 
       const { prompt, metadata } = await assembleBootstrap({
@@ -665,6 +647,92 @@ describe('assembleBootstrap open loops', () => {
       expect(prompt).toContain('(from 2026-04-27, ref 2026-04-27-0900-loop-old#s1)');
       expect(prompt.indexOf('[15d]')).toBeLessThan(prompt.indexOf('[ 1d]'));
       expect(metadata.open_loop_count).toBe(2);
+    });
+  });
+
+  it('does not restate a ref the loop text already opens with (AW-71)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'restated',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Restated refs\n',
+        next_steps: [
+          { id: 's1', text: 'SI-1 Drain the miner backlog', kind: 'task', ref: 'SI-1' },
+          {
+            id: 's2',
+            text: 'PR #3 (agent-chat) is open',
+            kind: 'pr',
+            ref: 'https://github.com/HJewkes/agent-chat/pull/3',
+          },
+        ],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('[1d] SI-1 Drain the miner backlog');
+      expect(prompt).toContain('[1d] PR #3 (agent-chat) is open');
+      expect(prompt).not.toContain('SI-1 SI-1');
+      expect(prompt).not.toContain('github.com/HJewkes/agent-chat/pull/3 PR #3');
+    });
+  });
+
+  it('keeps both refs visible when the ledger ref and the text disagree (AW-71)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'mismatch',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Mismatched refs\n',
+        next_steps: [
+          { id: 's1', text: 'SI-2 is done, so unblock this', kind: 'task', ref: 'SI-1' },
+        ],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('[1d] SI-1 SI-2 is done, so unblock this');
+    });
+  });
+
+  it('normalizes a URL pr ref down to its number in the label (AW-71)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'url-ref',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- URL ref\n',
+        next_steps: [
+          {
+            id: 's1',
+            text: 'awaiting review',
+            kind: 'pr',
+            ref: 'https://github.com/HJewkes/agent-chat/pull/3',
+          },
+        ],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('[1d] PR #3 awaiting review');
     });
   });
 
@@ -811,10 +879,7 @@ describe('assembleBootstrap session parsing', () => {
     '    kind: prose',
   ].join('\n');
 
-  async function bootstrapWithRawSession(
-    activeRoot: string,
-    contents: string,
-  ): Promise<string> {
+  async function bootstrapWithRawSession(activeRoot: string, contents: string): Promise<string> {
     await fs.writeFile(
       path.join(activeRoot, SAMPLE_SLUG, 'sessions', '2026-05-09-0900-edge.md'),
       contents,
@@ -917,8 +982,6 @@ describe('formatTimeSince', () => {
   it('appends refresher hint at 14+ days', () => {
     const now = new Date('2026-05-30T12:00:00Z');
     const from = new Date('2026-05-12T12:00:00Z');
-    expect(formatTimeSince(from, now)).toBe(
-      '18 days ago — likely needs context refresher',
-    );
+    expect(formatTimeSince(from, now)).toBe('18 days ago — likely needs context refresher');
   });
 });

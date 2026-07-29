@@ -14,6 +14,7 @@ import {
   deriveOpenLoopsFrom,
   deriveResolvedLoopsFrom,
   loadSessionsFromDir,
+  normalizePrRef,
   type LoadedSession,
   type LoadedSessions,
   type MalformedSession,
@@ -364,12 +365,30 @@ function malformedNote(malformed: MalformedSession[]): string {
   return ` (${malformed.length} session file(s) unreadable — run \`active-work doctor\`)`;
 }
 
+/**
+ * Whether the text already opens with `ref`, so prefixing would print it twice.
+ *
+ * Only a match at the head counts. A loop filed against `AW-65` whose text
+ * opens `AW-59 is done` is a ledger/text *disagreement* the operator needs to
+ * see, not noise to collapse — suppressing there would hide which task the loop
+ * actually concerns. The trailing boundary check keeps `AW-2` from matching text
+ * about `AW-28` (AW-71).
+ */
+function textOpensWithRef(text: string, ref: string, kind: OpenLoop['kind']): boolean {
+  const head = text.replace(/^\s*(PR\s*)?#?/i, '');
+  // A pasted `.../pull/57` at the head is the same restatement in another form.
+  if (kind === 'pr' && normalizePrRef(head.split(/\s/)[0] ?? '') === ref) return true;
+  if (!head.toLowerCase().startsWith(ref.toLowerCase())) return false;
+  const next = head.charAt(ref.length);
+  return next === '' || !/[A-Za-z0-9]/.test(next);
+}
+
 /** Prefix the loop text with its target so a task/PR loop is actionable at a glance. */
 function loopLabel(loop: OpenLoop): string {
   if (loop.targetRef === undefined) return loop.text;
-  const target =
-    loop.kind === 'pr' ? `PR #${loop.targetRef.replace(/^#/, '')}` : loop.targetRef;
-  return `${target} ${loop.text}`;
+  const ref = loop.kind === 'pr' ? normalizePrRef(loop.targetRef) : loop.targetRef;
+  if (textOpensWithRef(loop.text, ref, loop.kind)) return loop.text;
+  return loop.kind === 'pr' ? `PR #${ref} ${loop.text}` : `${ref} ${loop.text}`;
 }
 
 /**

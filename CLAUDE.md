@@ -46,9 +46,11 @@ pnpm build           # tsup
 
 - **CLI is non-interactive by default** — Claude is the primary caller. Interactive UX is reserved for `active-work open` picker, `active-work setup` wizard, and explicit `--interactive` flags.
 - **One source of truth for command surface** — `src/registry/`. CLI and MCP both consume it; never hand-maintain MCP tool definitions.
-- **All persisted data goes through validating writers** — never write to handoff.md / brief.md / tasks/*.yml / artifacts.yml without schema validation.
+- **All persisted data goes through validating writers** — never write to `brief.md`, `tasks/*.yml`, `artifacts.yml` or `sessions/*.md` without schema validation. (`handoff.md` no longer exists; the v2→v3 migration retired it.)
 - **Atomic writes + flock per-initiative** — read-modify-write paths must use `withFileLock` from `src/utils/fs-atomic.ts`.
-- **`$XDG_DATA_HOME/active-work/` is the active root** — use `env-paths`; never hardcode.
+- **The active root is per-platform, resolved via `env-paths`** — on macOS `~/Library/Application Support/active-work/`, **not** `$XDG_DATA_HOME`, which `env-paths` ignores entirely on darwin. Never hardcode it, and never assume the XDG variables apply.
+
+  ⚠️ **The only safe override is the `ACTIVE_ROOT` env var**, which is what `__tests__/setup/test-helpers.ts` uses. Setting `XDG_DATA_HOME` expecting redirection does nothing and leaves you pointed at the operator's live data — an agent did exactly that and created ten synthetic initiatives in the real root. Anything that writes during a test must go through those helpers, which now refuse to delete a directory that is not one of their own temp dirs.
 
 ## Reference
 
