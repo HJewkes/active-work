@@ -291,7 +291,9 @@ const NOTHING_RECORDED = { worktrees: 0, branches: 0, stashes: 0 };
 function warnUnrecordable(sweep: SweepResult, warnings: string[]): void {
   for (const tree of sweep.dirty) {
     warnings.push(
-      `Uncommitted work in ${tree.path} (${tree.repo}): ${tree.files_changed} file(s) changed.`,
+      tree.files_changed === null
+        ? `Could not read the working tree in ${tree.path} (${tree.repo}); it may hold uncommitted work. Check it before relying on this wrap.`
+        : `Uncommitted work in ${tree.path} (${tree.repo}): ${tree.files_changed} file(s) changed.`,
     );
   }
   for (const branch of sweep.unpushed) {

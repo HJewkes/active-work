@@ -27,12 +27,24 @@ export interface WorktreeState {
    * upstream — and silently drops out of the operator's attention.
    */
   present: boolean;
-  dirty: boolean;
-  files_changed: number;
+  /**
+   * Null when `git status` could not answer. A failed probe is not a clean
+   * tree: reporting it as clean is the same mistake `ahead` avoids below, and
+   * it silences the one warning that says uncommitted work is about to be left
+   * behind.
+   */
+  dirty: boolean | null;
+  /** Null whenever `dirty` is null — an unknown tree has an unknown file count. */
+  files_changed: number | null;
   branch: string | null;
   /** Null when there is no upstream — meaning unknown, never "nothing to push". */
   ahead: number | null;
   behind: number | null;
+  /**
+   * Whether the branch tracks a remote, probed directly. Deriving this from
+   * `ahead !== null` conflated "no upstream configured" with "the rev-list call
+   * failed", so a transient git failure reported a tracked branch as untracked.
+   */
   has_upstream: boolean;
   /**
    * Commits reachable from HEAD that exist on no remote at all. This is the
@@ -99,17 +111,37 @@ export async function discoverWorktrees(repoPath: string): Promise<DiscoveredWor
   }
 }
 
+const DIRT_UNKNOWN = { dirty: null, files_changed: null } as const;
+
 async function readDirty(
   worktreePath: string,
-): Promise<{ dirty: boolean; files_changed: number }> {
+): Promise<{ dirty: boolean | null; files_changed: number | null }> {
   const git = getGitRunner();
   try {
     const res = await git('git', ['-C', worktreePath, 'status', '--porcelain']);
-    if (res.code !== 0) return { dirty: false, files_changed: 0 };
+    if (res.code !== 0) return { ...DIRT_UNKNOWN };
     const lines = res.stdout.split('\n').filter((line) => line.trim().length > 0);
     return { dirty: lines.length > 0, files_changed: lines.length };
   } catch {
-    return { dirty: false, files_changed: 0 };
+    return { ...DIRT_UNKNOWN };
+  }
+}
+
+/** Whether the current branch tracks a remote. Probed, never inferred. */
+async function readHasUpstream(worktreePath: string): Promise<boolean> {
+  const git = getGitRunner();
+  try {
+    const res = await git('git', [
+      '-C',
+      worktreePath,
+      'rev-parse',
+      '--abbrev-ref',
+      '--symbolic-full-name',
+      '@{u}',
+    ]);
+    return res.code === 0 && res.stdout.trim().length > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -175,10 +207,12 @@ async function isPresent(worktreePath: string): Promise<boolean> {
   }
 }
 
+// An absent worktree states `dirty: null` rather than `false` for the same
+// reason a failed probe does: there is no tree to be clean.
 const ABSENT: WorktreeState = {
   present: false,
-  dirty: false,
-  files_changed: 0,
+  dirty: null,
+  files_changed: null,
   branch: null,
   ahead: null,
   behind: null,
@@ -194,12 +228,14 @@ async function readUnpushed(worktreePath: string): Promise<number | null> {
 /** Live, non-persisted state of a single worktree. */
 export async function readWorktreeState(worktreePath: string): Promise<WorktreeState> {
   if (!(await isPresent(worktreePath))) return { ...ABSENT };
-  const [{ dirty, files_changed }, branch, { ahead, behind }, unpushed] = await Promise.all([
-    readDirty(worktreePath),
-    readBranch(worktreePath),
-    readAheadBehind(worktreePath),
-    readUnpushed(worktreePath),
-  ]);
+  const [{ dirty, files_changed }, branch, { ahead, behind }, unpushed, has_upstream] =
+    await Promise.all([
+      readDirty(worktreePath),
+      readBranch(worktreePath),
+      readAheadBehind(worktreePath),
+      readUnpushed(worktreePath),
+      readHasUpstream(worktreePath),
+    ]);
   return {
     present: true,
     dirty,
@@ -207,7 +243,7 @@ export async function readWorktreeState(worktreePath: string): Promise<WorktreeS
     branch,
     ahead,
     behind,
-    has_upstream: ahead !== null,
+    has_upstream,
     unpushed,
   };
 }

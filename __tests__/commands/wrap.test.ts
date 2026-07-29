@@ -791,6 +791,24 @@ describe('wrap', () => {
       });
     });
 
+    // AW-73: `git status` failing used to read as a clean tree, so wrap said
+    // nothing at all about a worktree that may have held uncommitted work.
+    it('warns that a tree is unreadable rather than inventing a file count', async () => {
+      const gitStatusBroken: CommandRunner = (bin, args) =>
+        args.slice(2).join(' ').startsWith('status --porcelain')
+          ? Promise.resolve({ code: 128, stdout: '', stderr: 'fatal' })
+          : GIT_WITH_WORK(bin, args);
+      setGitRunner(gitStatusBroken);
+
+      await withTempActiveRoot(async (activeRoot) => {
+        const ctx = makeCtx(activeRoot);
+        await wrap.run(baseArgs({ session_id: 'sess-unreadable', no_loops: true }), ctx);
+        const warnings = ctx.warnings.join('\n');
+        expect(warnings).toMatch(/Could not read the working tree/);
+        expect(warnings).not.toMatch(/file\(s\) changed/);
+      });
+    });
+
     it('records nothing and refuses nothing when there is nothing to record', async () => {
       await withTempActiveRoot(async (activeRoot) => {
         const ctx = makeCtx(activeRoot);

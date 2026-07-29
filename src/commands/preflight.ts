@@ -18,7 +18,8 @@ const ArgsSchema = z.object({
 const DirtyTreeSchema = z.object({
   path: z.string(),
   repo: z.string(),
-  files_changed: z.number().int().nonnegative(),
+  /** Null when git could not read the tree — unknown, not clean. */
+  files_changed: z.number().int().nonnegative().nullable(),
 });
 
 const UnpushedBranchSchema = z.object({

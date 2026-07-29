@@ -49,10 +49,12 @@ const WorktreeStatusSchema = z.object({
   pr: z.number().int().optional(),
   note: z.string().optional(),
   present: z.boolean(),
-  dirty: z.boolean(),
-  files_changed: z.number().int(),
+  /** Null when git could not read the tree. Unknown is not clean. */
+  dirty: z.boolean().nullable(),
+  files_changed: z.number().int().nullable(),
   ahead: z.number().int().nullable(),
   behind: z.number().int().nullable(),
+  has_upstream: z.boolean(),
 });
 
 const ResultSchema = z.object({
@@ -286,6 +288,7 @@ async function statusForWorktree(entry: WorktreeEntry): Promise<WorktreeStatus> 
     files_changed: live.files_changed,
     ahead: live.ahead,
     behind: live.behind,
+    has_upstream: live.has_upstream,
   };
 }
 

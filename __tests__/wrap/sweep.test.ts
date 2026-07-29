@@ -18,6 +18,8 @@ interface FakeWorktree {
   path: string;
   branch?: string;
   dirty?: number;
+  /** Models `git status` failing, which is "unknown tree", not "clean tree". */
+  statusFails?: boolean;
   /** Undefined models "no upstream", which git reports as a failed rev-list. */
   ahead?: number;
   behind?: number;
@@ -79,8 +81,17 @@ function makeGitRunner(repos: Record<string, FakeRepo>): CommandRunner {
     const wt = worktrees.get(dir);
     if (!wt) return fail();
     if (rest[1] === '--is-inside-work-tree') return ok('true\n');
-    if (rest[0] === 'rev-parse') return ok(`${wt.branch ?? 'HEAD'}\n`);
+    if (rest[0] === 'rev-parse') {
+      // The `@{u}` probe is how has_upstream is now read (AW-73). It must fail
+      // exactly when the fixture has no upstream — which this fake models as
+      // `ahead: undefined` — rather than answering like the branch lookup.
+      if (rest.includes('@{u}')) {
+        return wt.ahead === undefined ? fail() : ok(`origin/${wt.branch ?? 'HEAD'}\n`);
+      }
+      return ok(`${wt.branch ?? 'HEAD'}\n`);
+    }
     if (rest[0] === 'status') {
+      if (wt.statusFails) return fail();
       return ok(Array.from({ length: wt.dirty ?? 0 }, (_, i) => ` M file${i}`).join('\n'));
     }
     if (rest[0] === 'rev-list') {
@@ -365,6 +376,40 @@ describe('sweepInitiative upstream semantics', () => {
       const res = await sweepOne(root, { path: SAMPLE_REPO, branch: 'feat/unknown' });
       expect(res.unpushed).toHaveLength(1);
       expect(res.unpushed[0]!.no_upstream).toBe(true);
+    });
+  });
+
+  // AW-73: an unreadable tree used to read exactly like a clean one, so wrap
+  // said nothing about a worktree that may well have held uncommitted work.
+  it('surfaces a tree git could not read instead of treating it as clean', async () => {
+    await withTempActiveRoot(async (root) => {
+      const res = await sweepOne(root, {
+        path: SAMPLE_REPO,
+        branch: 'feat/unreadable',
+        statusFails: true,
+        ahead: 0,
+        unpushed: 0,
+      });
+      expect(res.dirty).toEqual([
+        { path: SAMPLE_REPO, repo: '~/code/sample', files_changed: null },
+      ]);
+      // Unknown dirt is enough to make the branch worth recording, even though
+      // there is nothing to push.
+      expect(res.unrecorded.branches).toEqual([
+        { repo: '~/code/sample', name: 'feat/unreadable' },
+      ]);
+    });
+  });
+
+  it('leaves a readable clean tree out of the dirty list', async () => {
+    await withTempActiveRoot(async (root) => {
+      const res = await sweepOne(root, {
+        path: SAMPLE_REPO,
+        branch: 'main',
+        ahead: 0,
+        unpushed: 0,
+      });
+      expect(res.dirty).toEqual([]);
     });
   });
 
