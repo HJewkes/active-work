@@ -34,6 +34,14 @@ jobs:
       - name: Security audit
         run: pnpm audit --audit-level critical
 
+      # tools/ sits outside the linted/typechecked src surface, so guard the
+      # mining tooling with a syntax + pricing-table validity check. The full
+      # eval-miner run is a local pre-merge gate (it needs the operator's
+      # ~/.claude transcripts, which CI has no access to); its pure scoring math
+      # is covered by the unit suite below.
+      - name: Validate mining tools
+        run: pnpm check:tools
+
       - name: Typecheck
         run: pnpm typecheck
 
