@@ -11,6 +11,10 @@ coverage/
 *.bak
 *.tmp.*
 
+# Generated miner output (tools/)
+tools/out/
+/data/
+
 # Editor
 .vscode/
 .idea/
