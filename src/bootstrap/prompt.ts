@@ -12,12 +12,19 @@ import {
 } from '../schemas/artifacts.js';
 import {
   deriveOpenLoopsFrom,
+  deriveResolvedLoopsFrom,
   loadSessionsFromDir,
   type LoadedSession,
   type LoadedSessions,
   type MalformedSession,
   type OpenLoop,
+  type ResolvedLoop,
 } from '../sessions/open-loops.js';
+import {
+  loadNotesFromDir,
+  type LoadedNote,
+  type LoadedNotes,
+} from '../notes/note-file.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -204,7 +211,7 @@ async function loadArtifacts(initiativeDir: string): Promise<Artifacts> {
   try {
     return await readYaml(artifactsPath, ArtifactsSchema);
   } catch {
-    return { branches: [], stashes: [] };
+    return { branches: [], stashes: [], worktrees: [] };
   }
 }
 
@@ -301,6 +308,40 @@ function renderRecentlyDone(
 }
 
 /**
+ * Notes are capped by count, never by age. A process lesson from six months ago
+ * is precisely the one about to be re-learned the hard way, so it must not
+ * scroll out of the bootstrap the way "recently done" does. The cap keeps the
+ * section bounded; one compact line each keeps it cheap.
+ */
+const DURABLE_NOTES_LIMIT = 12;
+
+function renderNoteLine(note: LoadedNote): string {
+  const { kind, title, created } = note.frontmatter;
+  return `- [${kind}] ${title} (${created})`;
+}
+
+function renderDurableNotes(loaded: LoadedNotes, slug: string): string | null {
+  const { notes, malformed } = loaded;
+  if (notes.length === 0 && malformed.length === 0) return null;
+  const shown = notes.slice(0, DURABLE_NOTES_LIMIT);
+  const lines = shown.map(renderNoteLine);
+  const overflow = notes.length - shown.length;
+  if (overflow > 0) {
+    lines.push(`(+${overflow} older — \`active-work note list ${slug}\`)`);
+  }
+  if (malformed.length > 0) {
+    lines.push(
+      `(${malformed.length} note file(s) unreadable — run \`active-work note list ${slug}\`)`,
+    );
+  }
+  const heading =
+    overflow > 0
+      ? `# Durable notes (newest ${shown.length} of ${notes.length})`
+      : `# Durable notes (${notes.length})`;
+  return `${heading}\n${lines.join('\n')}`;
+}
+
+/**
  * An empty ledger has two very different meanings and the operator has to be
  * able to tell them apart: a session that ran `wrap --no-loops` positively
  * asserted nothing was hanging, whereas an empty derivation may simply mean
@@ -357,6 +398,27 @@ function renderOpenLoops(
   });
   const oldest = loops[0]!.ageDays;
   return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
+}
+
+/**
+ * Only abandonments are rendered, and only recent ones. A loop closed `done`
+ * needs no explanation — the work happened. A loop closed `abandoned` is a
+ * decision not to do something, and a future session that cannot see it will
+ * propose the abandoned thing again.
+ */
+function renderAbandonedLoops(
+  resolved: ResolvedLoop[],
+  windowDays: number,
+): string | null {
+  const abandoned = resolved.filter(
+    (loop) => loop.outcome === 'abandoned' && loop.ageDays <= windowDays,
+  );
+  if (abandoned.length === 0) return null;
+  const lines = abandoned.map((loop) => {
+    const head = `- ${loop.text} (dropped ${loop.closedAt.slice(0, 10)})`;
+    return loop.note ? `${head}\n  why: ${loop.note}` : head;
+  });
+  return `# Abandoned in the last ${windowDays} days (${abandoned.length})\n${lines.join('\n')}`;
 }
 
 const LIVE_RENDER_LIMIT = 10;
@@ -670,16 +732,18 @@ export async function assembleBootstrap(
     slug,
   );
 
-  const [loaded, tasks, artifacts] = await Promise.all([
+  const [loaded, tasks, artifacts, notes] = await Promise.all([
     loadSessionsNewestFirst(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
+    loadNotesFromDir(initiativeDir),
   ]);
   const { sessions, malformed } = loaded;
 
   // `mergedPrs` is deliberately unsupplied: derivation must stay offline
   // because bootstrap runs it on every launch.
   const openLoops = deriveOpenLoopsFrom(loaded, { now, tasks });
+  const resolvedLoops = deriveResolvedLoopsFrom(loaded, { now, tasks });
 
   const latestCanonical = sessions.find((s) => s.frontmatter.track === 'canonical');
   // No canonical session recorded for this initiative — fall back to the
@@ -724,6 +788,9 @@ export async function assembleBootstrap(
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
   sections.push(renderOpenLoops(openLoops, malformed, sessions[0]));
 
+  const abandonedBody = renderAbandonedLoops(resolvedLoops, recentlyDoneDays);
+  if (abandonedBody) sections.push(abandonedBody);
+
   if (narrativeSession) {
     const sessionExcerpt =
       truncateLines(narrativeSession.body, SESSION_BODY_MAX_LINES) ||
@@ -757,6 +824,9 @@ export async function assembleBootstrap(
       `# Archived (housekeeping)\nMoved ${archivedTaskIds.length} stale done task(s) to tasks/archive/: ${archivedTaskIds.join(', ')}`,
     );
   }
+
+  const notesBody = renderDurableNotes(notes, slug);
+  if (notesBody) sections.push(notesBody);
 
   if (artifactsBody) {
     sections.push(`# Open artifacts\n${artifactsBody}`);

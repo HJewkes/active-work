@@ -12,6 +12,7 @@ import {
   type CliMeta,
   type CommandContext,
 } from './registry/index.js';
+import { readCommanderOption } from './registry/cli-options.js';
 import { color } from './utils/color.js';
 import { appendUsage } from './utils/usage-log.js';
 
@@ -171,13 +172,7 @@ function makeAction(
     // Options
     if (meta.options) {
       for (const [key, opt] of Object.entries(meta.options)) {
-        const flagKey = flagToKey(opt.long);
-        // commander camelCases long flag names, dropping leading --.
-        const commanderKey = flagKey.replace(/_([a-z])/g, (_, c: string) =>
-          c.toUpperCase(),
-        );
-        const value =
-          optsFromCommander[commanderKey] ?? optsFromCommander[flagKey];
+        const value = readCommanderOption(optsFromCommander, opt.long, flagToKey);
         if (value !== undefined) {
           const t = unwrapZodType(fieldSchema(cmd.args, key));
           raw[key] = coerce(value, t);

@@ -4,6 +4,7 @@ import {
   ArtifactsSchema,
   BranchEntrySchema,
   StashEntrySchema,
+  WorktreeEntrySchema,
 } from '../../src/schemas/artifacts.js';
 
 const validBranch = {
@@ -26,6 +27,19 @@ const validStashWithSha = {
   repo: 'HJewkes/active-work',
   label: 'WIP zod schemas',
   sha: 'deadbeefcafe1234',
+};
+
+const validWorktree = {
+  path: '/Users/dev/code/active-work-wave1',
+  repo: 'HJewkes/active-work',
+};
+
+const fullWorktree = {
+  ...validWorktree,
+  branch: 'wave1/schemas',
+  holding: 'half-finished zod refactor, blocked on AW-15',
+  pr: 42,
+  note: 'delete once merged',
 };
 
 describe('BranchEntrySchema', () => {
@@ -90,11 +104,48 @@ describe('StashEntrySchema', () => {
   });
 });
 
+describe('WorktreeEntrySchema', () => {
+  it('accepts a minimal entry with only path and repo', () => {
+    expect(WorktreeEntrySchema.safeParse(validWorktree).success).toBe(true);
+  });
+
+  it('accepts a fully-populated entry', () => {
+    expect(WorktreeEntrySchema.safeParse(fullWorktree).success).toBe(true);
+  });
+
+  it.each(['path', 'repo'])('rejects when required field %s is missing', (field) => {
+    const input: Record<string, unknown> = { ...validWorktree };
+    delete input[field];
+    expect(WorktreeEntrySchema.safeParse(input).success).toBe(false);
+  });
+
+  it('rejects a non-positive pr number', () => {
+    expect(WorktreeEntrySchema.safeParse({ ...validWorktree, pr: 0 }).success).toBe(false);
+  });
+
+  it('drops volatile state that callers might try to persist', () => {
+    const result = WorktreeEntrySchema.safeParse({
+      ...validWorktree,
+      dirty: true,
+      files_changed: 3,
+      ahead: 2,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const data = result.data as Record<string, unknown>;
+      expect(data.dirty).toBeUndefined();
+      expect(data.files_changed).toBeUndefined();
+      expect(data.ahead).toBeUndefined();
+    }
+  });
+});
+
 describe('ArtifactsSchema', () => {
   it('accepts a fully-populated artifacts document', () => {
     const result = ArtifactsSchema.safeParse({
       branches: [validBranchWithNote],
       stashes: [validStashWithSha],
+      worktrees: [fullWorktree],
     });
     expect(result.success).toBe(true);
   });
@@ -105,6 +156,18 @@ describe('ArtifactsSchema', () => {
     if (result.success) {
       expect(result.data.branches).toEqual([]);
       expect(result.data.stashes).toEqual([]);
+      expect(result.data.worktrees).toEqual([]);
+    }
+  });
+
+  it('accepts a pre-worktrees document unchanged', () => {
+    const result = ArtifactsSchema.safeParse({
+      branches: [validBranchWithNote],
+      stashes: [validStashWithSha],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.worktrees).toEqual([]);
     }
   });
 

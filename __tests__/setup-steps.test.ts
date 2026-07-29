@@ -271,8 +271,28 @@ describe('stepRegisterMcp', () => {
 });
 
 describe('stepStartDaemon', () => {
+  // stepStartDaemon short-circuits when a supervisor already owns the daemon,
+  // and the supervisor probe shells out to launchctl/systemctl. Without a stub
+  // these tests read the developer's real machine state and assert the wrong
+  // branch — green on CI, failing on a Mac with the LaunchAgent loaded.
+  const unsupervised = vi.fn(() => {
+    const handlers: Record<string, ((arg?: unknown) => void)[]> = {};
+    const child = {
+      stderr: { on: () => undefined },
+      on: (event: string, cb: (arg?: unknown) => void) => {
+        handlers[event] ??= [];
+        handlers[event]!.push(cb);
+      },
+    };
+    queueMicrotask(() => handlers.close?.forEach((cb) => cb(1)));
+    return child as unknown as ReturnType<typeof nodeSpawn>;
+  });
+
   it('skips with --yes', async () => {
-    const result = await stepStartDaemon({ yes: true });
+    const result = await stepStartDaemon({
+      yes: true,
+      spawn: unsupervised as unknown as typeof nodeSpawn,
+    });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.done).toBe(false);
@@ -285,9 +305,16 @@ describe('stepStartDaemon', () => {
       confirm: vi.fn(async () => false),
       isCancel: vi.fn(() => false),
     } as unknown as typeof clackPrompts;
-    const result = await stepStartDaemon({ prompts });
+    const result = await stepStartDaemon({
+      prompts,
+      spawn: unsupervised as unknown as typeof nodeSpawn,
+    });
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.done).toBe(false);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/skipped/i);
+      expect(prompts.confirm).toHaveBeenCalled();
+    }
   });
 });
 

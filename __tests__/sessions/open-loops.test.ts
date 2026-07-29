@@ -8,6 +8,7 @@ import YAML from 'yaml';
 import {
   deriveOpenLoops,
   deriveOpenLoopsFrom,
+  deriveResolvedLoops,
   findDanglingResolves,
   findSessionIssues,
   loadSessionsFromDir,
@@ -589,5 +590,131 @@ describe('loadSessionsFromDir', () => {
     expect(malformed).toEqual([
       { file: 'broken.md', reason: 'no frontmatter block' },
     ]);
+  });
+});
+
+describe('deriveResolvedLoops', () => {
+  // AW-59: outcome and note were write-only. The schema requires a note when
+  // outcome is `abandoned`, and nothing ever read it back, so a deliberately
+  // dropped thread explained itself to nobody.
+  it('carries outcome and note back out of the ledger', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'ship the thing', kind: 'prose' }],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-22T10:00:00Z',
+      resolves: [
+        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'scope was wrong' },
+      ],
+    });
+
+    const resolved = await deriveResolvedLoops(initiativeDir, { now: NOW });
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({
+      ref: `${opener}#n1`,
+      text: 'ship the thing',
+      outcome: 'abandoned',
+      note: 'scope was wrong',
+      closedBy: '2026-07-22-b',
+      ageDays: 5,
+    });
+  });
+
+  it('records a done outcome without inventing a note', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'ship it', kind: 'prose' }],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-21T10:00:00Z',
+      resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+    });
+
+    const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });
+    expect(loop?.outcome).toBe('done');
+    expect(loop?.note).toBeUndefined();
+  });
+
+  it('lets the later of two resolutions win', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'ship it', kind: 'prose' }],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-21T10:00:00Z',
+      resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+    });
+    await writeSession({
+      session_id: 'c',
+      ended: '2026-07-23T10:00:00Z',
+      resolves: [
+        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted, not worth it' },
+      ],
+    });
+
+    const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });
+    expect(loop?.outcome).toBe('abandoned');
+    expect(loop?.note).toBe('reverted, not worth it');
+  });
+
+  // `iso8601` accepts any timezone offset, so "later" cannot be decided by
+  // comparing the raw `ended` strings: here the later instant (11:00Z, written
+  // as 04:00-07:00) sorts BEFORE the earlier one (10:00Z) lexicographically.
+  // Comparing strings kept the earlier `done` and dropped the later
+  // `abandoned` — inverting the one distinction the outcome exists to record.
+  it('lets the later of two resolutions win across timezone offsets', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'ship it', kind: 'prose' }],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-22T10:00:00Z',
+      resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+    });
+    await writeSession({
+      session_id: 'c',
+      file: '2026-07-22-c',
+      ended: '2026-07-22T04:00:00-07:00',
+      resolves: [
+        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted an hour later' },
+      ],
+    });
+
+    const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });
+    expect(loop?.outcome).toBe('abandoned');
+    expect(loop?.note).toBe('reverted an hour later');
+    expect(loop?.closedBy).toBe('2026-07-22-c');
+  });
+
+  // Auto-resolution states no outcome and gives no reason; reporting it as
+  // `done` would put words in the operator's mouth.
+  it('omits loops closed only by a task going done', async () => {
+    await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'do AW-1', kind: 'task', ref: 'AW-1' }],
+    });
+
+    const opts = { now: NOW, tasks: [task('AW-1', 'done')] };
+    expect(await deriveOpenLoops(initiativeDir, opts)).toHaveLength(0);
+    expect(await deriveResolvedLoops(initiativeDir, opts)).toHaveLength(0);
+  });
+
+  it('excludes a dangling resolve from the resolved list', async () => {
+    await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      resolves: [{ ref: 'nope#n1', outcome: 'abandoned', note: 'bad ref' }],
+    });
+    expect(await deriveResolvedLoops(initiativeDir, { now: NOW })).toHaveLength(0);
   });
 });

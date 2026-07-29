@@ -31,9 +31,15 @@ import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
 
 // Sessions
+import loops from './loops.js';
+import preflight from './preflight.js';
 import sessionList from './session-list.js';
 import sessionsBrowser from './sessions-browser.js';
 import wrap from './wrap.js';
+
+// Notes
+import noteAdd from './note-add.js';
+import noteList from './note-list.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -100,7 +106,12 @@ const ALL_COMMANDS: AnyCommand[] = [
   // sessions
   sessionList,
   sessionsBrowser,
+  loops,
+  preflight,
   wrap,
+  // notes
+  noteAdd,
+  noteList,
   // sources / artifacts
   sourceAdd,
   artifactAddBranch,

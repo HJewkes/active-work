@@ -20,6 +20,8 @@ function writeSession(
       slug: 'sample-initiative',
       track: 'canonical',
       no_loops: true,
+      no_notes: true,
+      no_tasks: true,
       ...overrides,
     }),
     makeCtx(activeRoot),

@@ -325,6 +325,8 @@ describe('end-to-end: full lifecycle through the registry', () => {
         track: 'canonical',
         body,
         no_loops: true,
+        no_notes: true,
+        no_tasks: true,
       },
       activeRoot,
     );
@@ -350,6 +352,8 @@ describe('end-to-end: full lifecycle through the registry', () => {
         track: 'canonical',
         body: 'Other body',
         no_loops: true,
+        no_notes: true,
+        no_tasks: true,
       },
       activeRoot,
     );

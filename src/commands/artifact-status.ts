@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { ArtifactsSchema } from '../schemas/artifacts.js';
+import { ArtifactsSchema, type WorktreeEntry } from '../schemas/artifacts.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml } from '../utils/yaml-io.js';
@@ -11,6 +11,7 @@ import {
   resolveLocalRepoPath,
   resolveOrgRepo,
 } from '../utils/git-gh.js';
+import { readWorktreeState } from '../utils/git-worktrees.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
@@ -36,14 +37,34 @@ const BranchStatusSchema = z.object({
   error: z.string().optional(),
 });
 
+/**
+ * Persisted worktree identity plus live state read from git. The live half
+ * is never written back to `artifacts.yml` — see `src/schemas/artifacts.ts`.
+ */
+const WorktreeStatusSchema = z.object({
+  path: z.string(),
+  repo: z.string(),
+  branch: z.string().nullable(),
+  holding: z.string().optional(),
+  pr: z.number().int().optional(),
+  note: z.string().optional(),
+  present: z.boolean(),
+  dirty: z.boolean(),
+  files_changed: z.number().int(),
+  ahead: z.number().int().nullable(),
+  behind: z.number().int().nullable(),
+});
+
 const ResultSchema = z.object({
   slug: z.string(),
   branches: z.array(BranchStatusSchema),
+  worktrees: z.array(WorktreeStatusSchema),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 type BranchStatus = z.infer<typeof BranchStatusSchema>;
+type WorktreeStatus = z.infer<typeof WorktreeStatusSchema>;
 type PrInfo = z.infer<typeof PrInfoSchema>;
 
 interface BranchInput {
@@ -251,6 +272,23 @@ async function statusForBranch(branch: BranchInput): Promise<BranchStatus> {
   return out;
 }
 
+async function statusForWorktree(entry: WorktreeEntry): Promise<WorktreeStatus> {
+  const live = await readWorktreeState(entry.path);
+  return {
+    path: entry.path,
+    repo: entry.repo,
+    branch: live.branch ?? entry.branch ?? null,
+    ...(entry.holding ? { holding: entry.holding } : {}),
+    ...(entry.pr ? { pr: entry.pr } : {}),
+    ...(entry.note ? { note: entry.note } : {}),
+    present: live.present,
+    dirty: live.dirty,
+    files_changed: live.files_changed,
+    ahead: live.ahead,
+    behind: live.behind,
+  };
+}
+
 const artifactStatus = defineCommand<Args, Result>({
   name: 'artifact.status',
   description:
@@ -270,7 +308,12 @@ const artifactStatus = defineCommand<Args, Result>({
       MAX_CONCURRENCY,
       statusForBranch,
     );
-    return { slug: args.slug, branches };
+    const worktrees = await mapConcurrent(
+      current.worktrees,
+      MAX_CONCURRENCY,
+      statusForWorktree,
+    );
+    return { slug: args.slug, branches, worktrees };
   },
 });
 
