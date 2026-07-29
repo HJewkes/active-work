@@ -15,7 +15,7 @@
 import { spawn } from 'node:child_process';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
-import { buildClaudeArgs } from './launcher-args.js';
+import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT } from './errors.js';
 import { color } from './utils/color.js';
@@ -143,6 +143,7 @@ function printHelp(): void {
       '  aw <slug> --adhoc',
       '                 Frame the session as ad-hoc work on the workstream',
       '                 (awaiting your task), not a handoff continuation.',
+      '                 `--ad-hoc` is accepted as an alias.',
       '  aw --help      Show this message.',
       '  aw --version   Print version.',
       '',
@@ -163,11 +164,9 @@ export async function main(argv: string[]): Promise<void> {
     process.exit(EXIT.OK);
   }
   // `--pick` forces the interactive picker instead of resolving from cwd;
-  // `--adhoc` reframes the prompt as ad-hoc work on the workstream.
-  const pick = args.includes('--pick');
-  const adhoc = args.includes('--adhoc');
-  const positional = args.filter((a) => a !== '--pick' && a !== '--adhoc');
-  if (positional.some((a) => a.startsWith('-')) || positional.length > 1) {
+  // `--adhoc` (alias `--ad-hoc`) reframes the prompt as ad-hoc work.
+  const { pick, adhoc, positional, usageError } = parseLauncherFlags(args);
+  if (usageError) {
     process.stderr.write(
       color.red(
         'error: `aw` only launches a Claude session for an initiative. ' +
