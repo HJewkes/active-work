@@ -144,6 +144,8 @@ interface Resolution {
   note?: string;
   closedBy: string;
   closedAt: string;
+  /** `closedAt` as an instant. Ordering must never compare the raw strings. */
+  closedAtMs: number;
 }
 
 interface Analysis {
@@ -289,6 +291,12 @@ function classifyResolve(
 /**
  * Later resolutions win. Two sessions may both close one loop — the ledger
  * permits it — and the most recent statement of outcome is the current one.
+ *
+ * "Most recent" is compared as an instant, never as the raw `ended` string:
+ * `iso8601` accepts any timezone offset, so `2026-05-12T02:00:00-07:00` and
+ * `2026-05-12T09:00:00Z` are the same moment while sorting seven hours apart
+ * lexicographically. Comparing strings picks the wrong outcome for exactly the
+ * distinction this carries — done versus abandoned.
  */
 function applyResolves(
   sessions: LoadedSession[],
@@ -304,12 +312,13 @@ function applyResolves(
         continue;
       }
       const existing = resolutions.get(entry.ref);
-      if (existing && existing.closedAt > session.frontmatter.ended) continue;
+      if (existing && existing.closedAtMs > session.endedMs) continue;
       resolutions.set(entry.ref, {
         outcome: entry.outcome,
         ...(entry.note !== undefined ? { note: entry.note } : {}),
         closedBy: session.sessionFile,
         closedAt: session.frontmatter.ended,
+        closedAtMs: session.endedMs,
       });
     }
   }

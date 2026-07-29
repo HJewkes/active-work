@@ -157,9 +157,9 @@ function collectRepoLabels(
 }
 
 /**
- * A checked-out branch is worth recording only when it carries work that lives
- * nowhere else — unpushed commits or an uncommitted tree. Recording every
- * branch git happens to have checked out would bury the ones that matter.
+ * Collect one worktree's contribution to the sweep. Every live worktree is
+ * recorded — its path and purpose are identity, and git cannot re-derive what
+ * it is parked on — while branches, dirt, and unpushed commits are filtered.
  */
 function collectWorktree(
   discovered: DiscoveredWorktree,
@@ -198,6 +198,10 @@ function collectWorktree(
       no_upstream: !state.has_upstream,
     });
   }
+  // A checked-out branch is worth recording only when it carries work that
+  // lives nowhere else — unpushed commits or an uncommitted tree. Recording
+  // every branch git happens to have checked out would bury the ones that
+  // matter.
   if (state.dirty || isUnpushed) into.branches.push({ repo: label, name: branch });
 }
 

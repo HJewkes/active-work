@@ -355,18 +355,23 @@ const REMEDY: Record<DanglingKind, string> = {
  * The session is on disk by the time this runs and the message says so: an
  * agent that typo'd one ref should re-file that ref, not re-run the wrap and
  * duplicate the narrative.
+ *
+ * This rides `ctx.warnings` rather than a thrown error. Throwing discarded the
+ * receipt — the one case `ready_to_end: false` and `resolves_rejected[]` exist
+ * to describe was also the one case no caller could read them, leaving the
+ * machine-readable half of the contract available only as prose to parse.
  */
 function rejectionReport(
-  result: Result,
+  sessionPath: string,
   rejected: RejectedResolve[],
   total: number,
 ): string {
   const lines = rejected.map((r) => `  - ${r.ref} (${r.kind}): ${REMEDY[r.kind]}`);
   return (
-    `Session written to ${result.path}, but ${rejected.length} of ${total} ` +
+    `Session written to ${sessionPath}, but ${rejected.length} of ${total} ` +
     `--resolves entries closed no loop:\n${lines.join('\n')}\n` +
-    'The session file and brief.updated are committed; re-file only the rejected ' +
-    'refs from a later session.'
+    'The session file and brief.updated are committed, so ready_to_end is false: ' +
+    're-file only the rejected refs from a later session.'
   );
 }
 
@@ -517,7 +522,7 @@ export default defineCommand<Args, Result>({
         files_updated: filesUpdated(initiativeDir, notePaths, filed),
       };
       if (rejected.length > 0) {
-        throw new ValidationError(rejectionReport(result, rejected, total));
+        ctx.warnings.push(rejectionReport(written.path, rejected, total));
       }
       return result;
     });

@@ -664,6 +664,37 @@ describe('deriveResolvedLoops', () => {
     expect(loop?.note).toBe('reverted, not worth it');
   });
 
+  // `iso8601` accepts any timezone offset, so "later" cannot be decided by
+  // comparing the raw `ended` strings: here the later instant (11:00Z, written
+  // as 04:00-07:00) sorts BEFORE the earlier one (10:00Z) lexicographically.
+  // Comparing strings kept the earlier `done` and dropped the later
+  // `abandoned` — inverting the one distinction the outcome exists to record.
+  it('lets the later of two resolutions win across timezone offsets', async () => {
+    const opener = await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'ship it', kind: 'prose' }],
+    });
+    await writeSession({
+      session_id: 'b',
+      ended: '2026-07-22T10:00:00Z',
+      resolves: [{ ref: `${opener}#n1`, outcome: 'done' }],
+    });
+    await writeSession({
+      session_id: 'c',
+      file: '2026-07-22-c',
+      ended: '2026-07-22T04:00:00-07:00',
+      resolves: [
+        { ref: `${opener}#n1`, outcome: 'abandoned', note: 'reverted an hour later' },
+      ],
+    });
+
+    const [loop] = await deriveResolvedLoops(initiativeDir, { now: NOW });
+    expect(loop?.outcome).toBe('abandoned');
+    expect(loop?.note).toBe('reverted an hour later');
+    expect(loop?.closedBy).toBe('2026-07-22-c');
+  });
+
   // Auto-resolution states no outcome and gives no reason; reporting it as
   // `done` would put words in the operator's mouth.
   it('omits loops closed only by a task going done', async () => {

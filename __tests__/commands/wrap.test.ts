@@ -472,15 +472,18 @@ describe('wrap', () => {
   describe('rejected resolves (AW-53)', () => {
     it('reports a ref that names no loop, and still writes the session', async () => {
       await withTempActiveRoot(async (activeRoot) => {
-        await expect(
-          wrap.run(
-            baseArgs({
-              session_id: 'sess-missing',
-              resolves: [{ ref: 'no-such-stem#n1', outcome: 'done' }],
-            }),
-            makeCtx(activeRoot),
-          ),
-        ).rejects.toThrow(/no-such-stem#n1 \(missing\)/);
+        const ctx = makeCtx(activeRoot);
+        const result = await wrap.run(
+          baseArgs({
+            session_id: 'sess-missing',
+            resolves: [{ ref: 'no-such-stem#n1', outcome: 'done' }],
+          }),
+          ctx,
+        );
+        expect(result.resolves_rejected).toEqual([
+          { ref: 'no-such-stem#n1', kind: 'missing' },
+        ]);
+        expect(ctx.warnings.join('\n')).toMatch(/no-such-stem#n1 \(missing\)/);
 
         // Write-and-report: the narrative survives the bad ref.
         const written = path.join(
@@ -503,50 +506,60 @@ describe('wrap', () => {
           ended: ENDED,
         });
 
-        await expect(
-          wrap.run(
-            baseArgs({
-              session_id: 'sess-parallel',
-              resolves: [{ ref: tiedRef, outcome: 'done' }],
-            }),
-            makeCtx(activeRoot),
-          ),
-        ).rejects.toThrow(/\(not-prior\)/);
+        const ctx = makeCtx(activeRoot);
+        const result = await wrap.run(
+          baseArgs({
+            session_id: 'sess-parallel',
+            resolves: [{ ref: tiedRef, outcome: 'done' }],
+          }),
+          ctx,
+        );
+        expect(result.resolves_rejected).toEqual([
+          { ref: tiedRef, kind: 'not-prior' },
+        ]);
+        expect(ctx.warnings.join('\n')).toMatch(/\(not-prior\)/);
       });
     });
 
     it('reports a session trying to close its own loop', async () => {
       await withTempActiveRoot(async (activeRoot) => {
-        await expect(
-          wrap.run(
-            baseArgs({
-              session_id: 'sess-self',
-              next_steps: [{ id: 'n1', text: 'mine', kind: 'prose' }],
-              resolves: [
-                { ref: '2026-05-12-0900-sess-self#n1', outcome: 'done' },
-              ],
-            }),
-            makeCtx(activeRoot),
-          ),
-        ).rejects.toThrow(/2026-05-12-0900-sess-self#n1 \(self\)/);
+        const ctx = makeCtx(activeRoot);
+        const result = await wrap.run(
+          baseArgs({
+            session_id: 'sess-self',
+            next_steps: [{ id: 'n1', text: 'mine', kind: 'prose' }],
+            resolves: [{ ref: '2026-05-12-0900-sess-self#n1', outcome: 'done' }],
+          }),
+          ctx,
+        );
+        expect(result.resolves_rejected).toEqual([
+          { ref: '2026-05-12-0900-sess-self#n1', kind: 'self' },
+        ]);
+        expect(ctx.warnings.join('\n')).toMatch(
+          /2026-05-12-0900-sess-self#n1 \(self\)/,
+        );
       });
     });
 
     it('counts only the refs that closed a loop when some are bad', async () => {
       await withTempActiveRoot(async (activeRoot) => {
         const priorRef = await seedPriorLoop(activeRoot);
-        await expect(
-          wrap.run(
-            baseArgs({
-              session_id: 'sess-mixed',
-              resolves: [
-                { ref: priorRef, outcome: 'done' },
-                { ref: 'typo#p1', outcome: 'done' },
-              ],
-            }),
-            makeCtx(activeRoot),
-          ),
-        ).rejects.toThrow(/1 of 2 --resolves entries closed no loop/);
+        const ctx = makeCtx(activeRoot);
+        const result = await wrap.run(
+          baseArgs({
+            session_id: 'sess-mixed',
+            resolves: [
+              { ref: priorRef, outcome: 'done' },
+              { ref: 'typo#p1', outcome: 'done' },
+            ],
+          }),
+          ctx,
+        );
+        expect(result.closed).toEqual({ resolves_applied: 1 });
+        expect(result.ready_to_end).toBe(false);
+        expect(ctx.warnings.join('\n')).toMatch(
+          /1 of 2 --resolves entries closed no loop/,
+        );
       });
     });
 
@@ -842,15 +855,24 @@ describe('wrap', () => {
 
   it('reports ready_to_end false when a resolve closed nothing', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      await expect(
-        wrap.run(
-          baseArgs({
-            session_id: 'sess-notready',
-            resolves: [{ ref: 'no-such-stem#n1', outcome: 'done' }],
-          }),
-          makeCtx(activeRoot),
-        ),
-      ).rejects.toThrow(/closed no loop/);
+      const ctx = makeCtx(activeRoot);
+      const result = await wrap.run(
+        baseArgs({
+          session_id: 'sess-notready',
+          resolves: [{ ref: 'no-such-stem#n1', outcome: 'done' }],
+        }),
+        ctx,
+      );
+
+      // The receipt must survive the rejection: throwing here discarded the
+      // one result the caller needed, leaving the rejection readable only by
+      // parsing an error string.
+      expect(result.ready_to_end).toBe(false);
+      expect(result.resolves_rejected).toEqual([
+        { ref: 'no-such-stem#n1', kind: 'missing' },
+      ]);
+      expect(result.closed).toEqual({ resolves_applied: 0 });
+      expect(ctx.warnings.join('\n')).toMatch(/closed no loop/);
     });
   });
 

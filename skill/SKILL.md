@@ -55,6 +55,8 @@ Every category needs an **explicit** answer. Omitting a flag is an error, not a 
 
 Then report back plainly: the counts of what was filed and updated, and that you are ready to end. `wrap` returns exactly that receipt — relay it rather than re-deriving it.
 
+Check `ready_to_end` before you say you are done. It is `false` when a `--resolves` ref closed no loop; `resolves_rejected[]` names each bad ref and why. The session file and `brief.updated` are already written, so **do not re-run `wrap`** — that would duplicate the narrative. Report the rejected refs to the user; they get re-filed from a later session.
+
 Auto-prompt the wrap when you detect the user winding down ("I'm done", "let's stop", "wrap up", inactivity after a chunk of work).
 
 ## Bootstrap flow (`aw <slug>` / `active-work open <slug>`)
