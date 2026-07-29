@@ -109,6 +109,7 @@ const RE_WT = new RegExp('\\bgit\\s+worktree\\s+add\\b[^&|;]*?\\s-b\\s+' + B);
 const RE_PUSH_B = new RegExp('\\bgit\\s+push\\b[^&|;]*?\\borigin\\s+(?:-u\\s+)?' + B);
 const RE_HEAD = new RegExp('\\bgh\\s+pr\\s+create\\b[^&|;]*?--head\\s+' + B);
 const RE_MERGE = /\bgh\s+pr\s+merge\s+(\d+)/;
+const RE_DELETE = new RegExp('\\bgit\\s+branch\\s+-[dD]\\s+' + B);
 
 /** Extract branch/commit/push/merge intent from a raw (compound) Bash command. */
 function parseGit(raw) {
@@ -120,7 +121,16 @@ function parseGit(raw) {
   const commit = /\bgit\s+(?:-C\s+\S+\s+)?commit\b/.test(raw);
   const push = /\bgit\s+(?:-C\s+\S+\s+)?push\b/.test(raw);
   const b = setBranch ? clean(setBranch) : null;
-  return { setBranch: b && b !== 'HEAD' && !b.startsWith('-') ? b : null, mergePr: mergePr ? Number(mergePr) : null, commit, push };
+  const isRealBranch =
+    !!b && b !== 'HEAD' && !b.startsWith('HEAD:') && b !== '/' && !b.startsWith('-') && !b.includes(':');
+  const deletedBranch = clean(RE_DELETE.exec(raw)?.[1] ?? '') || null;
+  return {
+    setBranch: isRealBranch ? b : null,
+    deletedBranch,
+    mergePr: mergePr ? Number(mergePr) : null,
+    commit,
+    push,
+  };
 }
 
 /**
@@ -453,6 +463,10 @@ async function mine({ repo, topN }) {
             if (g.setBranch) {
               s.curBranch = g.setBranch;
               s.codeBranches.add(g.setBranch);
+            }
+            if (g.deletedBranch) {
+              s.codeBranches.delete(g.deletedBranch);
+              if (s.curBranch === g.deletedBranch) s.curBranch = null;
             }
             if (g.commit) {
               s.commits++;
