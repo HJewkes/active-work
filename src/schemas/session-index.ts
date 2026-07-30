@@ -101,6 +101,18 @@ export const PrInputSchema = z.object({
   mergedAt: z.string().nullable().default(null),
 });
 
+/**
+ * A `gh pr merge <n>` observation. Kept separate from `PrInput` because the
+ * command only yields a bare number — the `owner/name` repo half of a `pr_ref`
+ * comes solely from `pr-link` events, so the writer matches on
+ * `(number, repo suffix)` instead of on a ref.
+ */
+export const PrMergeInputSchema = z.object({
+  number: z.number().int().positive(),
+  repoHint: z.string().nullable().default(null),
+  mergedAt: z.string(),
+});
+
 export const BranchInputSchema = z.object({
   branchRef: nonEmpty,
   repo: z.string().nullable().default(null),
@@ -177,6 +189,7 @@ export type SessionModelUsageInput = z.infer<typeof SessionModelUsageInputSchema
 export type PermissionPhaseInput = z.infer<typeof PermissionPhaseInputSchema>;
 export type HumanEditInput = z.infer<typeof HumanEditInputSchema>;
 export type PrInput = z.infer<typeof PrInputSchema>;
+export type PrMergeInput = z.infer<typeof PrMergeInputSchema>;
 export type BranchInput = z.infer<typeof BranchInputSchema>;
 export type FileInput = z.infer<typeof FileInputSchema>;
 export type TaskInput = z.infer<typeof TaskInputSchema>;
@@ -200,6 +213,7 @@ export const ExtractResultSchema = z.object({
   permissionPhases: z.array(PermissionPhaseInputSchema),
   humanEdits: z.array(HumanEditInputSchema),
   prs: z.array(PrInputSchema),
+  prMerges: z.array(PrMergeInputSchema),
   branches: z.array(BranchInputSchema),
   files: z.array(FileInputSchema),
   tasks: z.array(TaskInputSchema),
