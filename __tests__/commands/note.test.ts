@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import noteAddCmd from '../../src/commands/note-add.js';
 import noteListCmd from '../../src/commands/note-list.js';
-import { NoteFrontmatterSchema } from '../../src/schemas/note.js';
+import { NOTE_TITLE_MAX_LENGTH, NoteFrontmatterSchema } from '../../src/schemas/note.js';
 import { readFrontmatter } from '../../src/utils/gray-matter-io.js';
 import { today } from '../../src/utils/today.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
@@ -94,6 +94,16 @@ describe('note.add', () => {
       noteAddCmd.args.safeParse({ ...base, body: 'a', body_file: '/tmp/b.md' }).success,
     ).toBe(false);
     expect(noteAddCmd.args.safeParse({ ...base, body: 'a' }).success).toBe(true);
+  });
+
+  it('rejects a title longer than the bound', () => {
+    const base = { slug: SLUG, kind: 'fyi' as const, body: 'x' };
+    expect(
+      noteAddCmd.args.safeParse({ ...base, title: 'a'.repeat(NOTE_TITLE_MAX_LENGTH + 1) }).success,
+    ).toBe(false);
+    expect(
+      noteAddCmd.args.safeParse({ ...base, title: 'a'.repeat(NOTE_TITLE_MAX_LENGTH) }).success,
+    ).toBe(true);
   });
 
   it('parks a same-day duplicate title beside the original', async () => {

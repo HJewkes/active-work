@@ -22,6 +22,16 @@ const isoDate = z
  */
 export const NoteKindSchema = z.enum(['process', 'gotcha', 'fyi', 'decision']);
 
+/**
+ * Titles are slugified into filenames, so an unbounded one yields a path no
+ * one can read, type, or safely check out on every filesystem.
+ *
+ * Enforced at write time only. The read path stays permissive so notes filed
+ * before the bound existed still load — `doctor` surfaces those instead of the
+ * loader dropping captured knowledge on the floor.
+ */
+export const NOTE_TITLE_MAX_LENGTH = 120;
+
 export const NoteFrontmatterSchema = z.object({
   kind: NoteKindSchema,
   title: z.string().min(1),

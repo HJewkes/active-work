@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { NoteKindSchema } from '../schemas/note.js';
+import { NOTE_TITLE_MAX_LENGTH, NoteKindSchema } from '../schemas/note.js';
 import { writeNoteFile } from '../notes/note-file.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
@@ -13,7 +13,12 @@ const ArgsSchema = z
   .object({
     slug: z.string().min(1),
     kind: NoteKindSchema,
-    title: z.string().min(1),
+    title: z
+      .string()
+      .min(1)
+      .max(NOTE_TITLE_MAX_LENGTH, {
+        message: `Title must be at most ${NOTE_TITLE_MAX_LENGTH} characters — it is slugified into the filename`,
+      }),
     body: z.string().optional(),
     body_file: z.string().optional(),
     tags: z.array(z.string().min(1)).optional(),
@@ -63,7 +68,7 @@ export default defineCommand<Args, Result>({
       },
       title: {
         long: '--title',
-        description: 'Short title (slugified into the filename)',
+        description: `Short title, at most ${NOTE_TITLE_MAX_LENGTH} chars (slugified into the filename)`,
         required: true,
       },
       body: { long: '--body', description: 'Raw markdown body' },
