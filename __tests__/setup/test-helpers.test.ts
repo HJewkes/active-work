@@ -8,10 +8,7 @@ describe('withTempActiveRoot', () => {
   let hadActiveRoot = false;
 
   beforeEach(() => {
-    hadActiveRoot = Object.prototype.hasOwnProperty.call(
-      process.env,
-      'ACTIVE_ROOT',
-    );
+    hadActiveRoot = Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT');
     originalActiveRoot = process.env.ACTIVE_ROOT;
     delete process.env.ACTIVE_ROOT;
   });
@@ -38,21 +35,14 @@ describe('withTempActiveRoot', () => {
 
   it('copies the canonical fixture (.schema-version present)', async () => {
     await withTempActiveRoot(async (dir) => {
-      const schemaVersion = readFileSync(
-        join(dir, '.schema-version'),
-        'utf8',
-      ).trim();
+      const schemaVersion = readFileSync(join(dir, '.schema-version'), 'utf8').trim();
       expect(schemaVersion).toBe('2');
 
       const initiatives = readdirSync(dir).filter((n) => !n.startsWith('.'));
       expect(initiatives).toContain('sample-initiative');
 
-      expect(
-        existsSync(join(dir, 'sample-initiative', 'brief.md')),
-      ).toBe(true);
-      expect(
-        existsSync(join(dir, 'sample-initiative', 'tasks', 'SI-1.yml')),
-      ).toBe(true);
+      expect(existsSync(join(dir, 'sample-initiative', 'brief.md'))).toBe(true);
+      expect(existsSync(join(dir, 'sample-initiative', 'tasks', 'SI-1.yml'))).toBe(true);
     });
   });
 
@@ -71,9 +61,7 @@ describe('withTempActiveRoot', () => {
     await withTempActiveRoot(async () => {
       expect(process.env.ACTIVE_ROOT).toBeDefined();
     });
-    expect(
-      Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT'),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT')).toBe(false);
   });
 
   it('restores prior ACTIVE_ROOT value after fn', async () => {
@@ -102,9 +90,7 @@ describe('withTempActiveRoot', () => {
       }),
     ).rejects.toThrow('boom');
     expect(existsSync(captured)).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT'),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT')).toBe(false);
   });
 
   it('returns the value produced by fn', async () => {
@@ -118,10 +104,7 @@ describe('withEmptyActiveRoot', () => {
   let hadActiveRoot = false;
 
   beforeEach(() => {
-    hadActiveRoot = Object.prototype.hasOwnProperty.call(
-      process.env,
-      'ACTIVE_ROOT',
-    );
+    hadActiveRoot = Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT');
     originalActiveRoot = process.env.ACTIVE_ROOT;
     delete process.env.ACTIVE_ROOT;
   });
@@ -149,8 +132,6 @@ describe('withEmptyActiveRoot', () => {
       expect(process.env.ACTIVE_ROOT).toBe(dir);
     });
     expect(existsSync(captured)).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT'),
-    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT')).toBe(false);
   });
 });

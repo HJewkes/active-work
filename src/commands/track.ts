@@ -136,4 +136,3 @@ function buildBriefBody(title: string, ref: string): string {
     '',
   ].join('\n');
 }
-

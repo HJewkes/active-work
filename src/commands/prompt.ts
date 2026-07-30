@@ -45,12 +45,10 @@ const promptCommand = defineCommand<PromptArgs, string>({
       },
       no_sibling_check: {
         long: '--no-sibling-check',
-        description:
-          'Skip the check for another session already live on this initiative.',
+        description: 'Skip the check for another session already live on this initiative.',
       },
     },
-    usage:
-      'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc] [--no-sibling-check]',
+    usage: 'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();

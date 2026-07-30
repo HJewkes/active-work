@@ -3,11 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
-import {
-  getActiveRoot,
-  getInitiativeDir,
-  getLockPath,
-} from '../utils/paths.js';
+import { getActiveRoot, getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { BriefFrontmatterSchema, TaskSeqSchema } from '../schemas/brief.js';
@@ -51,9 +47,7 @@ async function loadBrief(slug: string): Promise<Brief> {
   }
   const prefix = raw.frontmatter.task_prefix;
   if (typeof prefix !== 'string' || !PREFIX_RE.test(prefix)) {
-    throw new ValidationError(
-      `Brief at ${briefPath} is missing a valid task_prefix`,
-    );
+    throw new ValidationError(`Brief at ${briefPath} is missing a valid task_prefix`);
   }
   return {
     slug,
@@ -136,22 +130,14 @@ function readTaskSeq(brief: Brief, onDisk: number): number {
 // that used the highest number. Allocate from the persisted `task_seq`
 // high-water mark (falling back to the on-disk max for briefs written
 // before the field existed) and persist the new mark before returning.
-async function allocateTaskNumber(
-  brief: Brief,
-  existing: Task[],
-): Promise<number> {
+async function allocateTaskNumber(brief: Brief, existing: Task[]): Promise<number> {
   const onDisk = maxOnDiskTaskNumber(brief.prefix, existing);
   const next = Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
   const frontmatter: Record<string, unknown> = {
     ...brief.frontmatter,
     task_seq: next,
   };
-  await writeFrontmatter(
-    brief.path,
-    frontmatter,
-    brief.body,
-    BriefFrontmatterSchema,
-  );
+  await writeFrontmatter(brief.path, frontmatter, brief.body, BriefFrontmatterSchema);
   return next;
 }
 

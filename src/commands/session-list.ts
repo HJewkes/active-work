@@ -31,9 +31,7 @@ function extractFirstLine(body: string): string {
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
-    return trimmed.length > MAX_FIRST_LINE
-      ? trimmed.slice(0, MAX_FIRST_LINE)
-      : trimmed;
+    return trimmed.length > MAX_FIRST_LINE ? trimmed.slice(0, MAX_FIRST_LINE) : trimmed;
   }
   return '';
 }
@@ -64,9 +62,7 @@ async function listSessionFiles(dir: string): Promise<string[]> {
  * schema expects ISO strings, so coerce known timestamp fields back to their
  * string form before validation.
  */
-function coerceTimestamps(
-  raw: Record<string, unknown>,
-): Record<string, unknown> {
+function coerceTimestamps(raw: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...raw };
   for (const field of ['started', 'ended'] as const) {
     const value = out[field];
@@ -85,9 +81,7 @@ async function readSession(
   const coerced = coerceTimestamps(parsed.data as Record<string, unknown>);
   const result = SessionFrontmatterSchema.safeParse(coerced);
   if (!result.success) {
-    throw new Error(
-      `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
-    );
+    throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
   }
   return { frontmatter: result.data, body: parsed.content };
 }

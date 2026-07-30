@@ -50,9 +50,7 @@ describe('gray-matter round-trip', () => {
   it('rejects reads whose frontmatter fails the schema', async () => {
     const target = path.join(dir, 'broken.md');
     await fs.writeFile(target, '---\ntitle: 1\nstate: nope\n---\nbody\n');
-    await expect(readFrontmatter(target, Schema)).rejects.toThrow(
-      /Frontmatter validation failed/,
-    );
+    await expect(readFrontmatter(target, Schema)).rejects.toThrow(/Frontmatter validation failed/);
   });
 });
 

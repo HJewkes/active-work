@@ -27,10 +27,7 @@ function buildLogger(): Logger {
       }) as unknown as NodeJS.WritableStream)
     : process.stderr;
 
-  const streams: StreamEntry[] = [
-    { stream: stderrStream },
-    { stream: fileStream },
-  ];
+  const streams: StreamEntry[] = [{ stream: stderrStream }, { stream: fileStream }];
 
   return pino({ level: process.env.AW_LOG_LEVEL ?? 'info' }, multistream(streams));
 }

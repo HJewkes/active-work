@@ -94,9 +94,7 @@ async function readArtifacts(file: string): Promise<{
     return {
       branches: Array.isArray(raw?.branches) ? raw.branches : [],
       stashes: Array.isArray(raw?.stashes) ? raw.stashes : [],
-      worktrees: Array.isArray(raw?.worktrees)
-        ? (raw.worktrees as WorktreeEntry[])
-        : [],
+      worktrees: Array.isArray(raw?.worktrees) ? (raw.worktrees as WorktreeEntry[]) : [],
     };
   } catch {
     return { branches: [], stashes: [], worktrees: [] };

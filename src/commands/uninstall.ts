@@ -48,9 +48,7 @@ export default defineCommand<Args, Result>({
       for (const step of report.steps) {
         const mark = step.error ? color.red('FAIL') : color.green('OK');
         const trailing = step.error ?? step.message ?? '';
-        process.stderr.write(
-          `  ${mark} ${step.name}${trailing ? ` — ${trailing}` : ''}\n`,
-        );
+        process.stderr.write(`  ${mark} ${step.name}${trailing ? ` — ${trailing}` : ''}\n`);
       }
       process.stderr.write(
         '\n' +

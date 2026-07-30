@@ -30,8 +30,7 @@ const MAX_SCAN_LINES = 200;
 const COMPACTION_SUBJECT_PREFIX = '[compaction] ';
 
 export async function discoverClaudeSessions(): Promise<DiscoverClaudeResult> {
-  const root =
-    process.env.CLAUDE_PROJECTS_ROOT ?? path.join(os.homedir(), '.claude', 'projects');
+  const root = process.env.CLAUDE_PROJECTS_ROOT ?? path.join(os.homedir(), '.claude', 'projects');
   const hits: DiscoveryHit[] = [];
   const errors: DiscoverySourceError[] = [];
 
@@ -95,10 +94,7 @@ export async function discoverClaudeSessions(): Promise<DiscoverClaudeResult> {
   return { hits, errors };
 }
 
-async function aggregateSession(
-  filePath: string,
-  byCwd: Map<string, CwdAggregate>,
-): Promise<void> {
+async function aggregateSession(filePath: string, byCwd: Map<string, CwdAggregate>): Promise<void> {
   const stat = await fs.stat(filePath);
   // Read up to MAX_SCAN_LINES; this is a light scan, not a parser.
   const raw = await fs.readFile(filePath, 'utf8');

@@ -28,14 +28,22 @@ describe('archiveStaleTasks', () => {
 
   afterEach(() => rmSync(base, { recursive: true, force: true }));
 
-  async function writeTask(filename: string, fields: Record<string, string | number | null>): Promise<void> {
+  async function writeTask(
+    filename: string,
+    fields: Record<string, string | number | null>,
+  ): Promise<void> {
     await fs.writeFile(path.join(tasksDir, filename), taskYaml(fields), 'utf8');
   }
 
   it('archives done tasks older than the retention window', async () => {
     await writeTask('AW-1.yml', {
-      id: 'AW-1', title: 'Old done', priority: 1, status: 'done',
-      created: '2026-01-01', updated: '2026-05-01', done_at: '2026-05-01', // ~60d before NOW
+      id: 'AW-1',
+      title: 'Old done',
+      priority: 1,
+      status: 'done',
+      created: '2026-01-01',
+      updated: '2026-05-01',
+      done_at: '2026-05-01', // ~60d before NOW
     });
 
     const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 30, now: NOW });
@@ -47,8 +55,13 @@ describe('archiveStaleTasks', () => {
 
   it('keeps done tasks inside the retention window', async () => {
     await writeTask('AW-2.yml', {
-      id: 'AW-2', title: 'Recent done', priority: 1, status: 'done',
-      created: '2026-06-01', updated: '2026-06-20', done_at: '2026-06-20', // ~11d before NOW
+      id: 'AW-2',
+      title: 'Recent done',
+      priority: 1,
+      status: 'done',
+      created: '2026-06-01',
+      updated: '2026-06-20',
+      done_at: '2026-06-20', // ~11d before NOW
     });
 
     const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 30, now: NOW });
@@ -59,12 +72,22 @@ describe('archiveStaleTasks', () => {
 
   it('never archives open tasks or done tasks with no done_at', async () => {
     await writeTask('AW-3.yml', {
-      id: 'AW-3', title: 'Open old', priority: 1, status: 'open',
-      created: '2026-01-01', updated: '2026-01-01', done_at: null,
+      id: 'AW-3',
+      title: 'Open old',
+      priority: 1,
+      status: 'open',
+      created: '2026-01-01',
+      updated: '2026-01-01',
+      done_at: null,
     });
     await writeTask('AW-4.yml', {
-      id: 'AW-4', title: 'Done no date', priority: 2, status: 'done',
-      created: '2026-01-01', updated: '2026-01-01', done_at: null,
+      id: 'AW-4',
+      title: 'Done no date',
+      priority: 2,
+      status: 'done',
+      created: '2026-01-01',
+      updated: '2026-01-01',
+      done_at: null,
     });
 
     const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 30, now: NOW });
@@ -77,8 +100,13 @@ describe('archiveStaleTasks', () => {
   it('skips malformed task files without throwing', async () => {
     await fs.writeFile(path.join(tasksDir, 'bad.yml'), 'not: [valid task\n', 'utf8');
     await writeTask('AW-5.yml', {
-      id: 'AW-5', title: 'Old done', priority: 1, status: 'done',
-      created: '2026-01-01', updated: '2026-01-01', done_at: '2026-01-01',
+      id: 'AW-5',
+      title: 'Old done',
+      priority: 1,
+      status: 'done',
+      created: '2026-01-01',
+      updated: '2026-01-01',
+      done_at: '2026-01-01',
     });
 
     const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 30, now: NOW });
@@ -89,8 +117,13 @@ describe('archiveStaleTasks', () => {
 
   it('is disabled when retentionDays <= 0', async () => {
     await writeTask('AW-6.yml', {
-      id: 'AW-6', title: 'Old done', priority: 1, status: 'done',
-      created: '2026-01-01', updated: '2026-01-01', done_at: '2026-01-01',
+      id: 'AW-6',
+      title: 'Old done',
+      priority: 1,
+      status: 'done',
+      created: '2026-01-01',
+      updated: '2026-01-01',
+      done_at: '2026-01-01',
     });
 
     const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 0, now: NOW });

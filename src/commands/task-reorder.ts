@@ -32,9 +32,7 @@ const ResultSchema = z.object({
 
 type Result = z.infer<typeof ResultSchema>;
 
-async function loadAllTasks(
-  slug: string,
-): Promise<Array<{ task: Task; file: string }>> {
+async function loadAllTasks(slug: string): Promise<Array<{ task: Task; file: string }>> {
   const dir = path.join(getInitiativeDir(slug), 'tasks');
   let files: string[];
   try {

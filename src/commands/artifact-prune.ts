@@ -31,13 +31,7 @@ type Result = z.infer<typeof ResultSchema>;
 async function branchExists(repoPath: string, name: string): Promise<boolean> {
   const git = getGitRunner();
   try {
-    const res = await git('git', [
-      '-C',
-      repoPath,
-      'rev-parse',
-      '--verify',
-      `refs/heads/${name}`,
-    ]);
+    const res = await git('git', ['-C', repoPath, 'rev-parse', '--verify', `refs/heads/${name}`]);
     return res.code === 0;
   } catch {
     return false;
@@ -60,8 +54,7 @@ async function classifyBranch(
 
 const artifactPrune = defineCommand<Args, Result>({
   name: 'artifact.prune',
-  description:
-    'List (default) or remove (--apply) tracked branches that no longer exist locally.',
+  description: 'List (default) or remove (--apply) tracked branches that no longer exist locally.',
   args: ArgsSchema,
   result: ResultSchema,
   cli: {

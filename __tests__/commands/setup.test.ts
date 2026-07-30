@@ -25,10 +25,7 @@ describe('active-work setup', () => {
 
   beforeEach(() => {
     tempBase = mkdtempSync(path.join(tmpdir(), 'aw-setup-cmd-'));
-    hadActiveRoot = Object.prototype.hasOwnProperty.call(
-      process.env,
-      'ACTIVE_ROOT',
-    );
+    hadActiveRoot = Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT');
     originalActiveRoot = process.env.ACTIVE_ROOT;
     originalXdgData = process.env.XDG_DATA_HOME;
     originalXdgConfig = process.env.XDG_CONFIG_HOME;
@@ -69,10 +66,7 @@ describe('active-work setup', () => {
       configurable: true,
     });
     try {
-      const result = await setupCmd.run(
-        { yes: true },
-        ctxFor(process.env.ACTIVE_ROOT!),
-      );
+      const result = await setupCmd.run({ yes: true }, ctxFor(process.env.ACTIVE_ROOT!));
       expect(result.banner).toContain('active-work');
       expect(result.steps.length).toBeGreaterThanOrEqual(5);
       for (const step of result.steps) {
@@ -88,13 +82,7 @@ describe('active-work setup', () => {
   });
 
   it('installs and removes the /aw-prompt command', async () => {
-    const target = path.join(
-      tempBase,
-      'home',
-      '.claude',
-      'commands',
-      'aw-prompt.md',
-    );
+    const target = path.join(tempBase, 'home', '.claude', 'commands', 'aw-prompt.md');
 
     const install = await setupSteps.stepInstallCommand({});
     expect(install.ok).toBe(true);
@@ -117,9 +105,9 @@ describe('active-work setup', () => {
       ],
     }));
     try {
-      await expect(
-        setupCmd.run({ yes: true }, ctxFor(process.env.ACTIVE_ROOT!)),
-      ).rejects.toThrow(/create-active-root/);
+      await expect(setupCmd.run({ yes: true }, ctxFor(process.env.ACTIVE_ROOT!))).rejects.toThrow(
+        /create-active-root/,
+      );
     } finally {
       spy.mockRestore();
       void original;
@@ -137,19 +125,12 @@ describe('active-work uninstall', () => {
   beforeEach(async () => {
     tempBase = mkdtempSync(path.join(tmpdir(), 'aw-uninstall-cmd-'));
     fakeHome = path.join(tempBase, 'home');
-    hadActiveRoot = Object.prototype.hasOwnProperty.call(
-      process.env,
-      'ACTIVE_ROOT',
-    );
+    hadActiveRoot = Object.prototype.hasOwnProperty.call(process.env, 'ACTIVE_ROOT');
     originalActiveRoot = process.env.ACTIVE_ROOT;
     process.env.ACTIVE_ROOT = path.join(tempBase, 'active');
     homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
     await fs.mkdir(process.env.ACTIVE_ROOT, { recursive: true });
-    await fs.writeFile(
-      path.join(process.env.ACTIVE_ROOT, '.schema-version'),
-      '1\n',
-      'utf8',
-    );
+    await fs.writeFile(path.join(process.env.ACTIVE_ROOT, '.schema-version'), '1\n', 'utf8');
     const skillDir = path.join(fakeHome, '.claude', 'skills', 'active-work');
     await fs.mkdir(skillDir, { recursive: true });
     await fs.writeFile(path.join(skillDir, 'SKILL.md'), '# skill\n', 'utf8');
@@ -166,24 +147,13 @@ describe('active-work uninstall', () => {
   });
 
   it('removes skill but preserves the active root with --yes', async () => {
-    const result = await uninstallCmd.run(
-      { yes: true },
-      ctxFor(process.env.ACTIVE_ROOT!),
-    );
+    const result = await uninstallCmd.run({ yes: true }, ctxFor(process.env.ACTIVE_ROOT!));
     expect(result.activeRootPreservedAt).toBe(process.env.ACTIVE_ROOT);
     // Skill dir removed
-    const skillMarker = path.join(
-      fakeHome,
-      '.claude',
-      'skills',
-      'active-work',
-      'SKILL.md',
-    );
+    const skillMarker = path.join(fakeHome, '.claude', 'skills', 'active-work', 'SKILL.md');
     expect(existsSync(skillMarker)).toBe(false);
     // Active root preserved
     expect(existsSync(process.env.ACTIVE_ROOT!)).toBe(true);
-    expect(
-      existsSync(path.join(process.env.ACTIVE_ROOT!, '.schema-version')),
-    ).toBe(true);
+    expect(existsSync(path.join(process.env.ACTIVE_ROOT!, '.schema-version'))).toBe(true);
   });
 });

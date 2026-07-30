@@ -1,19 +1,12 @@
 import { z } from 'zod';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { writeFrontmatter } from '../utils/gray-matter-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, UsageError } from '../errors.js';
 import { defineCommand } from '../registry/index.js';
-import {
-  loadAllBriefs,
-  sortSlugs,
-  type InitiativeBrief,
-} from './_focus-helpers.js';
+import { loadAllBriefs, sortSlugs, type InitiativeBrief } from './_focus-helpers.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
@@ -47,9 +40,7 @@ function buildRanking(briefs: InitiativeBrief[]): RankedSlug[] {
       // schema guarantees rank is present when state is focused
       const rank = b.frontmatter.rank;
       if (rank === undefined) {
-        throw new Error(
-          `Focused initiative ${b.slug} is missing rank in brief.md`,
-        );
+        throw new Error(`Focused initiative ${b.slug} is missing rank in brief.md`);
       }
       return { slug: b.slug, rank };
     })
@@ -85,15 +76,11 @@ export default defineCommand<Args, Result>({
     let desired: number;
     if (rank === undefined) {
       // Append: 1 if no one focused (excluding target), else max+1.
-      desired = withoutTarget.length === 0
-        ? 1
-        : Math.max(...withoutTarget.map((r) => r.rank)) + 1;
+      desired = withoutTarget.length === 0 ? 1 : Math.max(...withoutTarget.map((r) => r.rank)) + 1;
     } else {
       const maxAllowed = withoutTarget.length + 1;
       if (rank > maxAllowed) {
-        throw new UsageError(
-          `rank ${rank} exceeds maximum of ${maxAllowed} for the focused list`,
-        );
+        throw new UsageError(`rank ${rank} exceeds maximum of ${maxAllowed} for the focused list`);
       }
       desired = rank;
     }
@@ -133,9 +120,7 @@ export default defineCommand<Args, Result>({
         if (!change) continue;
         const brief = briefs.find((b) => b.slug === slugToWrite);
         if (!brief) {
-          throw new NotFoundError(
-            `Initiative ${slugToWrite} disappeared mid-update`,
-          );
+          throw new NotFoundError(`Initiative ${slugToWrite} disappeared mid-update`);
         }
         const next: BriefFrontmatter = {
           ...brief.frontmatter,
@@ -147,12 +132,7 @@ export default defineCommand<Args, Result>({
         // for already-focused entries.
         delete (next as Partial<BriefFrontmatter>).paused_since;
         delete (next as Partial<BriefFrontmatter>).restart_trigger;
-        await writeFrontmatter(
-          brief.briefPath,
-          next,
-          brief.body,
-          BriefFrontmatterSchema,
-        );
+        await writeFrontmatter(brief.briefPath, next, brief.body, BriefFrontmatterSchema);
       }
     });
 
@@ -165,10 +145,7 @@ export default defineCommand<Args, Result>({
   },
 });
 
-async function applyLocked(
-  slugs: string[],
-  fn: () => Promise<void>,
-): Promise<void> {
+async function applyLocked(slugs: string[], fn: () => Promise<void>): Promise<void> {
   // Acquire all locks in deterministic order. Nest withFileLock calls so
   // releases happen in reverse order.
   const recurse = async (index: number): Promise<void> => {

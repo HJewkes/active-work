@@ -46,10 +46,7 @@ describe('session.list', () => {
         body: 'newest body\n',
       });
 
-      const result = await sessionList.run(
-        { slug: 'sample-initiative' },
-        makeCtx(activeRoot),
-      );
+      const result = await sessionList.run({ slug: 'sample-initiative' }, makeCtx(activeRoot));
 
       expect(result.errors).toEqual([]);
       expect(result.sessions.map((s) => s.frontmatter.session_id)).toEqual([
@@ -99,11 +96,7 @@ describe('session.list', () => {
 
   it('reports errors for malformed files', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const sessionsDir = path.join(
-        activeRoot,
-        'sample-initiative',
-        'sessions',
-      );
+      const sessionsDir = path.join(activeRoot, 'sample-initiative', 'sessions');
       // Deliberately invalid: missing required frontmatter fields.
       await fs.writeFile(
         path.join(sessionsDir, '2026-05-12-1000-broken.md'),
@@ -111,18 +104,13 @@ describe('session.list', () => {
         'utf8',
       );
 
-      const result = await sessionList.run(
-        { slug: 'sample-initiative' },
-        makeCtx(activeRoot),
-      );
+      const result = await sessionList.run({ slug: 'sample-initiative' }, makeCtx(activeRoot));
 
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]?.filename).toBe('2026-05-12-1000-broken.md');
       expect(result.errors[0]?.error).toMatch(/Frontmatter validation failed/);
       // The valid fixture is still returned.
-      expect(result.sessions.map((s) => s.frontmatter.session_id)).toContain(
-        'fixture001',
-      );
+      expect(result.sessions.map((s) => s.frontmatter.session_id)).toContain('fixture001');
     });
   });
 });

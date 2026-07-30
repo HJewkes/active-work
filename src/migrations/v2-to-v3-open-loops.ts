@@ -2,10 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ValidationError } from '../errors.js';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
-import {
-  SessionFrontmatterSchema,
-  type SessionFrontmatter,
-} from '../schemas/session.js';
+import { SessionFrontmatterSchema, type SessionFrontmatter } from '../schemas/session.js';
 import {
   buildSessionStem,
   sessionFilePathForStem,
@@ -13,11 +10,7 @@ import {
 } from '../sessions/session-file.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
-import {
-  loadProposal,
-  type Proposal,
-  type ProposalInitiative,
-} from './v3-proposal.js';
+import { loadProposal, type Proposal, type ProposalInitiative } from './v3-proposal.js';
 import {
   KNOWN_REPAIRS,
   applyRepair,
@@ -289,11 +282,7 @@ function buildOpenBody(entry: ProposalInitiative, stem: string): string {
   ].join('\n');
 }
 
-function buildAbandonBody(
-  entry: ProposalInitiative,
-  openStem: string,
-  stem: string,
-): string {
+function buildAbandonBody(entry: ProposalInitiative, openStem: string, stem: string): string {
   const dead = entry.next_steps.filter((s) => s.abandoned !== undefined);
   return [
     '# Abandoned on arrival',

@@ -1,9 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import {
-  SessionFrontmatterSchema,
-  type SessionFrontmatter,
-} from '../schemas/session.js';
+import { SessionFrontmatterSchema, type SessionFrontmatter } from '../schemas/session.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 
 /**
@@ -39,20 +36,12 @@ interface KnownRepair {
 
 export const KNOWN_REPAIRS: KnownRepair[] = [
   {
-    file: path.join(
-      'audiobook',
-      'sessions',
-      '2026-07-23-0549-2026-07-26-book1-m4b-packaging.md',
-    ),
+    file: path.join('audiobook', 'sessions', '2026-07-23-0549-2026-07-26-book1-m4b-packaging.md'),
     kind: 'retrack',
     why: "track is a branch name ('feat/tts-quality'), not one of canonical|sidecar|adhoc",
   },
   {
-    file: path.join(
-      'voltras-workspace',
-      'sessions',
-      'ARCHIVED-handoff-through-2026-07-15.md',
-    ),
+    file: path.join('voltras-workspace', 'sessions', 'ARCHIVED-handoff-through-2026-07-15.md'),
     kind: 'relocate',
     target: path.join('voltras-workspace', 'sources', 'ARCHIVED-handoff-through-2026-07-15.md'),
     why: 'not a session file — a hand-archived handoff parked in sessions/',

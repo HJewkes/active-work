@@ -5,14 +5,8 @@ import matter from 'gray-matter';
 import worktreeSetDefault from '../../src/commands/worktree-set-default.js';
 import audit from '../../src/commands/audit.js';
 import list from '../../src/commands/list.js';
-import {
-  withEmptyActiveRoot,
-  withTempActiveRoot,
-} from '../setup/test-helpers.js';
-import type {
-  Command,
-  CommandContext,
-} from '../../src/registry/types.js';
+import { withEmptyActiveRoot, withTempActiveRoot } from '../setup/test-helpers.js';
+import type { Command, CommandContext } from '../../src/registry/types.js';
 import YAML from 'yaml';
 import { BriefFrontmatterSchema } from '../../src/schemas/brief.js';
 import { ArtifactsSchema } from '../../src/schemas/artifacts.js';
@@ -21,11 +15,7 @@ function makeCtx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
 }
 
-async function run<A, R>(
-  cmd: Command<A, R>,
-  args: A,
-  ctx: CommandContext,
-): Promise<R> {
+async function run<A, R>(cmd: Command<A, R>, args: A, ctx: CommandContext): Promise<R> {
   const parsed = cmd.args.parse(args);
   return cmd.run(parsed, ctx);
 }
@@ -106,10 +96,7 @@ describe('worktree.set-default', () => {
 
       const artifacts = ArtifactsSchema.parse(
         YAML.parse(
-          await fs.readFile(
-            path.join(activeRoot, 'two-worktrees', 'artifacts.yml'),
-            'utf8',
-          ),
+          await fs.readFile(path.join(activeRoot, 'two-worktrees', 'artifacts.yml'), 'utf8'),
         ),
       );
       const byName = new Map(artifacts.worktrees.map((e) => [e.name, e]));
@@ -212,10 +199,7 @@ describe('audit', () => {
       });
 
       const result = await run(audit, {}, makeCtx(activeRoot));
-      expect(result.initiatives.map((i) => i.slug)).toEqual([
-        'first',
-        'second',
-      ]);
+      expect(result.initiatives.map((i) => i.slug)).toEqual(['first', 'second']);
     });
   });
 });
@@ -282,10 +266,7 @@ describe('list', () => {
     await withEmptyActiveRoot(async (activeRoot) => {
       const badDir = path.join(activeRoot, 'broken');
       await fs.mkdir(badDir, { recursive: true });
-      await fs.writeFile(
-        path.join(badDir, 'brief.md'),
-        '---\nnot: valid\n---\n',
-      );
+      await fs.writeFile(path.join(badDir, 'brief.md'), '---\nnot: valid\n---\n');
       const result = await run(list, {}, makeCtx(activeRoot));
       expect(result.parse_errors).toHaveLength(1);
       expect(result.parse_errors[0].slug).toBe('broken');

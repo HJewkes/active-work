@@ -2,10 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import {
-  assembleBootstrap,
-  type LiveBranchStatus,
-} from '../../src/bootstrap/prompt.js';
+import { assembleBootstrap, type LiveBranchStatus } from '../../src/bootstrap/prompt.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SLUG = 'sample-initiative';

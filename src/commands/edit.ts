@@ -110,15 +110,10 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-export async function runEdit(
-  args: Args,
-  deps: RunEditDeps = defaultDeps,
-): Promise<Result> {
+export async function runEdit(args: Args, deps: RunEditDeps = defaultDeps): Promise<Result> {
   const file = targetFile(args.slug);
   if (!(await fileExists(file))) {
-    throw new NotFoundError(
-      `brief.md not found for initiative "${args.slug}" (expected ${file})`,
-    );
+    throw new NotFoundError(`brief.md not found for initiative "${args.slug}" (expected ${file})`);
   }
 
   const editor = await deps.resolveEditor(file);

@@ -222,9 +222,7 @@ describe('discoverGitHub (with injected runCommand)', () => {
     }));
     const result = await discoverGitHub(['owner/repo'], fakeRun);
     expect(result.hits).toEqual([]);
-    expect(result.errors).toEqual([
-      { source: 'gh:owner/repo', error: 'gh: not authenticated' },
-    ]);
+    expect(result.errors).toEqual([{ source: 'gh:owner/repo', error: 'gh: not authenticated' }]);
   });
 });
 

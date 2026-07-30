@@ -47,9 +47,7 @@ export default defineCommand<Args, Result>({
         name: args.name,
         ...(args.note ? { note: args.note } : {}),
       };
-      const idx = current.branches.findIndex(
-        (b) => b.repo === args.repo && b.name === args.name,
-      );
+      const idx = current.branches.findIndex((b) => b.repo === args.repo && b.name === args.name);
       if (idx >= 0) {
         // Preserve the prior note unless the caller supplied a new one.
         const prior = current.branches[idx]!;
@@ -66,7 +64,10 @@ export default defineCommand<Args, Result>({
         current.branches.push(entry);
       }
       await writeYaml(artifactsPath, current, ArtifactsSchema);
-      return { slug: args.slug, branch: current.branches[idx >= 0 ? idx : current.branches.length - 1]! };
+      return {
+        slug: args.slug,
+        branch: current.branches[idx >= 0 ? idx : current.branches.length - 1]!,
+      };
     });
   },
 });

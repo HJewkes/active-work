@@ -51,15 +51,12 @@ describe('BranchEntrySchema', () => {
     expect(BranchEntrySchema.safeParse(validBranchWithNote).success).toBe(true);
   });
 
-  it.each(['repo', 'name'])(
-    'rejects when required field %s is missing',
-    (field) => {
-      const input: Record<string, unknown> = { ...validBranch };
-      delete input[field];
-      const result = BranchEntrySchema.safeParse(input);
-      expect(result.success).toBe(false);
-    },
-  );
+  it.each(['repo', 'name'])('rejects when required field %s is missing', (field) => {
+    const input: Record<string, unknown> = { ...validBranch };
+    delete input[field];
+    const result = BranchEntrySchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
 
   it('rejects empty name', () => {
     expect(BranchEntrySchema.safeParse({ ...validBranch, name: '' }).success).toBe(false);
@@ -90,14 +87,11 @@ describe('StashEntrySchema', () => {
     expect(StashEntrySchema.safeParse(validStashWithSha).success).toBe(true);
   });
 
-  it.each(['repo', 'label'])(
-    'rejects when required field %s is missing',
-    (field) => {
-      const input: Record<string, unknown> = { ...validStash };
-      delete input[field];
-      expect(StashEntrySchema.safeParse(input).success).toBe(false);
-    },
-  );
+  it.each(['repo', 'label'])('rejects when required field %s is missing', (field) => {
+    const input: Record<string, unknown> = { ...validStash };
+    delete input[field];
+    expect(StashEntrySchema.safeParse(input).success).toBe(false);
+  });
 
   it('rejects empty label', () => {
     expect(StashEntrySchema.safeParse({ ...validStash, label: '' }).success).toBe(false);

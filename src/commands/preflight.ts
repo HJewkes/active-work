@@ -1,11 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import {
-  BranchEntrySchema,
-  StashEntrySchema,
-  WorktreeEntrySchema,
-} from '../schemas/artifacts.js';
+import { BranchEntrySchema, StashEntrySchema, WorktreeEntrySchema } from '../schemas/artifacts.js';
 import { NotFoundError } from '../errors.js';
 import { defineCommand } from '../registry/index.js';
 import { sweepInitiative } from '../wrap/sweep.js';
@@ -68,8 +64,7 @@ export default defineCommand<Args, Result>({
     options: {
       cwd: {
         long: '--cwd',
-        description:
-          'Directory to include in the swept repo set (default: current directory).',
+        description: 'Directory to include in the swept repo set (default: current directory).',
       },
     },
     usage: 'active-work preflight <slug> [--cwd <dir>]',

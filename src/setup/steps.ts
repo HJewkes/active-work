@@ -13,11 +13,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import * as clackPrompts from '@clack/prompts';
 import { ensureSchemaVersion } from '../schemas/state.js';
-import {
-  getActiveRoot,
-  getStateRoot,
-  getConfigRoot,
-} from '../utils/paths.js';
+import { getActiveRoot, getStateRoot, getConfigRoot } from '../utils/paths.js';
 import { STEP_SUPERVISION } from './supervision-systemd.js';
 import { getSupervisor } from './supervision.js';
 
@@ -30,11 +26,7 @@ function findRepoRoot(): string {
     cursor = parent;
   }
   // Fallback: two up from current file (covers source layout).
-  return nodePath.resolve(
-    nodePath.dirname(fileURLToPath(import.meta.url)),
-    '..',
-    '..',
-  );
+  return nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
 export interface StepPaths {
@@ -82,10 +74,7 @@ export type StepResult = StepOk | StepErr;
 
 /** Resolve every defaultable dep so each step has a complete bag. */
 function resolveDeps(deps: SetupDeps): Required<
-  Omit<
-    SetupDeps,
-    'yes' | 'update' | 'repoRoot' | 'cliEntry' | 'supervisorActive'
-  >
+  Omit<SetupDeps, 'yes' | 'update' | 'repoRoot' | 'cliEntry' | 'supervisorActive'>
 > & {
   yes: boolean;
   update: boolean;
@@ -169,10 +158,7 @@ export async function stepCheckNode(deps: SetupDeps = {}): Promise<StepResult> {
   };
 }
 
-async function ensureDir(
-  fs: typeof fsp,
-  dir: string,
-): Promise<{ created: boolean }> {
+async function ensureDir(fs: typeof fsp, dir: string): Promise<{ created: boolean }> {
   try {
     const stat = await fs.stat(dir);
     if (stat.isDirectory()) return { created: false };
@@ -185,9 +171,7 @@ async function ensureDir(
   return { created: true };
 }
 
-export async function stepCreateActiveRoot(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepCreateActiveRoot(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, paths } = resolveDeps(deps);
   try {
     const created: string[] = [];
@@ -214,9 +198,7 @@ export async function stepCreateActiveRoot(
   }
 }
 
-export async function stepWriteSchemaVersion(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepWriteSchemaVersion(deps: SetupDeps = {}): Promise<StepResult> {
   const { paths } = resolveDeps(deps);
   try {
     const result = await ensureSchemaVersion(paths.activeRoot);
@@ -246,9 +228,7 @@ const CONFIG_STUB = {
   },
 };
 
-export async function stepWriteConfigStub(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepWriteConfigStub(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, paths, update } = resolveDeps(deps);
   const configPath = nodePath.join(paths.configRoot, 'config.json');
   try {
@@ -294,11 +274,7 @@ async function pathExists(fs: typeof fsp, p: string): Promise<boolean> {
   }
 }
 
-async function copyTree(
-  fs: typeof fsp,
-  src: string,
-  dest: string,
-): Promise<void> {
+async function copyTree(fs: typeof fsp, src: string, dest: string): Promise<void> {
   // node:fs/promises has cp() in Node 22+.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cp = (fs as any).cp as
@@ -322,9 +298,7 @@ async function copyTree(
   }
 }
 
-export async function stepInstallSkill(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepInstallSkill(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, paths, repoRoot } = resolveDeps(deps);
   const targetDir = nodePath.join(paths.homeDir, '.claude', 'skills', 'active-work');
   const targetMarker = nodePath.join(targetDir, 'SKILL.md');
@@ -363,9 +337,7 @@ export async function stepInstallSkill(
   }
 }
 
-export async function stepInstallCommand(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepInstallCommand(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, paths, repoRoot } = resolveDeps(deps);
   const targetDir = nodePath.join(paths.homeDir, '.claude', 'commands');
   const target = nodePath.join(targetDir, 'aw-prompt.md');
@@ -437,9 +409,7 @@ const MCP_FALLBACK_SNIPPET = `{
   }
 }`;
 
-export async function stepRegisterMcp(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepRegisterMcp(deps: SetupDeps = {}): Promise<StepResult> {
   const { spawn } = resolveDeps(deps);
   const result = await runOnce(spawn, 'claude', [
     'mcp',
@@ -494,9 +464,7 @@ export async function stepRegisterMcp(
  * macOS) that keeps the daemon running across logins. No-op on platforms
  * without an integration.
  */
-export async function stepSupervision(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepSupervision(deps: SetupDeps = {}): Promise<StepResult> {
   const { prompts, yes } = resolveDeps(deps);
   const supervisor = getSupervisor();
   if (!supervisor) {
@@ -539,18 +507,14 @@ export async function stepSupervision(
 }
 
 /** Probe the platform supervisor; null when the platform has no integration. */
-async function probeSupervisor(
-  deps: SetupDeps,
-): Promise<{ kind: string; active: boolean } | null> {
+async function probeSupervisor(deps: SetupDeps): Promise<{ kind: string; active: boolean } | null> {
   const supervisor = getSupervisor();
   if (!supervisor) return null;
   return { kind: supervisor.kind, active: await supervisor.isActive(deps) };
 }
 
 /** Spawn `active-work mcp serve --detach` (best-effort). */
-export async function stepStartDaemon(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepStartDaemon(deps: SetupDeps = {}): Promise<StepResult> {
   const { spawn, prompts, yes, cliEntry } = resolveDeps(deps);
   // If a supervisor already owns the daemon, skip the manual spawn — restarting
   // it is the supervisor's job (e.g. `systemctl --user restart` / `launchctl
@@ -608,9 +572,7 @@ export async function stepStartDaemon(
   }
 }
 
-export async function stepIngestion(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function stepIngestion(deps: SetupDeps = {}): Promise<StepResult> {
   const { prompts, yes, paths } = resolveDeps(deps);
   if (yes) {
     return {
@@ -733,16 +695,9 @@ export async function uninstallSkill(deps: SetupDeps = {}): Promise<StepResult> 
   }
 }
 
-export async function uninstallCommand(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function uninstallCommand(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, paths } = resolveDeps(deps);
-  const target = nodePath.join(
-    paths.homeDir,
-    '.claude',
-    'commands',
-    'aw-prompt.md',
-  );
+  const target = nodePath.join(paths.homeDir, '.claude', 'commands', 'aw-prompt.md');
   try {
     if (!(await pathExists(fs, target))) {
       return {
@@ -764,9 +719,7 @@ export async function uninstallCommand(
   }
 }
 
-export async function uninstallStopDaemon(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function uninstallStopDaemon(deps: SetupDeps = {}): Promise<StepResult> {
   const { spawn, cliEntry } = resolveDeps(deps);
   const result = await runOnce(spawn, process.execPath, [cliEntry, 'mcp', 'stop']);
   if (result.spawnError) {
@@ -781,10 +734,7 @@ export async function uninstallStopDaemon(
     ok: true,
     name: STEP_DAEMON,
     done: result.code === 0,
-    message:
-      result.code === 0
-        ? 'Daemon stopped'
-        : `Daemon stop exited ${result.code ?? 'null'}`,
+    message: result.code === 0 ? 'Daemon stopped' : `Daemon stop exited ${result.code ?? 'null'}`,
   };
 }
 
@@ -878,11 +828,7 @@ export async function runUninstall(deps: SetupDeps = {}): Promise<UninstallRepor
     }
   }
 
-  const wantDaemon = await confirmStep(
-    resolved.prompts,
-    resolved.yes,
-    'Stop the daemon?',
-  );
+  const wantDaemon = await confirmStep(resolved.prompts, resolved.yes, 'Stop the daemon?');
   if (wantDaemon) {
     const r = await uninstallStopDaemon(deps);
     steps.push({

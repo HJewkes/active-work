@@ -85,9 +85,7 @@ function ensureGroup(root: Command, parts: string[]): Command {
       current = existing;
       continue;
     }
-    const next = current
-      .command(part)
-      .description(`${part} commands`);
+    const next = current.command(part).description(`${part} commands`);
     current = next;
   }
   return current;
@@ -105,15 +103,9 @@ interface InvocationOutput {
   success: boolean;
 }
 
-async function emitSuccess(
-  cmd: AnyCommand,
-  result: unknown,
-  ctx: CommandContext,
-): Promise<void> {
+async function emitSuccess(cmd: AnyCommand, result: unknown, ctx: CommandContext): Promise<void> {
   if (ctx.format === 'json') {
-    process.stdout.write(
-      JSON.stringify(successEnvelope(result, ctx.warnings)) + '\n',
-    );
+    process.stdout.write(JSON.stringify(successEnvelope(result, ctx.warnings)) + '\n');
     return;
   }
   // Human mode: a bare string result is printed raw (e.g. `prompt` dumps the
@@ -153,8 +145,10 @@ function makeAction(
 
   return async (...handlerArgs: unknown[]) => {
     const start = Date.now();
-    const optsFromCommander = (handlerArgs[positionalNames.length] ??
-      {}) as Record<string, unknown>;
+    const optsFromCommander = (handlerArgs[positionalNames.length] ?? {}) as Record<
+      string,
+      unknown
+    >;
     const rootOpts = rootProgram.opts() as { json?: boolean };
     const format: 'human' | 'json' = rootOpts.json ? 'json' : 'human';
 
@@ -235,11 +229,7 @@ async function invoke(
 function buildOptionFlags(
   cmd: AnyCommand,
   key: string,
-  opt: CliMeta['options'] extends infer M
-    ? M extends Record<string, infer O>
-      ? O
-      : never
-    : never,
+  opt: CliMeta['options'] extends infer M ? (M extends Record<string, infer O> ? O : never) : never,
 ): string {
   const zodType = unwrapZodType(fieldSchema(cmd.args, key));
   const short = opt.short ? `${opt.short}, ` : '';
@@ -298,9 +288,7 @@ function buildProgram(): Command {
     );
 
   // Sort commands so help output is stable.
-  const cmds = Array.from(registry.values()).sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+  const cmds = Array.from(registry.values()).sort((a, b) => a.name.localeCompare(b.name));
   for (const cmd of cmds) {
     attachCommand(program, cmd);
   }

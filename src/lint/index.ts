@@ -31,10 +31,7 @@ interface LintOptions {
  * Per-lint errors propagate; missing artifacts (handled inside each lint)
  * simply yield no findings.
  */
-export async function lintSlug(
-  slug: string,
-  options: LintOptions = {},
-): Promise<LintFinding[]> {
+export async function lintSlug(slug: string, options: LintOptions = {}): Promise<LintFinding[]> {
   const activeRoot = options.activeRoot ?? getActiveRoot();
   const limits = options.limits ?? DEFAULT_LIMITS;
   const now = options.now ?? new Date();
@@ -69,9 +66,7 @@ export async function listInitiativeSlugs(activeRoot: string): Promise<string[]>
  * Lint every initiative under `activeRoot` and return the aggregated
  * findings ordered by slug.
  */
-export async function lintAll(
-  options: LintOptions = {},
-): Promise<LintFinding[]> {
+export async function lintAll(options: LintOptions = {}): Promise<LintFinding[]> {
   const activeRoot = options.activeRoot ?? getActiveRoot();
   const slugs = await listInitiativeSlugs(activeRoot);
   const findings: LintFinding[] = [];

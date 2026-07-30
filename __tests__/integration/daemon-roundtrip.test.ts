@@ -9,12 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -22,9 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
-const DAEMON_PATH = path
-  .join(REPO_ROOT, 'src', 'server', 'daemon.ts')
-  .replaceAll('\\', '\\\\');
+const DAEMON_PATH = path.join(REPO_ROOT, 'src', 'server', 'daemon.ts').replaceAll('\\', '\\\\');
 const ENTRY_SRC = `import('${DAEMON_PATH}').then((m) => m.runDaemon({ port: Number(process.env.AW_PORT) })).catch((e) => { console.error(e); process.exit(1); });`;
 
 function findFreePort(): Promise<number> {
@@ -94,7 +87,10 @@ interface JsonOk<T> {
   data: T;
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<{ status: number; envelope: JsonOk<T> }> {
+async function postJson<T>(
+  url: string,
+  body: unknown,
+): Promise<{ status: number; envelope: JsonOk<T> }> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -170,15 +166,13 @@ describe('integration: live daemon roundtrip on a random port', () => {
       expect(existsSync(path.join(activeRoot, 'rt-init', 'brief.md'))).toBe(true);
 
       // /rpc/task.add — task file written.
-      const taskRes = await postJson<{ id: string }>(
-        `http://127.0.0.1:${port}/rpc/task.add`,
-        { slug: 'rt-init', title: 'first task' },
-      );
+      const taskRes = await postJson<{ id: string }>(`http://127.0.0.1:${port}/rpc/task.add`, {
+        slug: 'rt-init',
+        title: 'first task',
+      });
       expect(taskRes.envelope.ok).toBe(true);
       expect(taskRes.envelope.data.id).toBe('RI-1');
-      expect(
-        existsSync(path.join(activeRoot, 'rt-init', 'tasks', 'RI-1.yml')),
-      ).toBe(true);
+      expect(existsSync(path.join(activeRoot, 'rt-init', 'tasks', 'RI-1.yml'))).toBe(true);
 
       // /rpc/list — initiative shows up.
       const listRes = await postJson<{
@@ -251,10 +245,7 @@ describe('integration: live daemon roundtrip on a random port', () => {
   }, 45_000);
 });
 
-async function pollUntilGone(
-  probe: () => string | null,
-  timeoutMs: number,
-): Promise<boolean> {
+async function pollUntilGone(probe: () => string | null, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (probe() === null) return true;

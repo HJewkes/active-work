@@ -41,21 +41,18 @@ describe('BriefFrontmatterSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it.each([
-    'schema_version',
-    'title',
-    'updated',
-    'state',
-    'task_prefix',
-  ])('rejects when required field %s is missing', (field) => {
-    const input: Record<string, unknown> = { ...validBase };
-    delete input[field];
-    const result = BriefFrontmatterSchema.safeParse(input);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.some((i) => i.path[0] === field)).toBe(true);
-    }
-  });
+  it.each(['schema_version', 'title', 'updated', 'state', 'task_prefix'])(
+    'rejects when required field %s is missing',
+    (field) => {
+      const input: Record<string, unknown> = { ...validBase };
+      delete input[field];
+      const result = BriefFrontmatterSchema.safeParse(input);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.path[0] === field)).toBe(true);
+      }
+    },
+  );
 
   it('fails when state is "focused" but rank is missing', () => {
     const { rank: _rank, ...withoutRank } = validBase;
@@ -135,9 +132,7 @@ describe('BriefFrontmatterSchema', () => {
     expect(BriefFrontmatterSchema.safeParse({ ...validBase, task_prefix: '1AB' }).success).toBe(
       false,
     );
-    expect(BriefFrontmatterSchema.safeParse({ ...validBase, task_prefix: '' }).success).toBe(
-      false,
-    );
+    expect(BriefFrontmatterSchema.safeParse({ ...validBase, task_prefix: '' }).success).toBe(false);
   });
 
   it('rejects empty title', () => {

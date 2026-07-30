@@ -40,9 +40,7 @@ export function buildHttpApp(options: BuildHttpAppOptions): Hono {
   app.get('/events', (c) =>
     streamSSE(c, async (stream) => {
       await stream.writeSSE({ event: 'ready', data: 'connected' });
-      const unsubscribe = options.hub?.subscribe((message) =>
-        stream.writeSSE(message),
-      );
+      const unsubscribe = options.hub?.subscribe((message) => stream.writeSSE(message));
       stream.onAbort(() => unsubscribe?.());
       // Hold the connection open, emitting periodic heartbeats so proxies and
       // dead-peer detection keep the stream healthy until the client aborts.
@@ -77,8 +75,7 @@ export function buildHttpApp(options: BuildHttpAppOptions): Hono {
       parsed = cmd.args.parse(rawArgs ?? {});
     } catch (err) {
       const f = formatError(err);
-      const message =
-        err instanceof z.ZodError ? `Invalid arguments: ${f.message}` : f.message;
+      const message = err instanceof z.ZodError ? `Invalid arguments: ${f.message}` : f.message;
       return c.json(errorEnvelope(message, EXIT.DATAERR), 400);
     }
 

@@ -272,23 +272,13 @@ describe('open command', () => {
   it('sorts picker results: focused-by-rank, then backburner, then paused, then done', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       // Scaffold extra initiatives so we can verify ordering.
-      const make = async (
-        slug: string,
-        title: string,
-        body: string,
-      ): Promise<void> => {
+      const make = async (slug: string, title: string, body: string): Promise<void> => {
         const dir = path.join(activeRoot, slug);
         await fs.mkdir(path.join(dir, 'tasks'), { recursive: true });
         await fs.mkdir(path.join(dir, 'sessions'), { recursive: true });
-        await fs.writeFile(
-          path.join(dir, 'brief.md'),
-          `---\n${body}\n---\n\n# ${title}\n`,
-        );
+        await fs.writeFile(path.join(dir, 'brief.md'), `---\n${body}\n---\n\n# ${title}\n`);
         // These exist only to exercise picker ordering; no worktrees needed.
-        await fs.writeFile(
-          path.join(dir, 'artifacts.yml'),
-          'branches: []\nstashes: []\n',
-        );
+        await fs.writeFile(path.join(dir, 'artifacts.yml'), 'branches: []\nstashes: []\n');
       };
       await make(
         'b-second-focused',
@@ -330,32 +320,24 @@ describe('open command', () => {
       const out = await openCommand.run({}, makeCtx(activeRoot));
       const picker = out as PickerResult;
       const order = picker.initiatives.map((i) => i.slug);
-      expect(order).toEqual([
-        'sample-initiative',
-        'b-second-focused',
-        'a-backburner',
-        'c-paused',
-      ]);
+      expect(order).toEqual(['sample-initiative', 'b-second-focused', 'a-backburner', 'c-paused']);
     });
   });
 
   it('throws NotFoundError for an unknown slug, listing known slugs', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      await expect(
-        openCommand.run({ slug: 'no-such-thing' }, makeCtx(activeRoot)),
-      ).rejects.toThrow(NotFoundError);
-      await expect(
-        openCommand.run({ slug: 'no-such-thing' }, makeCtx(activeRoot)),
-      ).rejects.toThrow(/sample-initiative/);
+      await expect(openCommand.run({ slug: 'no-such-thing' }, makeCtx(activeRoot))).rejects.toThrow(
+        NotFoundError,
+      );
+      await expect(openCommand.run({ slug: 'no-such-thing' }, makeCtx(activeRoot))).rejects.toThrow(
+        /sample-initiative/,
+      );
     });
   });
 
   it('resolves a unique prefix to the full slug', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const out = await openCommand.run(
-        { slug: 'sample', offline: true },
-        makeCtx(activeRoot),
-      );
+      const out = await openCommand.run({ slug: 'sample', offline: true }, makeCtx(activeRoot));
       const result = out as OpenSuccess;
       expect(result.slug).toBe('sample-initiative');
     });
@@ -382,17 +364,14 @@ describe('open command', () => {
           '',
         ].join('\n'),
       );
-      await fs.writeFile(
-        path.join(dir, 'artifacts.yml'),
-        'branches: []\nstashes: []\n',
-      );
+      await fs.writeFile(path.join(dir, 'artifacts.yml'), 'branches: []\nstashes: []\n');
 
-      await expect(
-        openCommand.run({ slug: 'sample-' }, makeCtx(activeRoot)),
-      ).rejects.toThrow(/Ambiguous slug 'sample-'/);
-      await expect(
-        openCommand.run({ slug: 'sample-' }, makeCtx(activeRoot)),
-      ).rejects.toThrow(/sample-initiative.*sample-sibling/);
+      await expect(openCommand.run({ slug: 'sample-' }, makeCtx(activeRoot))).rejects.toThrow(
+        /Ambiguous slug 'sample-'/,
+      );
+      await expect(openCommand.run({ slug: 'sample-' }, makeCtx(activeRoot))).rejects.toThrow(
+        /sample-initiative.*sample-sibling/,
+      );
     });
   });
 });

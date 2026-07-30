@@ -31,9 +31,7 @@ function pickRunner(): Runner {
   if (existsSync(TSX_BIN) && existsSync(SRC_BIN)) {
     return { command: TSX_BIN, baseArgs: [SRC_BIN] };
   }
-  throw new Error(
-    `No CLI runner available. Looked for ${DIST_BIN} and ${TSX_BIN}.`,
-  );
+  throw new Error(`No CLI runner available. Looked for ${DIST_BIN} and ${TSX_BIN}.`);
 }
 
 /**
@@ -61,10 +59,7 @@ interface RunResult {
 
 let runner: Runner;
 
-function runCli(
-  args: string[],
-  env: Record<string, string> = {},
-): RunResult {
+function runCli(args: string[], env: Record<string, string> = {}): RunResult {
   const result = spawnSync(runner.command, [...runner.baseArgs, ...args], {
     encoding: 'utf8',
     env: { ...process.env, NO_COLOR: '1', ...env },

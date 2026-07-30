@@ -124,9 +124,7 @@ describe('source.add', () => {
         },
         ctx,
       );
-      expect(res.moved_to).toBe(
-        path.join(initiativeDir(root), 'sources', '2026-04-01-kickoff.md'),
-      );
+      expect(res.moved_to).toBe(path.join(initiativeDir(root), 'sources', '2026-04-01-kickoff.md'));
     });
   });
 
@@ -137,25 +135,17 @@ describe('source.add', () => {
         { slug: SLUG, file: src, type: 'pointer', label: 'Design Doc' },
         ctx,
       );
-      expect(res.moved_to).toBe(
-        path.join(initiativeDir(root), 'sources', 'design-doc.md'),
-      );
+      expect(res.moved_to).toBe(path.join(initiativeDir(root), 'sources', 'design-doc.md'));
     });
   });
 
   it('throws on collision without force', async () => {
     await withTempActiveRoot(async (root) => {
       const src1 = await writeSource(root, 'a.md', 'first');
-      await sourceAddCmd.run(
-        { slug: SLUG, file: src1, type: 'pointer', label: 'Doc' },
-        ctx,
-      );
+      await sourceAddCmd.run({ slug: SLUG, file: src1, type: 'pointer', label: 'Doc' }, ctx);
       const src2 = await writeSource(root, 'b.md', 'second');
       await expect(
-        sourceAddCmd.run(
-          { slug: SLUG, file: src2, type: 'pointer', label: 'Doc' },
-          ctx,
-        ),
+        sourceAddCmd.run({ slug: SLUG, file: src2, type: 'pointer', label: 'Doc' }, ctx),
       ).rejects.toThrow(/already exists/);
     });
   });
@@ -259,10 +249,7 @@ describe('artifact.add-branch', () => {
 describe('artifact.add-stash', () => {
   it('appends with label and allows duplicates', async () => {
     await withTempActiveRoot(async (root) => {
-      await artifactAddStashCmd.run(
-        { slug: SLUG, repo: '~/code/sample', label: 'WIP' },
-        ctx,
-      );
+      await artifactAddStashCmd.run({ slug: SLUG, repo: '~/code/sample', label: 'WIP' }, ctx);
       await artifactAddStashCmd.run(
         { slug: SLUG, repo: '~/code/sample', label: 'WIP', sha: 'abc123' },
         ctx,

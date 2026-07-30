@@ -68,9 +68,7 @@ function normaliseBranch(b: V1Branch): { repo: string; name: string; note?: stri
   return out;
 }
 
-function normaliseStash(
-  s: V1Stash,
-): { repo: string; label: string; sha?: string } | null {
+function normaliseStash(s: V1Stash): { repo: string; label: string; sha?: string } | null {
   if (typeof s.repo !== 'string' || s.repo.length === 0) return null;
   // v1 used `message`; v2 uses `label`. Prefer label if both present.
   const label =

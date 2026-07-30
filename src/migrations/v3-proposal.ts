@@ -136,9 +136,7 @@ export async function loadProposal(): Promise<{ proposal: Proposal; origin: stri
     try {
       raw = await fs.readFile(override, 'utf8');
     } catch {
-      throw new ValidationError(
-        `${PROPOSAL_PATH_ENV} points at an unreadable file: ${override}`,
-      );
+      throw new ValidationError(`${PROPOSAL_PATH_ENV} points at an unreadable file: ${override}`);
     }
     let json: unknown;
     try {

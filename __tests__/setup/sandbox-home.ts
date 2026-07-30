@@ -27,8 +27,7 @@ const sandboxHome = mkdtempSync(path.join(os.tmpdir(), 'aw-test-home-'));
 process.env.HOME = sandboxHome;
 process.env.USERPROFILE = sandboxHome;
 
-os.homedir = () =>
-  process.env.HOME ?? process.env.USERPROFILE ?? realHomedir();
+os.homedir = () => process.env.HOME ?? process.env.USERPROFILE ?? realHomedir();
 
 afterAll(() => {
   os.homedir = realHomedir;

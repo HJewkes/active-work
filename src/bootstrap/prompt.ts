@@ -1,9 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
 import {
   ArtifactsSchema,
@@ -22,16 +19,8 @@ import {
   type OpenLoop,
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
-import {
-  loadNotesFromDir,
-  type LoadedNote,
-  type LoadedNotes,
-} from '../notes/note-file.js';
-import {
-  readLiveLeases,
-  type LiveSibling,
-  type SiblingProbe,
-} from '../sessions/lease.js';
+import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
+import { readLiveLeases, type LiveSibling, type SiblingProbe } from '../sessions/lease.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -70,9 +59,7 @@ export interface LiveBranchStatus {
   } | null;
 }
 
-export type LiveStatusFetcher = (
-  branches: BranchEntry[],
-) => Promise<LiveBranchStatus[]>;
+export type LiveStatusFetcher = (branches: BranchEntry[]) => Promise<LiveBranchStatus[]>;
 
 /** Re-exported so callers can type a sibling list without reaching into `sessions/`. */
 export type SiblingSession = LiveSibling;
@@ -174,9 +161,7 @@ export async function readMarkdownWithSchema<T>(
   const parsed = frontmatterText ? YAML.parse(frontmatterText) : {};
   const result = schema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(
-      `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
-    );
+    throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
   }
   return { frontmatter: result.data, body };
 }
@@ -187,13 +172,9 @@ export async function readMarkdownWithSchema<T>(
  */
 function compareSessionsNewestFirst(a: LoadedSession, b: LoadedSession): number {
   const endedDelta =
-    new Date(b.frontmatter.ended).getTime() -
-    new Date(a.frontmatter.ended).getTime();
+    new Date(b.frontmatter.ended).getTime() - new Date(a.frontmatter.ended).getTime();
   if (endedDelta !== 0) return endedDelta;
-  return (
-    new Date(b.frontmatter.started).getTime() -
-    new Date(a.frontmatter.started).getTime()
-  );
+  return new Date(b.frontmatter.started).getTime() - new Date(a.frontmatter.started).getTime();
 }
 
 /**
@@ -241,9 +222,7 @@ async function loadTasks(initiativeDir: string): Promise<LoadedTasks> {
   } catch {
     return { tasks: [], malformed: [] };
   }
-  const ymlFiles = entries.filter(
-    (n) => n.endsWith('.yml') || n.endsWith('.yaml'),
-  );
+  const ymlFiles = entries.filter((n) => n.endsWith('.yml') || n.endsWith('.yaml'));
   const tasks: Task[] = [];
   const malformed: MalformedTask[] = [];
   for (const filename of ymlFiles) {
@@ -361,11 +340,7 @@ const TASK_SUMMARY_MAX_CHARS = 200;
  * whole thought, so the cut is marked and paired with the command that prints
  * the field untruncated.
  */
-function summarizeField(
-  label: string,
-  lines: string[],
-  pointer: string,
-): string {
+function summarizeField(label: string, lines: string[], pointer: string): string {
   const kept = lines.slice(0, TASK_SUMMARY_MAX_LINES);
   const joined = kept.join(' ');
   const clamped =
@@ -417,9 +392,7 @@ function renderTopTasks(
   topN: number,
   slug: string,
 ): { body: string; count: number } {
-  const openTasks = tasks
-    .filter((t) => t.status === 'open')
-    .sort(compareTasksByPriority);
+  const openTasks = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority);
   if (openTasks.length === 0) {
     return { body: '_No open tasks._', count: 0 };
   }
@@ -615,10 +588,7 @@ function renderClosingInstruction(openLoops: OpenLoop[]): string {
  * decision not to do something, and a future session that cannot see it will
  * propose the abandoned thing again.
  */
-function renderAbandonedLoops(
-  resolved: ResolvedLoop[],
-  windowDays: number,
-): string | null {
+function renderAbandonedLoops(resolved: ResolvedLoop[], windowDays: number): string | null {
   const abandoned = resolved.filter(
     (loop) => loop.outcome === 'abandoned' && loop.ageDays <= windowDays,
   );
@@ -762,9 +732,7 @@ function renderLiveArtifacts(
  * swallows per-branch errors silently — bootstrap never throws on artifact
  * issues.
  */
-async function defaultLiveStatusFetcher(
-  branches: BranchEntry[],
-): Promise<LiveBranchStatus[]> {
+async function defaultLiveStatusFetcher(branches: BranchEntry[]): Promise<LiveBranchStatus[]> {
   const results: LiveBranchStatus[] = [];
   const limit = Math.min(branches.length, LIVE_RENDER_LIMIT);
   for (let i = 0; i < limit; i++) {
@@ -803,14 +771,7 @@ async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
     }
     if (out.present) {
       try {
-        const lc = await git('git', [
-          '-C',
-          repoPath,
-          'log',
-          '-1',
-          '--format=%cI',
-          branch.name,
-        ]);
+        const lc = await git('git', ['-C', repoPath, 'log', '-1', '--format=%cI', branch.name]);
         if (lc.code === 0) {
           const s = lc.stdout.trim();
           out.last_commit_iso = s.length > 0 ? s : null;
@@ -893,12 +854,7 @@ async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
             for (const entry of rollup) {
               const tag = (entry.conclusion ?? entry.state ?? '').toUpperCase();
               if (tag === 'SUCCESS') pass++;
-              else if (
-                tag === 'FAILURE' ||
-                tag === 'CANCELLED' ||
-                tag === 'TIMED_OUT'
-              )
-                fail++;
+              else if (tag === 'FAILURE' || tag === 'CANCELLED' || tag === 'TIMED_OUT') fail++;
               else pending++;
             }
             let checks: string | undefined;
@@ -1085,9 +1041,7 @@ async function loadBrief(
     return await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new NotFoundError(
-      `Initiative '${slug}' has no readable brief.md (${reason})`,
-    );
+    throw new NotFoundError(`Initiative '${slug}' has no readable brief.md (${reason})`);
   }
 }
 
@@ -1098,9 +1052,7 @@ async function loadBrief(
  * missing artifacts (no sessions yet, no open tasks, no PRs) degrade
  * gracefully to omitted or "none" sections.
  */
-export async function assembleBootstrap(
-  input: BootstrapInput,
-): Promise<BootstrapOutput> {
+export async function assembleBootstrap(input: BootstrapInput): Promise<BootstrapOutput> {
   const {
     activeRoot,
     slug,
@@ -1117,10 +1069,7 @@ export async function assembleBootstrap(
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
-  const { frontmatter: brief, body: briefBody } = await loadBrief(
-    initiativeDir,
-    slug,
-  );
+  const { frontmatter: brief, body: briefBody } = await loadBrief(initiativeDir, slug);
 
   const [loaded, loadedTasks, loadedArtifacts, notes] = await Promise.all([
     loadSessionsNewestFirst(initiativeDir),
@@ -1143,15 +1092,10 @@ export async function assembleBootstrap(
   // sidecar/adhoc sessions exist (AW-42).
   const narrativeSession = latestCanonical ?? sessions[0];
   const usedFallbackTrack = !latestCanonical && narrativeSession !== undefined;
-  const parallelBody = renderParallelSessions(
-    selectParallelSessions(sessions, narrativeSession),
-  );
+  const parallelBody = renderParallelSessions(selectParallelSessions(sessions, narrativeSession));
   const briefExcerpt =
-    truncateLines(
-      briefBody,
-      BRIEF_BODY_MAX_LINES,
-      path.join(initiativeDir, 'brief.md'),
-    ) || '_(no brief body)_';
+    truncateLines(briefBody, BRIEF_BODY_MAX_LINES, path.join(initiativeDir, 'brief.md')) ||
+    '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks, slug);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
     tasks,
@@ -1224,9 +1168,7 @@ export async function assembleBootstrap(
     // Label the heading with the track when it's not canonical, so a
     // fallback session (no canonical recorded yet) isn't mistaken for
     // mainline continuity.
-    const trackLabel = usedFallbackTrack
-      ? ` (${narrativeSession.frontmatter.track})`
-      : '';
+    const trackLabel = usedFallbackTrack ? ` (${narrativeSession.frontmatter.track})` : '';
     sections.push(
       `# Last session${trackLabel} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
     );
@@ -1241,9 +1183,7 @@ export async function assembleBootstrap(
   );
 
   if (recentlyDoneBody) {
-    sections.push(
-      `# Recently done (last ${recentlyDoneDays} days)\n${recentlyDoneBody}`,
-    );
+    sections.push(`# Recently done (last ${recentlyDoneDays} days)\n${recentlyDoneBody}`);
   }
 
   if (archivedTaskIds && archivedTaskIds.length > 0) {

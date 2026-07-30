@@ -33,10 +33,7 @@ async function scaffold(
     task_prefix: 'WT',
   };
   BriefFrontmatterSchema.parse(frontmatter);
-  await fs.writeFile(
-    path.join(dir, 'brief.md'),
-    matter.stringify(`# ${slug}\n`, frontmatter),
-  );
+  await fs.writeFile(path.join(dir, 'brief.md'), matter.stringify(`# ${slug}\n`, frontmatter));
   const entries = Object.entries(worktrees ?? {}).map(([name, entry]) => ({
     path: entry.path,
     repo: entry.path,
