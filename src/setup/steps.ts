@@ -57,6 +57,12 @@ export interface SetupDeps {
   repoRoot?: string;
   /** Optional override for the CLI entrypoint (for spawn calls). */
   cliEntry?: string;
+  /**
+   * Whether a supervisor already owns the daemon; null when the platform has
+   * no integration. Defaults to probing launchctl/systemctl, so tests inject
+   * it instead of reading the host's real supervision state.
+   */
+  supervisorActive?: () => Promise<{ kind: string; active: boolean } | null>;
 }
 
 export interface StepOk {
@@ -76,7 +82,10 @@ export type StepResult = StepOk | StepErr;
 
 /** Resolve every defaultable dep so each step has a complete bag. */
 function resolveDeps(deps: SetupDeps): Required<
-  Omit<SetupDeps, 'yes' | 'update' | 'repoRoot' | 'cliEntry'>
+  Omit<
+    SetupDeps,
+    'yes' | 'update' | 'repoRoot' | 'cliEntry' | 'supervisorActive'
+  >
 > & {
   yes: boolean;
   update: boolean;
@@ -529,6 +538,15 @@ export async function stepSupervision(
   return result;
 }
 
+/** Probe the platform supervisor; null when the platform has no integration. */
+async function probeSupervisor(
+  deps: SetupDeps,
+): Promise<{ kind: string; active: boolean } | null> {
+  const supervisor = getSupervisor();
+  if (!supervisor) return null;
+  return { kind: supervisor.kind, active: await supervisor.isActive(deps) };
+}
+
 /** Spawn `active-work mcp serve --detach` (best-effort). */
 export async function stepStartDaemon(
   deps: SetupDeps = {},
@@ -537,8 +555,9 @@ export async function stepStartDaemon(
   // If a supervisor already owns the daemon, skip the manual spawn — restarting
   // it is the supervisor's job (e.g. `systemctl --user restart` / `launchctl
   // kickstart`).
-  const supervisor = getSupervisor();
-  if (supervisor && (await supervisor.isActive(deps))) {
+  const probe = deps.supervisorActive ?? (() => probeSupervisor(deps));
+  const supervisor = await probe();
+  if (supervisor?.active) {
     return {
       ok: true,
       name: STEP_DAEMON,

@@ -271,27 +271,34 @@ describe('stepRegisterMcp', () => {
 });
 
 describe('stepStartDaemon', () => {
-  // stepStartDaemon short-circuits when a supervisor already owns the daemon,
-  // and the supervisor probe shells out to launchctl/systemctl. Without a stub
-  // these tests read the developer's real machine state and assert the wrong
-  // branch — green on CI, failing on a Mac with the LaunchAgent loaded.
-  const unsupervised = vi.fn(() => {
-    const handlers: Record<string, ((arg?: unknown) => void)[]> = {};
-    const child = {
-      stderr: { on: () => undefined },
-      on: (event: string, cb: (arg?: unknown) => void) => {
-        handlers[event] ??= [];
-        handlers[event]!.push(cb);
-      },
-    };
-    queueMicrotask(() => handlers.close?.forEach((cb) => cb(1)));
-    return child as unknown as ReturnType<typeof nodeSpawn>;
+  // stepStartDaemon short-circuits when a supervisor already owns the daemon.
+  // The real probe shells out to launchctl/systemctl, so injecting
+  // `supervisorActive` is what keeps these tests off the host's actual state —
+  // otherwise they are green on CI and red on a Mac with the LaunchAgent
+  // loaded. Both branches are asserted explicitly.
+  const supervised = async () => ({ kind: 'launchd', active: true });
+  const unsupervised = async () => ({ kind: 'launchd', active: false });
+
+  it('skips the manual start when launchd already supervises the daemon', async () => {
+    const prompts = {
+      confirm: vi.fn(async () => true),
+      isCancel: vi.fn(() => false),
+    } as unknown as typeof clackPrompts;
+
+    const result = await stepStartDaemon({ prompts, supervisorActive: supervised });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/already supervised by launchd/);
+    }
+    expect(prompts.confirm).not.toHaveBeenCalled();
   });
 
-  it('skips with --yes', async () => {
+  it('skips with --yes when no supervisor owns the daemon', async () => {
     const result = await stepStartDaemon({
       yes: true,
-      spawn: unsupervised as unknown as typeof nodeSpawn,
+      supervisorActive: unsupervised,
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -307,7 +314,7 @@ describe('stepStartDaemon', () => {
     } as unknown as typeof clackPrompts;
     const result = await stepStartDaemon({
       prompts,
-      spawn: unsupervised as unknown as typeof nodeSpawn,
+      supervisorActive: unsupervised,
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
