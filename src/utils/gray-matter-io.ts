@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import matter from 'gray-matter';
 import type { ZodType } from 'zod';
+import { classifyStructuredArtifact, recordArtifactHash } from './artifact-hash.js';
 import { atomicWrite } from './fs-atomic.js';
 import { coerceDates } from './coerce-dates.js';
 
@@ -68,4 +69,6 @@ export async function writeFrontmatter<T>(
   }
   const stringified = matter.stringify(body, result.data as object);
   await atomicWrite(filePath, stringified);
+  const artifact = classifyStructuredArtifact(filePath);
+  if (artifact) await recordArtifactHash(artifact.initiativeDir, artifact.relPath, stringified);
 }

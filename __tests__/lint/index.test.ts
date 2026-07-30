@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { lintAll, lintSlug } from '../../src/lint/index.js';
+import { recordArtifactHash } from '../../src/utils/artifact-hash.js';
 import { withEmptyActiveRoot, withTempActiveRoot } from '../setup/test-helpers.js';
 
 const TIGHT_LIMITS = {
@@ -64,6 +65,20 @@ describe('lintSlug', () => {
       const findings = await lintSlug('sample-initiative', { activeRoot: root });
       expect(findings).toHaveLength(1);
       expect(findings[0].file).toBe('sessions/2026-05-10-1430-fixture001.md');
+    });
+  });
+
+  it('surfaces a hash-drift finding alongside other lints', async () => {
+    await withTempActiveRoot(async (root) => {
+      const dir = path.join(root, 'sample-initiative');
+      const filePath = path.join(dir, 'artifacts.yml');
+      const original = await fs.readFile(filePath, 'utf8');
+      await recordArtifactHash(dir, 'artifacts.yml', original);
+      await fs.writeFile(filePath, `${original}\n# hand-edited\n`);
+
+      const findings = await lintSlug('sample-initiative', { activeRoot: root });
+      const files = findings.map((f) => f.file).sort();
+      expect(files).toEqual(['artifacts.yml', 'sessions/2026-05-10-1430-fixture001.md']);
     });
   });
 });

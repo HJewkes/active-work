@@ -14,7 +14,7 @@ import os from 'node:os';
 import { getActiveRoot } from './utils/paths.js';
 import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
-import { listInitiativeSlugs } from './lint/index.js';
+import { lintHashes, listInitiativeSlugs } from './lint/index.js';
 import { loadTasks } from './lint/load-tasks.js';
 import { loadNotesFromDir } from './notes/note-file.js';
 import { NOTE_TITLE_MAX_LENGTH } from './schemas/note.js';
@@ -404,9 +404,36 @@ async function checkNoteTitles(deps: DoctorDeps): Promise<DoctorCheck> {
   return noteTitlesCheck(overlong);
 }
 
+function artifactHashesCheck(drifted: string[]): DoctorCheck {
+  if (drifted.length === 0) {
+    return {
+      name: 'artifact-hashes',
+      status: 'ok',
+      detail: 'no hand-edits detected in tracked structured artifacts',
+    };
+  }
+  return {
+    name: 'artifact-hashes',
+    status: 'warn',
+    detail: `hand-edited outside active-work: ${drifted.join('; ')}`,
+  };
+}
+
+/** Structured artifacts (tasks/*.yml, artifacts.yml, brief.md) whose content no longer matches the last CLI write (AW-66). */
+async function checkArtifactHashes(deps: DoctorDeps): Promise<DoctorCheck> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const slugs = await listInitiativeSlugs(activeRoot);
+  const drifted: string[] = [];
+  for (const slug of slugs) {
+    const findings = await lintHashes(slug, nodePath.join(activeRoot, slug));
+    drifted.push(...findings.map((f) => `${slug}/${f.file}`));
+  }
+  return artifactHashesCheck(drifted);
+}
+
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const [installChecks, sessionChecks, noteTitles] = await Promise.all([
+  const [installChecks, sessionChecks, noteTitles, artifactHashes] = await Promise.all([
     Promise.all([
       checkNode(deps),
       checkActiveRoot(deps),
@@ -417,7 +444,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
     ]),
     checkSessions(deps),
     checkNoteTitles(deps),
+    checkArtifactHashes(deps),
   ]);
-  const checks = [...installChecks, ...sessionChecks, noteTitles];
+  const checks = [...installChecks, ...sessionChecks, noteTitles, artifactHashes];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }
