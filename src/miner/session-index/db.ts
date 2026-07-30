@@ -12,7 +12,7 @@ export type SessionIndexDb = Database.Database;
  * schema file (every statement `IF NOT EXISTS`) is enough — a multi-file
  * migration runner would be more machinery than the problem justifies.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real

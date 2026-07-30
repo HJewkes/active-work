@@ -5,7 +5,7 @@ import { getMinerRoot } from '../../utils/paths.js';
 import { defaultSessionIndexPath, openSessionIndex, type SessionIndexDb } from './db.js';
 import { discoverTranscripts, transcriptsRoot } from './discover.js';
 import { indexTranscript, type IndexOutcome } from './quarantine.js';
-import { rollupSessions } from './rollup.js';
+import { reconcilePrMerges, rollupSessions } from './rollup.js';
 import { resetIndex } from './writer.js';
 
 /**
@@ -106,6 +106,10 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // Once per pass, not per transcript: cheaper, and a session split across
     // transcripts by a resume or compact is then rolled up from all its facts.
     const sessionsRolledUp = rollupSessions(db, [...touched]);
+    // Whole-table and cheap: a merge sighting routinely lands in a different
+    // transcript from the `pr-link` it refers to, so this cannot be scoped to
+    // what this pass touched.
+    reconcilePrMerges(db);
     return summarize(
       startedAt,
       Date.now() - started,

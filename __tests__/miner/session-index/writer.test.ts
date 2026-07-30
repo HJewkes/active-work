@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
 import { extractTranscript } from '../../../src/miner/session-index/extract.js';
+import { reconcilePrMerges } from '../../../src/miner/session-index/rollup.js';
 import { ensureTranscript } from '../../../src/miner/session-index/watermark.js';
 import { applyExtractResult, resetIndex } from '../../../src/miner/session-index/writer.js';
 import { FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
@@ -155,11 +156,35 @@ describe('applyExtractResult', () => {
     db.close();
   });
 
-  it('marks a linked PR merged from a later `gh pr merge` observation', async () => {
+  it('records a `gh pr merge` observation instead of applying it at write time', async () => {
     const { db, transcriptId } = freshDb('merge');
 
     applyExtractResult(db, transcriptId, await extractTranscript(transcript));
 
+    // The sighting is only a number: the `pr_ref` it belongs to may not be
+    // indexed yet, so the writer stores the observation and stays out of `prs`.
+    expect(db.prepare('SELECT state, merged_at FROM prs').get()).toEqual({
+      state: null,
+      merged_at: null,
+    });
+    expect(
+      db.prepare('SELECT number, repo_hint, merged_at FROM pr_merge_observations').get(),
+    ).toEqual({ number: 42, repo_hint: 'demo', merged_at: '2026-07-01T00:00:16Z' });
+    db.close();
+  });
+
+  it('folds merge observations into prs regardless of which was indexed first', async () => {
+    const { db, transcriptId } = freshDb('reconcile');
+    applyExtractResult(db, transcriptId, await extractTranscript(transcript));
+
+    expect(reconcilePrMerges(db)).toBe(1);
+
+    expect(db.prepare('SELECT state, merged_at FROM prs').get()).toEqual({
+      state: 'merged',
+      merged_at: '2026-07-01T00:00:16Z',
+    });
+    // Recompute, not accumulate: re-running changes nothing.
+    reconcilePrMerges(db);
     expect(db.prepare('SELECT state, merged_at FROM prs').get()).toEqual({
       state: 'merged',
       merged_at: '2026-07-01T00:00:16Z',

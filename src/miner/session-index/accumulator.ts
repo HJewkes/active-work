@@ -95,11 +95,17 @@ export class ExtractAccumulator {
     this.prs.set(pr.prRef, mergeFirstNonNull(this.prs.get(pr.prRef), pr));
   }
 
+  /**
+   * Timestamps merge as MIN/MAX rather than first-wins, matching the writer's
+   * branch upsert — a branch is observed from many chunks and many transcripts,
+   * so "the first observation in this batch" is not a stable value.
+   */
   addBranch(branch: BranchInput): void {
-    this.branches.set(
-      branch.branchRef,
-      mergeFirstNonNull(this.branches.get(branch.branchRef), branch),
-    );
+    const existing = this.branches.get(branch.branchRef);
+    const merged = mergeFirstNonNull(existing, branch);
+    merged.createdAt = earliest(existing?.createdAt, branch.createdAt);
+    merged.deletedAt = latest(existing?.deletedAt, branch.deletedAt);
+    this.branches.set(branch.branchRef, merged);
   }
 
   addFile(file: FileInput): void {
@@ -157,6 +163,18 @@ export class ExtractAccumulator {
  * `COALESCE(existing, excluded)` upserts — so merge order never changes the
  * stored row, whatever chunk boundary the asset straddles.
  */
+function earliest(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a < b ? a : b;
+}
+
+function latest(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return a > b ? a : b;
+}
+
 function mergeFirstNonNull<T extends object>(existing: T | undefined, incoming: T): T {
   if (!existing) return incoming;
   const kept = Object.entries(existing).filter(([, v]) => v !== null);

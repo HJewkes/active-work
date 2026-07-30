@@ -85,15 +85,60 @@ const ROLLUP = `
 export function rollupSessions(db: SessionIndexDb, sessionIds: readonly string[]): number {
   const unique = [...new Set(sessionIds)];
   if (unique.length === 0) return 0;
-  const statement = db.prepare(ROLLUP);
+  const aggregate = db.prepare(ROLLUP);
+  const renumber = db.prepare(RENUMBER_TURNS);
   return db.transaction(() => {
     let updated = 0;
     for (let i = 0; i < unique.length; i += BATCH) {
-      const batch = unique.slice(i, i + BATCH);
-      updated += statement.run({ sessionIds: JSON.stringify(batch) }).changes;
+      const sessionIds = JSON.stringify(unique.slice(i, i + BATCH));
+      renumber.run({ sessionIds });
+      updated += aggregate.run({ sessionIds }).changes;
     }
     return updated;
   })();
+}
+
+/**
+ * Renumber turns by their start time.
+ *
+ * `turn_index` is DB-assigned at insert (`MAX(turn_index) + 1`), which makes it
+ * a function of *insert order* — and insert order differs between a one-shot
+ * rebuild (transcript by transcript) and an incremental replay (a bit of every
+ * transcript, then a bit more). Recomputing it from `started_at` makes it a
+ * property of the corpus instead. `prompt_id` breaks ties, since a resumed
+ * session can replay a prompt at the same timestamp.
+ */
+const RENUMBER_TURNS = `
+  WITH ordered AS (
+    SELECT prompt_id,
+           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY started_at, prompt_id) - 1 AS idx
+      FROM turns
+     WHERE session_id IN (SELECT value FROM json_each(@sessionIds))
+  )
+  UPDATE turns SET turn_index = ordered.idx
+    FROM ordered WHERE turns.prompt_id = ordered.prompt_id`;
+
+/**
+ * Fold recorded `gh pr merge` sightings into `prs`.
+ *
+ * Separate from the session rollup because a merge sighting and the `pr-link`
+ * that names the same PR routinely live in different transcripts: applying the
+ * sighting at write time dropped it whenever the link had not been indexed yet.
+ * Run once at the end of a pass, over the whole table — both are tiny.
+ */
+const RECONCILE_PR_MERGES = `
+  UPDATE prs SET
+    state = 'merged',
+    merged_at = (SELECT MIN(o.merged_at) FROM pr_merge_observations o
+                  WHERE o.number = prs.number
+                    AND (o.repo_hint IS NULL OR prs.repo LIKE '%/' || o.repo_hint))
+  WHERE EXISTS (SELECT 1 FROM pr_merge_observations o
+                 WHERE o.number = prs.number
+                   AND (o.repo_hint IS NULL OR prs.repo LIKE '%/' || o.repo_hint))`;
+
+/** Apply every merge sighting recorded so far. Returns the rows updated. */
+export function reconcilePrMerges(db: SessionIndexDb): number {
+  return db.prepare(RECONCILE_PR_MERGES).run().changes;
 }
 
 /** Every session in the index — the scope a full rebuild rolls up. */
