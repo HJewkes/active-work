@@ -13,7 +13,7 @@ import type { CommandContext } from '../registry/index.js';
 import '../commands/index.js'; // populate the registry on import
 import { formatError, EXIT } from '../errors.js';
 import { getActiveRoot } from '../utils/paths.js';
-import { buildHealthPayload, DAEMON_VERSION } from './health.js';
+import { buildHealthPayload, DAEMON_VERSION, type HealthIndexState } from './health.js';
 import { handleDashboard } from './dashboard-routes.js';
 import type { EventHub } from './events.js';
 
@@ -25,6 +25,11 @@ export interface BuildHttpAppOptions {
    * connects but only emits heartbeats.
    */
   hub?: EventHub;
+  /**
+   * Session-index snapshot, read per request. A getter rather than a value
+   * because the index watcher starts after the app is built.
+   */
+  indexState?: () => HealthIndexState | null;
 }
 
 /** Interval between SSE keep-alive comments (ms). */
@@ -33,7 +38,9 @@ const HEARTBEAT_MS = 25_000;
 export function buildHttpApp(options: BuildHttpAppOptions): Hono {
   const app = new Hono();
 
-  app.get('/health', (c) => c.json(buildHealthPayload(options.port)));
+  app.get('/health', (c) =>
+    c.json(buildHealthPayload(options.port, options.indexState?.() ?? null)),
+  );
 
   app.get('/version', (c) => c.json({ version: DAEMON_VERSION }));
 
