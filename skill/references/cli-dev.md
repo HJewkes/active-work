@@ -19,6 +19,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 | `src/templates/` | Mustache templates for scaffolding new initiatives. |
 | `src/bootstrap/` | Bootstrap prompt assembly used by `active-work open`. |
 | `src/discover/` | Discovery sources (gh, git, projects, Claude sessions). |
+| `src/sources/` | Reads `<slug>/sources/*.md` at call time. There is no sidecar index and no `sources:` frontmatter field — a stored list drifts from the directory, so the listing is always derived. |
 | `skill/` | This skill. Copied into `~/.claude/skills/active-work/` by `scripts/postinstall.js`. |
 | `scripts/` | npm lifecycle hooks: `postinstall.js`, `preuninstall.js`. |
 | `__tests__/` | Vitest tests; fixtures under `__tests__/fixtures/`. |
