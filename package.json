@@ -34,6 +34,7 @@
     "build:dashboard": "vite build --config src/dashboard/vite.config.ts",
     "gen:cli-reference": "pnpm build:cli && node scripts/gen-cli-reference.mjs",
     "mine:session": "node tools/mine-session-signals.mjs",
+    "index:session": "node tools/build-session-index.mjs",
     "mine:files": "node tools/mine-file-history.mjs",
     "export:aw-data": "node tools/export-aw-data.mjs",
     "cost:rollup": "node tools/cost-rollup.mjs",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.2.14",
@@ -79,6 +81,7 @@
     "@clack/prompts": "^1.4.0",
     "@hono/node-server": "^2.0.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^13.0.2",
     "commander": "^14.0.3",
     "env-paths": "^4.0.0",
     "gray-matter": "^4.0.3",
@@ -89,5 +92,10 @@
     "proper-lockfile": "^4.1.2",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   }
 }
