@@ -55,6 +55,8 @@ export const SessionInputSchema = z.object({
   seedPrompt: z.string().nullable().default(null),
   cliVersion: z.string().nullable().default(null),
   turnDelta: offset.default(0),
+  commitDelta: offset.default(0),
+  pushDelta: offset.default(0),
 });
 
 /** Token *deltas* for one chunk; the writer accumulates them into the bucket. */

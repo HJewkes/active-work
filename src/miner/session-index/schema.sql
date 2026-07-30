@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   ai_title      TEXT,
   seed_prompt   TEXT,
   cli_version   TEXT,
-  turn_count    INTEGER NOT NULL DEFAULT 0
+  turn_count    INTEGER NOT NULL DEFAULT 0,
+  commit_count  INTEGER NOT NULL DEFAULT 0,
+  push_count    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
 

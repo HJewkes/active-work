@@ -34,6 +34,7 @@
     "build:dashboard": "vite build --config src/dashboard/vite.config.ts",
     "gen:cli-reference": "pnpm build:cli && node scripts/gen-cli-reference.mjs",
     "mine:session": "node tools/mine-session-signals.mjs",
+    "index:session": "node tools/build-session-index.mjs",
     "mine:files": "node tools/mine-file-history.mjs",
     "export:aw-data": "node tools/export-aw-data.mjs",
     "cost:rollup": "node tools/cost-rollup.mjs",

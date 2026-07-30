@@ -1,6 +1,7 @@
 import type { ExtractAccumulator } from './accumulator.js';
 import type { RawLine } from './json-lines.js';
 import { IGNORED_PATH, parseGitIntent, parseTaskId, realCommand } from './bash-parse.js';
+import type { GitIntent } from './bash-parse.js';
 import {
   agentRef,
   artifactRef,
@@ -414,11 +415,30 @@ export class LineHandler {
     const raw = str(input, 'command');
     if (!raw) return;
     const git = parseGitIntent(raw);
-    if (git?.setBranch) this.recordBranch(ctx, git.setBranch);
-    if (git?.mergedPr) {
+    if (git) this.recordGitIntent(ctx, git);
+    this.recordTask(ctx, realCommand(raw));
+  }
+
+  private recordGitIntent(ctx: LineContext, git: GitIntent): void {
+    const session = this.acc.session(ctx.sessionId);
+    if (git.setBranch) this.recordBranch(ctx, git.setBranch);
+    if (git.deletedBranch) this.recordBranchDeletion(ctx, git.deletedBranch);
+    if (git.commit) session.commitDelta += 1;
+    if (git.push) session.pushDelta += 1;
+    if (git.mergedPr) {
       this.acc.prMerges.push({ number: git.mergedPr, repoHint: ctx.repo, mergedAt: ctx.ts });
     }
-    this.recordTask(ctx, realCommand(raw));
+  }
+
+  private recordBranchDeletion(ctx: LineContext, name: string): void {
+    this.acc.addBranch({
+      branchRef: branchRef(ctx.repo, name),
+      repo: ctx.repo,
+      name,
+      base: null,
+      createdAt: null,
+      deletedAt: ctx.ts || null,
+    });
   }
 
   private recordTask(ctx: LineContext, command: string): void {
