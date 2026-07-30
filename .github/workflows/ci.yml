@@ -48,6 +48,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Formatting is enforced in CI so prettier drift can't accumulate
+      # silently and then land as re-wrapping noise inside an unrelated PR.
+      - name: Format check
+        run: pnpm format:check
+
       # Build the CLI before tests so the integration suite runs against a
       # prebuilt dist/cli.js rather than transpiling src via tsx on every spawn
       # (AW-12). This makes the runner deterministic — same code path as local
