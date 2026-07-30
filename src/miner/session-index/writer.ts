@@ -248,17 +248,32 @@ function applyLinkedRows(db: SessionIndexDb, transcriptId: number, result: Extra
   applySpans(db, transcriptId, result);
 }
 
-/** `spans_fts` population is deliberately deferred; only the locators land here. */
+/**
+ * Write the span locator and, in the same statement pair, tokenize its text
+ * into `spans_fts`.
+ *
+ * `spans_fts` is contentless with `rowid == span_id`, so the FTS row must be
+ * inserted with the rowid the locator insert just allocated — hence the
+ * immediate `lastInsertRowid` use inside the caller's transaction, which keeps
+ * the two aligned even across a crash. Skipping the FTS insert when the locator
+ * hit `DO NOTHING` is what keeps a re-applied batch from stacking duplicate FTS
+ * rows behind a single locator.
+ *
+ * `span.text` is dropped here: it exists only to cross the extractor -> writer
+ * boundary, and nothing downstream retains it.
+ */
 function applySpans(db: SessionIndexDb, transcriptId: number, result: ExtractResult): void {
   const insert = db.prepare(
     'INSERT INTO searchable_spans (fact_id, field, transcript_id, byte_offset, byte_length)' +
       ' VALUES (@factId, @field, @transcriptId, @byteOffset, @byteLength)' +
       ' ON CONFLICT (fact_id, field, byte_offset) DO NOTHING',
   );
+  const insertFts = db.prepare('INSERT INTO spans_fts (rowid, text) VALUES (?, ?)');
   for (const span of result.spans) {
     const factId = factIdFor(db, transcriptId, span.factByteOffset);
     if (factId === null) continue;
-    insert.run({ ...span, factId, transcriptId });
+    const info = insert.run({ ...span, factId, transcriptId });
+    if (info.changes === 1) insertFts.run(info.lastInsertRowid, span.text);
   }
 }
 

@@ -165,11 +165,18 @@ export const EdgeInputSchema = z.object({
   confidence: z.number().min(0).max(1).default(1),
 });
 
+/**
+ * `text` is the extractor's prose projection of the line, handed to the writer
+ * for tokenizing into `spans_fts` and then dropped. It is deliberately NOT a
+ * column on `searchable_spans`: that table stays a pure locator into the raw
+ * JSONL, and the FTS table is contentless.
+ */
 export const SearchableSpanInputSchema = z.object({
   field: z.enum(['prompt', 'assistant_response', 'tool_input', 'tool_result']),
   factByteOffset: offset,
   byteOffset: offset,
   byteLength: offset,
+  text: z.string().default(''),
 });
 
 export const TranscriptWatermarkSchema = z.object({
