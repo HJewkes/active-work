@@ -1,9 +1,13 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildChannelArgs,
   buildClaudeArgs,
   parseLauncherFlags,
 } from '../src/launcher-args.js';
+import { buildLauncherEnv, withLauncherLease } from '../src/launcher-lease.js';
+import { withTempActiveRoot } from './setup/test-helpers.js';
 
 describe('buildChannelArgs', () => {
   it('returns no args when channels is undefined or empty', () => {
@@ -173,5 +177,133 @@ describe('parseLauncherFlags', () => {
 
   it('still flags more than one slug as a usage error', () => {
     expect(parseLauncherFlags(['a', 'b']).usageError).toBe(true);
+  });
+});
+
+describe('buildLauncherEnv', () => {
+  it('adds the lease id so the spawned session can exclude itself', () => {
+    const env = buildLauncherEnv({ PATH: '/usr/bin' }, 'abc123');
+    expect(env.AW_LEASE_ID).toBe('abc123');
+    expect(env.PATH).toBe('/usr/bin');
+  });
+
+  it('copies the base env rather than mutating it', () => {
+    const base = { PATH: '/usr/bin' };
+    const env = buildLauncherEnv(base, 'abc123');
+    expect(base).not.toHaveProperty('AW_LEASE_ID');
+    expect(env).not.toBe(base);
+  });
+
+  it('omits the var entirely when no lease was acquired', () => {
+    expect(buildLauncherEnv({ PATH: '/usr/bin' }, undefined)).not.toHaveProperty(
+      'AW_LEASE_ID',
+    );
+  });
+});
+
+describe('withLauncherLease', () => {
+  const SLUG = 'sample-initiative';
+
+  async function leaseFiles(activeRoot: string): Promise<string[]> {
+    try {
+      return await fs.readdir(path.join(activeRoot, '.sessions', SLUG));
+    } catch {
+      return [];
+    }
+  }
+
+  it('holds a launcher lease for the life of the child and releases it after', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      let duringRun: string[] = [];
+      let seenLeaseId: string | undefined;
+
+      // Stands in for `spawnClaude`: the lease must exist while the child runs.
+      const code = await withLauncherLease(
+        { activeRoot, slug: SLUG, cwd: '/tmp/checkout', pid: process.pid },
+        async (leaseId) => {
+          seenLeaseId = leaseId;
+          duringRun = await leaseFiles(activeRoot);
+          return 0;
+        },
+      );
+
+      expect(code).toBe(0);
+      expect(seenLeaseId).toBeTruthy();
+      expect(duringRun).toEqual([`${seenLeaseId}.json`]);
+      expect(await leaseFiles(activeRoot)).toEqual([]);
+    });
+  });
+
+  it('records the launcher mode and the launcher pid', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withLauncherLease(
+        { activeRoot, slug: SLUG, cwd: '/tmp/checkout', pid: 4321 },
+        async (leaseId) => {
+          const raw = await fs.readFile(
+            path.join(activeRoot, '.sessions', SLUG, `${leaseId}.json`),
+            'utf8',
+          );
+          expect(JSON.parse(raw)).toMatchObject({
+            mode: 'launcher',
+            pid: 4321,
+            cwd: '/tmp/checkout',
+          });
+          return 0;
+        },
+      );
+    });
+  });
+
+  it('releases the lease even when the run throws', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await expect(
+        withLauncherLease({ activeRoot, slug: SLUG, cwd: '/tmp/c' }, async () => {
+          throw new Error('claude blew up');
+        }),
+      ).rejects.toThrow('claude blew up');
+      expect(await leaseFiles(activeRoot)).toEqual([]);
+    });
+  });
+
+  // The exit/signal handlers are the last-resort cleanup for a Ctrl-C that
+  // kills `aw` before any promise gets a turn. They must not outlive the run.
+  it('installs exit and signal handlers and removes them afterwards', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const before = {
+        exit: process.listenerCount('exit'),
+        sigint: process.listenerCount('SIGINT'),
+        sigterm: process.listenerCount('SIGTERM'),
+      };
+      await withLauncherLease({ activeRoot, slug: SLUG, cwd: '/tmp/c' }, async () => {
+        expect(process.listenerCount('exit')).toBe(before.exit + 1);
+        expect(process.listenerCount('SIGINT')).toBe(before.sigint + 1);
+        expect(process.listenerCount('SIGTERM')).toBe(before.sigterm + 1);
+        return 0;
+      });
+      expect(process.listenerCount('exit')).toBe(before.exit);
+      expect(process.listenerCount('SIGINT')).toBe(before.sigint);
+      expect(process.listenerCount('SIGTERM')).toBe(before.sigterm);
+    });
+  });
+
+  // Fail open: refusing to launch a session because a lease could not be
+  // written would trade a whole session for an advisory warning.
+  it('runs without a lease id when the lease cannot be written', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      // A file where the lease directory needs to go — mkdir fails with ENOTDIR.
+      const blocked = path.join(activeRoot, 'blocked-root');
+      await fs.writeFile(blocked, 'not a directory');
+
+      let seen: string | undefined = 'unset';
+      const code = await withLauncherLease(
+        { activeRoot: blocked, slug: SLUG, cwd: '/tmp/c' },
+        async (leaseId) => {
+          seen = leaseId;
+          return 7;
+        },
+      );
+      expect(code).toBe(7);
+      expect(seen).toBeUndefined();
+    });
   });
 });

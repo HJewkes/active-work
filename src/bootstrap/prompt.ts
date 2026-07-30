@@ -27,6 +27,11 @@ import {
   type LoadedNote,
   type LoadedNotes,
 } from '../notes/note-file.js';
+import {
+  readLiveLeases,
+  type LiveSibling,
+  type SiblingProbe,
+} from '../sessions/lease.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -69,6 +74,10 @@ export type LiveStatusFetcher = (
   branches: BranchEntry[],
 ) => Promise<LiveBranchStatus[]>;
 
+/** Re-exported so callers can type a sibling list without reaching into `sessions/`. */
+export type SiblingSession = LiveSibling;
+export type { SiblingProbe };
+
 export interface BootstrapInput {
   /** Active root directory. Used to resolve the initiative dir. */
   activeRoot: string;
@@ -105,6 +114,19 @@ export interface BootstrapInput {
    * it as background and await the user's specific ad-hoc task (AW-20).
    */
   adhoc?: boolean;
+  /**
+   * When `true` (default), probe for other sessions holding a lease on this
+   * initiative and warn about them at the top of the prompt (CC-9).
+   */
+  detectSiblings?: boolean;
+  /**
+   * Optional probe override (DI). Defaults to reading the lease directory under
+   * the active root. A probe that throws is treated as "no siblings" — this
+   * section is advisory and must never be able to fail a bootstrap.
+   */
+  siblingProbe?: SiblingProbe;
+  /** This session's own lease, excluded from the sibling list. */
+  ownLeaseId?: string;
 }
 
 export interface BootstrapMetadata {
@@ -116,6 +138,8 @@ export interface BootstrapMetadata {
   open_loop_count: number;
   recently_done_count: number;
   bootstrap_at: string;
+  /** Number of sibling sessions rendered; absent when none were found. */
+  sibling_sessions?: number;
 }
 
 export interface BootstrapOutput {
@@ -939,6 +963,93 @@ function renderParallelSessions(sessions: LoadedSession[]): string | null {
   return `# Parallel sessions since then\n${lines.join('\n')}`;
 }
 
+const MS_PER_MINUTE = 60_000;
+
+/**
+ * Short elapsed form for sibling sessions ("just started", "12m", "2h 5m").
+ *
+ * `formatTimeSince` is the house helper for everything else in this file, but
+ * its floor is one hour ("just now"), and sibling sessions are minutes old
+ * almost by definition — the whole point is that the other one is *still
+ * running*. Rendering every one of them as "just now" would erase the only
+ * ordering signal the operator has for deciding which session started first.
+ */
+export function formatElapsedShort(from: Date, now: Date): string {
+  const diffMs = now.getTime() - from.getTime();
+  if (!Number.isFinite(diffMs) || diffMs < MS_PER_MINUTE) return 'just started';
+  const minutes = Math.floor(diffMs / MS_PER_MINUTE);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h ago` : `${hours}h ${rest}m ago`;
+}
+
+/**
+ * Whether one of the initiative's push channels is agent-chat.
+ *
+ * Targets arrive in the three shapes `buildChannelArgs` accepts — a bare server
+ * name, `server:<name>`, `plugin:<name>@<marketplace>` — so the name is matched
+ * after stripping the prefix and any marketplace suffix.
+ */
+function hasAgentChatChannel(brief: BriefFrontmatter): boolean {
+  return (brief.channels ?? []).some((raw) => {
+    const name = raw.replace(/^(?:server|plugin):/, '').split('@')[0] ?? '';
+    return name === 'agent-chat';
+  });
+}
+
+/**
+ * One line per sibling, with confidence wording matched to the lease mode.
+ *
+ * The distinction is the whole point of having two modes: a `launcher` lease
+ * names a process we just signalled, so it can be stated as fact, while a
+ * `oneshot` lease is a TTL guess about a process that left no handle behind.
+ * Rendering the guess in the same voice as the fact would train the reader to
+ * discount both.
+ */
+function renderSiblingLine(sibling: SiblingSession, now: Date): string {
+  const elapsed = formatElapsedShort(new Date(sibling.started), now);
+  const where = `in \`${sibling.cwd}\``;
+  if (sibling.mode === 'launcher') {
+    const pid = sibling.pid === undefined ? '' : ` (pid ${sibling.pid})`;
+    return `- started ${elapsed} ${where} — launched via \`aw\`, process still running${pid}.`;
+  }
+  return `- bootstrapped ${elapsed} ${where} — no live process to confirm, so it may have already exited.`;
+}
+
+const SIBLING_HEADING = '# Another session may already be live on this initiative';
+
+/**
+ * Warn, at t=0, that this may be the second session on the same initiative.
+ *
+ * Pure: the probe happens in `assembleBootstrap`. Renders nothing when there
+ * are no siblings — with an empty list the prompt must be byte-identical to one
+ * assembled without this feature at all.
+ */
+export function renderSiblingSessions(
+  siblings: SiblingSession[],
+  brief: BriefFrontmatter,
+  topTaskTitle: string | undefined,
+  now: Date,
+): string {
+  if (siblings.length === 0) return '';
+  const lines = siblings.map((s) => renderSiblingLine(s, now));
+  const topTask = topTaskTitle ? ` ("${topTaskTitle}")` : '';
+  lines.push(
+    `Before starting the top task${topTask}, ask the user which session owns it. ` +
+      'If this is the second session, take distinct scope and record it with ' +
+      '`active-work wrap --track adhoc` — not `canonical`, which would bury the ' +
+      "other session's mainline thread in the next bootstrap.",
+  );
+  if (hasAgentChatChannel(brief)) {
+    lines.push(
+      'This initiative carries an agent-chat channel: register under a name that ' +
+        'distinguishes you from the other session and coordinate scope there.',
+    );
+  }
+  return `${SIBLING_HEADING}\n${lines.join('\n')}`;
+}
+
 /**
  * Surface a non-`focused` initiative state.
  *
@@ -1000,6 +1111,9 @@ export async function assembleBootstrap(
     liveStatusFetcher,
     archivedTaskIds,
     adhoc = false,
+    detectSiblings = true,
+    siblingProbe = readLiveLeases,
+    ownLeaseId,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -1063,12 +1177,34 @@ export async function assembleBootstrap(
     ? formatTimeSince(new Date(narrativeSession.frontmatter.ended), now)
     : undefined;
 
+  // Fail open, exactly like the live-status fetcher above: a probe that throws
+  // (unreadable lease dir, hostile permissions) degrades to "no siblings"
+  // rather than costing the caller their whole bootstrap.
+  let siblings: SiblingSession[] = [];
+  if (detectSiblings) {
+    try {
+      siblings = await siblingProbe({
+        activeRoot,
+        slug,
+        now,
+        ...(ownLeaseId ? { excludeLeaseId: ownLeaseId } : {}),
+      });
+    } catch {
+      siblings = [];
+    }
+  }
+  const topTaskTitle = tasks
+    .filter((t) => t.status === 'open')
+    .sort(compareTasksByPriority)[0]?.title;
+
   const sections: string[] = [];
   sections.push(
     adhoc
       ? `Starting an ad-hoc session on \`${slug}\` (${brief.title}). This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
       : `Starting a session on \`${slug}\` (${brief.title}).`,
   );
+  const siblingBody = renderSiblingSessions(siblings, brief, topTaskTitle, now);
+  if (siblingBody) sections.push(siblingBody);
   const stateBody = renderBriefState(brief, now);
   if (stateBody) sections.push(stateBody);
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
@@ -1160,6 +1296,9 @@ export async function assembleBootstrap(
   }
   if (timeSinceHuman) {
     metadata.time_since_last_session_human = timeSinceHuman;
+  }
+  if (siblings.length > 0) {
+    metadata.sibling_sessions = siblings.length;
   }
 
   return { prompt, metadata };
