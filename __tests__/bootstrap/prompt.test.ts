@@ -913,6 +913,86 @@ describe('assembleBootstrap open loops', () => {
     });
   });
 
+  // AW-83: the closing directive is loop-first only when there is a loop to
+  // work. With an empty ledger it stays on the top-task framing, so the render
+  // never points a session at loops it just said were absent.
+  it('closes with loop-first framing when loops are hanging (AW-83)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'loop-one',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Left something hanging\n',
+        next_steps: [
+          { id: 's1', text: 'SQLite index blocked on eval harness', kind: 'prose' },
+          { id: 's2', text: 'awaiting review', kind: 'pr', ref: '57' },
+        ],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('Start with the open loops: 2 are still hanging');
+      expect(prompt).toContain('unfinished threads take precedence over the backlog');
+      // The mechanism a session needs to actually close one.
+      expect(prompt).toContain('`ref` printed under "Open loops"');
+      expect(prompt).toContain('`active-work wrap --resolves`');
+      // Priority order is stated, not the bare old directive.
+      expect(prompt).toContain('Once the loops are handled, or if the user redirects');
+      expect(prompt).not.toContain('Work the top task unless redirected.');
+    });
+  });
+
+  it('agrees in number with a single hanging loop (AW-83)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'loop-solo',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- One thread left open\n',
+        next_steps: [{ id: 's1', text: 'SQLite index blocked on eval harness', kind: 'prose' }],
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('Start with the open loop: 1 is still hanging');
+    });
+  });
+
+  it('falls back to top-task framing when no loops are hanging (AW-83)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeSession(activeRoot, {
+        session_id: 'all-clear',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Confirmed nothing hanging\n',
+        no_loops: true,
+      });
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain('Work the top task unless redirected.');
+      expect(prompt).not.toContain('Start with the open loop');
+    });
+  });
+
   it('drops task loops whose task is already done', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       await writeSession(activeRoot, {
