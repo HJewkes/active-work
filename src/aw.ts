@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
 import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
+import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT } from './errors.js';
 import { color } from './utils/color.js';
@@ -56,6 +57,10 @@ async function runOpen(
     ...(opts.slug ? { slug: opts.slug } : {}),
     ...(opts.pick ? { pick: true } : {}),
     ...(opts.adhoc ? { adhoc: true } : {}),
+    // This launcher records a `launcher` lease of its own around the spawned
+    // session, so `open` must not also file a `oneshot` one — two leases for
+    // one session make it its own sibling on the next bootstrap.
+    lease_mode: 'defer' as const,
   });
   return (await openCommand.run(parsed, ctx)) as OpenResult;
 }
@@ -67,10 +72,14 @@ const STATE_LABEL: Record<InitiativeSummary['state'], string> = {
   done: 'done',
 };
 
-async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string | null> {
+async function pickInitiative(
+  initiatives: InitiativeSummary[],
+): Promise<string | null> {
   if (initiatives.length === 0) {
     process.stderr.write(
-      color.red('No initiatives found. Create one with `active-work new <slug>`.\n'),
+      color.red(
+        'No initiatives found. Create one with `active-work new <slug>`.\n',
+      ),
     );
     return null;
   }
@@ -89,11 +98,19 @@ async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string 
   return String(choice);
 }
 
-function spawnClaude(prompt: string, cwd: string, channels?: string[]): Promise<number> {
+function spawnClaude(
+  prompt: string,
+  cwd: string,
+  channels?: string[],
+  leaseId?: string,
+): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn('claude', buildClaudeArgs(prompt, channels), {
       cwd,
       stdio: 'inherit',
+      // Explicit env (the default is an implicit `process.env`) so the session
+      // can recognize its own lease and not warn about itself.
+      env: buildLauncherEnv(process.env, leaseId),
     });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
@@ -107,7 +124,9 @@ function spawnClaude(prompt: string, cwd: string, channels?: string[]): Promise<
         resolve(127);
         return;
       }
-      process.stderr.write(color.red(`error: failed to launch claude: ${err.message}\n`));
+      process.stderr.write(
+        color.red(`error: failed to launch claude: ${err.message}\n`),
+      );
       resolve(EXIT.GENERIC);
     });
     child.on('exit', (code, signal) => {
@@ -181,12 +200,24 @@ export async function main(argv: string[]): Promise<void> {
         opened = (await runOpen({ slug: choice, adhoc })) as OpenSuccess;
       } else {
         opened = result;
-        process.stderr.write(color.dim(`Opening ${opened.slug} — matched current directory.\n`));
+        process.stderr.write(
+          color.dim(
+            `Opening ${opened.slug} — matched current directory.\n`,
+          ),
+        );
       }
     } else {
       opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
     }
-    const code = await spawnClaude(opened.prompt, opened.cwd_hint, opened.channels);
+    const code = await withLauncherLease(
+      {
+        activeRoot: getActiveRoot(),
+        slug: opened.slug,
+        cwd: opened.cwd_hint,
+      },
+      (leaseId) =>
+        spawnClaude(opened.prompt, opened.cwd_hint, opened.channels, leaseId),
+    );
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);

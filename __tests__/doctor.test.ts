@@ -82,6 +82,40 @@ describe('runDoctor', () => {
     }
   });
 
+  it('reports live and pruned session leases (CC-9)', async () => {
+    const leaseDir = path.join(activeRoot, '.sessions', 'sample');
+    await fs.mkdir(leaseDir, { recursive: true });
+    const lease = (id: string, started: string): string =>
+      JSON.stringify({
+        lease_id: id,
+        slug: 'sample',
+        cwd: '/tmp/checkout',
+        mode: 'oneshot',
+        started,
+      });
+    await fs.writeFile(path.join(leaseDir, 'fresh.json'), lease('fresh', new Date().toISOString()));
+    await fs.writeFile(
+      path.join(leaseDir, 'stale.json'),
+      lease('stale', new Date(Date.now() - 24 * 60 * 60_000).toISOString()),
+    );
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'session-leases')!;
+    expect(check.status).toBe('ok');
+    expect(check.detail).toBe('1 live, 1 pruned');
+    // The pruning is real, not merely reported.
+    expect(await fs.readdir(leaseDir)).toEqual(['fresh.json']);
+  });
+
+  it('warns, never fails, when the lease sweep cannot complete', async () => {
+    const report = await runDoctor({
+      ...healthyDeps(),
+      sweepLeases: async () => ({ live: 0, pruned: 0, error: 'EACCES' }),
+    });
+    expect(report.ok).toBe(true);
+    expect(statusOf(report.checks, 'session-leases')).toBe('warn');
+  });
+
   it('fails on an outdated Node version', async () => {
     const report = await runDoctor({ ...healthyDeps(), nodeVersion: 'v18.19.0' });
     expect(report.ok).toBe(false);

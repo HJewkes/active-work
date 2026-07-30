@@ -3,8 +3,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   assembleBootstrap,
+  formatElapsedShort,
   formatTimeSince,
   type LiveStatusFetcher,
+  type SiblingProbe,
+  type SiblingSession,
 } from '../../src/bootstrap/prompt.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
@@ -1189,5 +1192,261 @@ describe('formatTimeSince', () => {
     const now = new Date('2026-05-30T12:00:00Z');
     const from = new Date('2026-05-12T12:00:00Z');
     expect(formatTimeSince(from, now)).toBe('18 days ago — likely needs context refresher');
+  });
+});
+
+describe('sibling-session detection (CC-9)', () => {
+  const LAUNCHER_SIBLING: SiblingSession = {
+    lease_id: 'aaaa',
+    cwd: '/Users/dev/code/sample',
+    mode: 'launcher',
+    pid: 4321,
+    started: '2026-05-12T15:48:00Z',
+  };
+  const ONESHOT_SIBLING: SiblingSession = {
+    lease_id: 'bbbb',
+    cwd: '/Users/dev/code/other-checkout',
+    mode: 'oneshot',
+    started: '2026-05-12T15:48:00Z',
+  };
+
+  function probeReturning(siblings: SiblingSession[]): SiblingProbe {
+    return async () => siblings;
+  }
+
+  /** The bootstrap timestamp is wall-clock, so it can never match across runs. */
+  function normalize(prompt: string): string {
+    return prompt.replace(/^- Bootstrap: .*$/m, '- Bootstrap: <ts>');
+  }
+
+  async function addChannels(activeRoot: string, channels: string[]): Promise<void> {
+    const briefPath = path.join(activeRoot, SAMPLE_SLUG, 'brief.md');
+    const raw = await fs.readFile(briefPath, 'utf8');
+    const block = ['channels:', ...channels.map((c) => `  - ${c}`)].join('\n');
+    await fs.writeFile(briefPath, raw.replace(/^task_prefix: SI$/m, `task_prefix: SI\n${block}`));
+  }
+
+  it('renders the warning between the opening line and "Why we\'re doing this"', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+
+      const opening = prompt.indexOf('Starting a session on');
+      const warning = prompt.indexOf('# Another session may already be live');
+      const why = prompt.indexOf("# Why we're doing this");
+      expect(warning).toBeGreaterThan(opening);
+      expect(warning).toBeLessThan(why);
+      expect(metadata.sibling_sessions).toBe(1);
+    });
+  });
+
+  it('names the sibling cwd, its elapsed time, and the --track adhoc directive', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('/Users/dev/code/sample');
+      expect(prompt).toContain('12m ago');
+      expect(prompt).toContain('active-work wrap --track adhoc');
+      // The top task is named so the ownership question is answerable.
+      expect(prompt).toContain('First sample task');
+    });
+  });
+
+  // The two modes carry different amounts of truth: one is a signalled process,
+  // the other a TTL guess. Rendering them identically would flatten that.
+  it('states a launcher sibling as a live process, pid and all', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('process still running (pid 4321)');
+      expect(prompt).not.toContain('may have already exited');
+    });
+  });
+
+  it('hedges a oneshot sibling, which has no process to confirm', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([ONESHOT_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('no live process to confirm');
+      expect(prompt).toContain('may have already exited');
+      expect(prompt).not.toContain('pid');
+    });
+  });
+
+  it('adds the agent-chat sentence only when the brief carries that channel', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const before = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(before.prompt).not.toContain('agent-chat');
+
+      await addChannels(activeRoot, ['plugin:agent-chat@local']);
+      const after = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(after.prompt).toContain('register under a name that distinguishes you');
+    });
+  });
+
+  it('ignores unrelated channels when deciding on the agent-chat sentence', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await addChannels(activeRoot, ['server:voltras']);
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(prompt).toContain('# Another session may already be live');
+      expect(prompt).not.toContain('agent-chat');
+    });
+  });
+
+  // Regression guard: with nothing to warn about, this feature must be
+  // invisible — the whole prompt, not merely the absence of the heading.
+  it('produces byte-identical output to a probe-free bootstrap when empty', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const withoutFeature = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        detectSiblings: false,
+        ...offlineOpts,
+      });
+      const withEmptyProbe = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([]),
+        ...offlineOpts,
+      });
+      expect(normalize(withEmptyProbe.prompt)).toBe(normalize(withoutFeature.prompt));
+      expect(withEmptyProbe.metadata.sibling_sessions).toBeUndefined();
+      expect(withoutFeature.metadata.sibling_sessions).toBeUndefined();
+    });
+  });
+
+  it('does not call the probe at all when detectSiblings is false', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      let calls = 0;
+      const probe: SiblingProbe = async () => {
+        calls++;
+        return [LAUNCHER_SIBLING];
+      };
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        detectSiblings: false,
+        siblingProbe: probe,
+        ...offlineOpts,
+      });
+      expect(calls).toBe(0);
+      expect(prompt).not.toContain('# Another session may already be live');
+    });
+  });
+
+  it('passes the caller’s own lease id to the probe so it excludes itself', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      let seen: string | undefined;
+      const probe: SiblingProbe = async (input) => {
+        seen = input.excludeLeaseId;
+        return [];
+      };
+      await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ownLeaseId: 'deadbeef',
+        siblingProbe: probe,
+        ...offlineOpts,
+      });
+      expect(seen).toBe('deadbeef');
+    });
+  });
+
+  // Fail open: this section is advisory, and bootstrap runs on every launch.
+  it('still produces a complete prompt when the probe throws', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const thrower: SiblingProbe = async () => {
+        throw new Error('lease dir on fire');
+      };
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: thrower,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain("# Why we're doing this");
+      expect(prompt).toContain('# Tasks (top 5 open by priority)');
+      expect(prompt).toContain('Work the top task unless redirected.');
+      expect(prompt).not.toContain('# Another session may already be live');
+      expect(metadata.sibling_sessions).toBeUndefined();
+    });
+  });
+
+  it('renders one line per sibling', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        siblingProbe: probeReturning([LAUNCHER_SIBLING, ONESHOT_SIBLING]),
+        ...offlineOpts,
+      });
+      expect(metadata.sibling_sessions).toBe(2);
+      expect(prompt).toContain('/Users/dev/code/sample');
+      expect(prompt).toContain('/Users/dev/code/other-checkout');
+    });
+  });
+});
+
+describe('formatElapsedShort', () => {
+  const now = new Date('2026-05-12T12:00:00Z');
+
+  it('reports sub-minute ages as "just started"', () => {
+    expect(formatElapsedShort(new Date('2026-05-12T11:59:30Z'), now)).toBe('just started');
+  });
+
+  it('reports minutes under an hour', () => {
+    expect(formatElapsedShort(new Date('2026-05-12T11:23:00Z'), now)).toBe('37m ago');
+  });
+
+  it('reports whole hours without a minutes remainder', () => {
+    expect(formatElapsedShort(new Date('2026-05-12T10:00:00Z'), now)).toBe('2h ago');
+  });
+
+  it('reports hours and minutes together', () => {
+    expect(formatElapsedShort(new Date('2026-05-12T09:35:00Z'), now)).toBe('2h 25m ago');
   });
 });

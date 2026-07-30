@@ -1,6 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
+import {
+  BriefFrontmatterSchema,
+  type BriefFrontmatter,
+} from '../schemas/brief.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
 import {
   ArtifactsSchema,
@@ -19,7 +22,16 @@ import {
   type OpenLoop,
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
-import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
+import {
+  loadNotesFromDir,
+  type LoadedNote,
+  type LoadedNotes,
+} from '../notes/note-file.js';
+import {
+  readLiveLeases,
+  type LiveSibling,
+  type SiblingProbe,
+} from '../sessions/lease.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
   getGhRunner,
@@ -58,7 +70,13 @@ export interface LiveBranchStatus {
   } | null;
 }
 
-export type LiveStatusFetcher = (branches: BranchEntry[]) => Promise<LiveBranchStatus[]>;
+export type LiveStatusFetcher = (
+  branches: BranchEntry[],
+) => Promise<LiveBranchStatus[]>;
+
+/** Re-exported so callers can type a sibling list without reaching into `sessions/`. */
+export type SiblingSession = LiveSibling;
+export type { SiblingProbe };
 
 export interface BootstrapInput {
   /** Active root directory. Used to resolve the initiative dir. */
@@ -96,6 +114,19 @@ export interface BootstrapInput {
    * it as background and await the user's specific ad-hoc task (AW-20).
    */
   adhoc?: boolean;
+  /**
+   * When `true` (default), probe for other sessions holding a lease on this
+   * initiative and warn about them at the top of the prompt (CC-9).
+   */
+  detectSiblings?: boolean;
+  /**
+   * Optional probe override (DI). Defaults to reading the lease directory under
+   * the active root. A probe that throws is treated as "no siblings" — this
+   * section is advisory and must never be able to fail a bootstrap.
+   */
+  siblingProbe?: SiblingProbe;
+  /** This session's own lease, excluded from the sibling list. */
+  ownLeaseId?: string;
 }
 
 export interface BootstrapMetadata {
@@ -107,6 +138,8 @@ export interface BootstrapMetadata {
   open_loop_count: number;
   recently_done_count: number;
   bootstrap_at: string;
+  /** Number of sibling sessions rendered; absent when none were found. */
+  sibling_sessions?: number;
 }
 
 export interface BootstrapOutput {
@@ -141,7 +174,9 @@ export async function readMarkdownWithSchema<T>(
   const parsed = frontmatterText ? YAML.parse(frontmatterText) : {};
   const result = schema.safeParse(parsed);
   if (!result.success) {
-    throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
+    throw new Error(
+      `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
+    );
   }
   return { frontmatter: result.data, body };
 }
@@ -152,9 +187,13 @@ export async function readMarkdownWithSchema<T>(
  */
 function compareSessionsNewestFirst(a: LoadedSession, b: LoadedSession): number {
   const endedDelta =
-    new Date(b.frontmatter.ended).getTime() - new Date(a.frontmatter.ended).getTime();
+    new Date(b.frontmatter.ended).getTime() -
+    new Date(a.frontmatter.ended).getTime();
   if (endedDelta !== 0) return endedDelta;
-  return new Date(b.frontmatter.started).getTime() - new Date(a.frontmatter.started).getTime();
+  return (
+    new Date(b.frontmatter.started).getTime() -
+    new Date(a.frontmatter.started).getTime()
+  );
 }
 
 /**
@@ -202,7 +241,9 @@ async function loadTasks(initiativeDir: string): Promise<LoadedTasks> {
   } catch {
     return { tasks: [], malformed: [] };
   }
-  const ymlFiles = entries.filter((n) => n.endsWith('.yml') || n.endsWith('.yaml'));
+  const ymlFiles = entries.filter(
+    (n) => n.endsWith('.yml') || n.endsWith('.yaml'),
+  );
   const tasks: Task[] = [];
   const malformed: MalformedTask[] = [];
   for (const filename of ymlFiles) {
@@ -320,7 +361,11 @@ const TASK_SUMMARY_MAX_CHARS = 200;
  * whole thought, so the cut is marked and paired with the command that prints
  * the field untruncated.
  */
-function summarizeField(label: string, lines: string[], pointer: string): string {
+function summarizeField(
+  label: string,
+  lines: string[],
+  pointer: string,
+): string {
   const kept = lines.slice(0, TASK_SUMMARY_MAX_LINES);
   const joined = kept.join(' ');
   const clamped =
@@ -372,7 +417,9 @@ function renderTopTasks(
   topN: number,
   slug: string,
 ): { body: string; count: number } {
-  const openTasks = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority);
+  const openTasks = tasks
+    .filter((t) => t.status === 'open')
+    .sort(compareTasksByPriority);
   if (openTasks.length === 0) {
     return { body: '_No open tasks._', count: 0 };
   }
@@ -568,7 +615,10 @@ function renderClosingInstruction(openLoops: OpenLoop[]): string {
  * decision not to do something, and a future session that cannot see it will
  * propose the abandoned thing again.
  */
-function renderAbandonedLoops(resolved: ResolvedLoop[], windowDays: number): string | null {
+function renderAbandonedLoops(
+  resolved: ResolvedLoop[],
+  windowDays: number,
+): string | null {
   const abandoned = resolved.filter(
     (loop) => loop.outcome === 'abandoned' && loop.ageDays <= windowDays,
   );
@@ -712,7 +762,9 @@ function renderLiveArtifacts(
  * swallows per-branch errors silently — bootstrap never throws on artifact
  * issues.
  */
-async function defaultLiveStatusFetcher(branches: BranchEntry[]): Promise<LiveBranchStatus[]> {
+async function defaultLiveStatusFetcher(
+  branches: BranchEntry[],
+): Promise<LiveBranchStatus[]> {
   const results: LiveBranchStatus[] = [];
   const limit = Math.min(branches.length, LIVE_RENDER_LIMIT);
   for (let i = 0; i < limit; i++) {
@@ -751,7 +803,14 @@ async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
     }
     if (out.present) {
       try {
-        const lc = await git('git', ['-C', repoPath, 'log', '-1', '--format=%cI', branch.name]);
+        const lc = await git('git', [
+          '-C',
+          repoPath,
+          'log',
+          '-1',
+          '--format=%cI',
+          branch.name,
+        ]);
         if (lc.code === 0) {
           const s = lc.stdout.trim();
           out.last_commit_iso = s.length > 0 ? s : null;
@@ -834,7 +893,12 @@ async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
             for (const entry of rollup) {
               const tag = (entry.conclusion ?? entry.state ?? '').toUpperCase();
               if (tag === 'SUCCESS') pass++;
-              else if (tag === 'FAILURE' || tag === 'CANCELLED' || tag === 'TIMED_OUT') fail++;
+              else if (
+                tag === 'FAILURE' ||
+                tag === 'CANCELLED' ||
+                tag === 'TIMED_OUT'
+              )
+                fail++;
               else pending++;
             }
             let checks: string | undefined;
@@ -899,6 +963,93 @@ function renderParallelSessions(sessions: LoadedSession[]): string | null {
   return `# Parallel sessions since then\n${lines.join('\n')}`;
 }
 
+const MS_PER_MINUTE = 60_000;
+
+/**
+ * Short elapsed form for sibling sessions ("just started", "12m", "2h 5m").
+ *
+ * `formatTimeSince` is the house helper for everything else in this file, but
+ * its floor is one hour ("just now"), and sibling sessions are minutes old
+ * almost by definition — the whole point is that the other one is *still
+ * running*. Rendering every one of them as "just now" would erase the only
+ * ordering signal the operator has for deciding which session started first.
+ */
+export function formatElapsedShort(from: Date, now: Date): string {
+  const diffMs = now.getTime() - from.getTime();
+  if (!Number.isFinite(diffMs) || diffMs < MS_PER_MINUTE) return 'just started';
+  const minutes = Math.floor(diffMs / MS_PER_MINUTE);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `${hours}h ago` : `${hours}h ${rest}m ago`;
+}
+
+/**
+ * Whether one of the initiative's push channels is agent-chat.
+ *
+ * Targets arrive in the three shapes `buildChannelArgs` accepts — a bare server
+ * name, `server:<name>`, `plugin:<name>@<marketplace>` — so the name is matched
+ * after stripping the prefix and any marketplace suffix.
+ */
+function hasAgentChatChannel(brief: BriefFrontmatter): boolean {
+  return (brief.channels ?? []).some((raw) => {
+    const name = raw.replace(/^(?:server|plugin):/, '').split('@')[0] ?? '';
+    return name === 'agent-chat';
+  });
+}
+
+/**
+ * One line per sibling, with confidence wording matched to the lease mode.
+ *
+ * The distinction is the whole point of having two modes: a `launcher` lease
+ * names a process we just signalled, so it can be stated as fact, while a
+ * `oneshot` lease is a TTL guess about a process that left no handle behind.
+ * Rendering the guess in the same voice as the fact would train the reader to
+ * discount both.
+ */
+function renderSiblingLine(sibling: SiblingSession, now: Date): string {
+  const elapsed = formatElapsedShort(new Date(sibling.started), now);
+  const where = `in \`${sibling.cwd}\``;
+  if (sibling.mode === 'launcher') {
+    const pid = sibling.pid === undefined ? '' : ` (pid ${sibling.pid})`;
+    return `- started ${elapsed} ${where} — launched via \`aw\`, process still running${pid}.`;
+  }
+  return `- bootstrapped ${elapsed} ${where} — no live process to confirm, so it may have already exited.`;
+}
+
+const SIBLING_HEADING = '# Another session may already be live on this initiative';
+
+/**
+ * Warn, at t=0, that this may be the second session on the same initiative.
+ *
+ * Pure: the probe happens in `assembleBootstrap`. Renders nothing when there
+ * are no siblings — with an empty list the prompt must be byte-identical to one
+ * assembled without this feature at all.
+ */
+export function renderSiblingSessions(
+  siblings: SiblingSession[],
+  brief: BriefFrontmatter,
+  topTaskTitle: string | undefined,
+  now: Date,
+): string {
+  if (siblings.length === 0) return '';
+  const lines = siblings.map((s) => renderSiblingLine(s, now));
+  const topTask = topTaskTitle ? ` ("${topTaskTitle}")` : '';
+  lines.push(
+    `Before starting the top task${topTask}, ask the user which session owns it. ` +
+      'If this is the second session, take distinct scope and record it with ' +
+      '`active-work wrap --track adhoc` — not `canonical`, which would bury the ' +
+      "other session's mainline thread in the next bootstrap.",
+  );
+  if (hasAgentChatChannel(brief)) {
+    lines.push(
+      'This initiative carries an agent-chat channel: register under a name that ' +
+        'distinguishes you from the other session and coordinate scope there.',
+    );
+  }
+  return `${SIBLING_HEADING}\n${lines.join('\n')}`;
+}
+
 /**
  * Surface a non-`focused` initiative state.
  *
@@ -934,7 +1085,9 @@ async function loadBrief(
     return await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new NotFoundError(`Initiative '${slug}' has no readable brief.md (${reason})`);
+    throw new NotFoundError(
+      `Initiative '${slug}' has no readable brief.md (${reason})`,
+    );
   }
 }
 
@@ -945,7 +1098,9 @@ async function loadBrief(
  * missing artifacts (no sessions yet, no open tasks, no PRs) degrade
  * gracefully to omitted or "none" sections.
  */
-export async function assembleBootstrap(input: BootstrapInput): Promise<BootstrapOutput> {
+export async function assembleBootstrap(
+  input: BootstrapInput,
+): Promise<BootstrapOutput> {
   const {
     activeRoot,
     slug,
@@ -956,10 +1111,16 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     liveStatusFetcher,
     archivedTaskIds,
     adhoc = false,
+    detectSiblings = true,
+    siblingProbe = readLiveLeases,
+    ownLeaseId,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
-  const { frontmatter: brief, body: briefBody } = await loadBrief(initiativeDir, slug);
+  const { frontmatter: brief, body: briefBody } = await loadBrief(
+    initiativeDir,
+    slug,
+  );
 
   const [loaded, loadedTasks, loadedArtifacts, notes] = await Promise.all([
     loadSessionsNewestFirst(initiativeDir),
@@ -982,10 +1143,15 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   // sidecar/adhoc sessions exist (AW-42).
   const narrativeSession = latestCanonical ?? sessions[0];
   const usedFallbackTrack = !latestCanonical && narrativeSession !== undefined;
-  const parallelBody = renderParallelSessions(selectParallelSessions(sessions, narrativeSession));
+  const parallelBody = renderParallelSessions(
+    selectParallelSessions(sessions, narrativeSession),
+  );
   const briefExcerpt =
-    truncateLines(briefBody, BRIEF_BODY_MAX_LINES, path.join(initiativeDir, 'brief.md')) ||
-    '_(no brief body)_';
+    truncateLines(
+      briefBody,
+      BRIEF_BODY_MAX_LINES,
+      path.join(initiativeDir, 'brief.md'),
+    ) || '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks, slug);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
     tasks,
@@ -1011,12 +1177,34 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     ? formatTimeSince(new Date(narrativeSession.frontmatter.ended), now)
     : undefined;
 
+  // Fail open, exactly like the live-status fetcher above: a probe that throws
+  // (unreadable lease dir, hostile permissions) degrades to "no siblings"
+  // rather than costing the caller their whole bootstrap.
+  let siblings: SiblingSession[] = [];
+  if (detectSiblings) {
+    try {
+      siblings = await siblingProbe({
+        activeRoot,
+        slug,
+        now,
+        ...(ownLeaseId ? { excludeLeaseId: ownLeaseId } : {}),
+      });
+    } catch {
+      siblings = [];
+    }
+  }
+  const topTaskTitle = tasks
+    .filter((t) => t.status === 'open')
+    .sort(compareTasksByPriority)[0]?.title;
+
   const sections: string[] = [];
   sections.push(
     adhoc
       ? `Starting an ad-hoc session on \`${slug}\` (${brief.title}). This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
       : `Starting a session on \`${slug}\` (${brief.title}).`,
   );
+  const siblingBody = renderSiblingSessions(siblings, brief, topTaskTitle, now);
+  if (siblingBody) sections.push(siblingBody);
   const stateBody = renderBriefState(brief, now);
   if (stateBody) sections.push(stateBody);
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
@@ -1036,7 +1224,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     // Label the heading with the track when it's not canonical, so a
     // fallback session (no canonical recorded yet) isn't mistaken for
     // mainline continuity.
-    const trackLabel = usedFallbackTrack ? ` (${narrativeSession.frontmatter.track})` : '';
+    const trackLabel = usedFallbackTrack
+      ? ` (${narrativeSession.frontmatter.track})`
+      : '';
     sections.push(
       `# Last session${trackLabel} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
     );
@@ -1051,7 +1241,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   );
 
   if (recentlyDoneBody) {
-    sections.push(`# Recently done (last ${recentlyDoneDays} days)\n${recentlyDoneBody}`);
+    sections.push(
+      `# Recently done (last ${recentlyDoneDays} days)\n${recentlyDoneBody}`,
+    );
   }
 
   if (archivedTaskIds && archivedTaskIds.length > 0) {
@@ -1104,6 +1296,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   }
   if (timeSinceHuman) {
     metadata.time_since_last_session_human = timeSinceHuman;
+  }
+  if (siblings.length > 0) {
+    metadata.sibling_sessions = siblings.length;
   }
 
   return { prompt, metadata };

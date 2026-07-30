@@ -375,3 +375,92 @@ describe('open command', () => {
     });
   });
 });
+
+describe('open command — sibling session leases (CC-9)', () => {
+  const SLUG = 'sample-initiative';
+
+  /** The fixture ships a branch; drop it so `offline: false` shells out to nothing. */
+  async function withoutBranches(activeRoot: string): Promise<void> {
+    await fs.writeFile(
+      path.join(activeRoot, SLUG, 'artifacts.yml'),
+      'branches: []\nstashes: []\nworktrees: []\n',
+    );
+  }
+
+  async function leaseFiles(activeRoot: string): Promise<string[]> {
+    try {
+      return await fs.readdir(path.join(activeRoot, '.sessions', SLUG));
+    } catch {
+      return [];
+    }
+  }
+
+  it('records exactly one oneshot lease under the active root', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await openCommand.run({ slug: SLUG }, makeCtx(activeRoot));
+      expect(await leaseFiles(activeRoot)).toHaveLength(1);
+    });
+  });
+
+  it('warns the second session about the first', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      const first = (await openCommand.run({ slug: SLUG }, makeCtx(activeRoot))) as OpenSuccess;
+      const second = (await openCommand.run({ slug: SLUG }, makeCtx(activeRoot))) as OpenSuccess;
+
+      expect(first.prompt).not.toContain('# Another session may already be live');
+      expect(second.prompt).toContain('# Another session may already be live');
+      expect(second.prompt).toContain('no live process to confirm');
+      expect(await leaseFiles(activeRoot)).toHaveLength(2);
+    });
+  });
+
+  it('honors AW_LEASE_ID so a session never warns about itself', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await openCommand.run({ slug: SLUG }, makeCtx(activeRoot));
+      const [file] = await leaseFiles(activeRoot);
+      const ownLeaseId = (file as string).replace(/\.json$/, '');
+
+      process.env.AW_LEASE_ID = ownLeaseId;
+      try {
+        const out = (await openCommand.run({ slug: SLUG }, makeCtx(activeRoot))) as OpenSuccess;
+        expect(out.prompt).not.toContain('# Another session may already be live');
+      } finally {
+        delete process.env.AW_LEASE_ID;
+      }
+    });
+  });
+
+  it('--no-sibling-check skips both the warning and the lease write', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await openCommand.run({ slug: SLUG }, makeCtx(activeRoot));
+      const out = (await openCommand.run(
+        { slug: SLUG, no_sibling_check: true },
+        makeCtx(activeRoot),
+      )) as OpenSuccess;
+
+      expect(out.prompt).not.toContain('# Another session may already be live');
+      expect(await leaseFiles(activeRoot)).toHaveLength(1);
+    });
+  });
+
+  // `aw` holds a `launcher` lease around the same session; a second lease here
+  // would make that session its own sibling on the next bootstrap.
+  it('writes no lease when the launcher defers it', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await openCommand.run({ slug: SLUG, lease_mode: 'defer' }, makeCtx(activeRoot));
+      expect(await leaseFiles(activeRoot)).toEqual([]);
+    });
+  });
+
+  it('leaves leases alone on the --offline fast path', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await openCommand.run({ slug: SLUG, offline: true }, makeCtx(activeRoot));
+      expect(await leaseFiles(activeRoot)).toEqual([]);
+    });
+  });
+});

@@ -1,8 +1,14 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
+import {
+  BriefFrontmatterSchema,
+  type BriefFrontmatter,
+} from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
-import { defaultWorktreePath, readRegisteredWorktrees } from '../utils/registered-worktrees.js';
+import {
+  defaultWorktreePath,
+  readRegisteredWorktrees,
+} from '../utils/registered-worktrees.js';
 import { defineCommand } from '../registry/index.js';
 import {
   assembleBootstrap,
@@ -10,7 +16,12 @@ import {
   type BootstrapMetadata,
 } from '../bootstrap/prompt.js';
 import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
-import { listInitiativeSlugs, resolveSlug, resolveSlugFromCwd } from './_open-helpers.js';
+import { acquireLease } from '../sessions/lease.js';
+import {
+  listInitiativeSlugs,
+  resolveSlug,
+  resolveSlugFromCwd,
+} from './_open-helpers.js';
 
 /** Done tasks older than this are auto-archived on bootstrap (AW-8). */
 const ARCHIVE_DONE_AFTER_DAYS = 30;
@@ -27,6 +38,12 @@ const ArgsSchema = z.object({
   // Frame the bootstrap prompt as ad-hoc work related to the workstream rather
   // than a continuation of its handoff / top task.
   adhoc: z.boolean().optional(),
+  // Skip the sibling-session probe (and the lease write that goes with it).
+  no_sibling_check: z.boolean().optional(),
+  // Internal: `aw` calls this command in-process and holds a `launcher` lease
+  // of its own for the same session, so it suppresses the oneshot lease here
+  // rather than writing a second one that would then look like a sibling.
+  lease_mode: z.literal('defer').optional(),
 });
 
 const InitiativeSummarySchema = z.object({
@@ -49,11 +66,14 @@ const OpenResultSchema = z.object({
   metadata: z.object({
     slug: z.string(),
     brief_title: z.string(),
-    last_session: z.object({ filename: z.string(), ended: z.string() }).optional(),
+    last_session: z
+      .object({ filename: z.string(), ended: z.string() })
+      .optional(),
     time_since_last_session_human: z.string().optional(),
     open_task_count: z.number().int().nonnegative(),
     recently_done_count: z.number().int().nonnegative(),
     bootstrap_at: z.string(),
+    sibling_sessions: z.number().int().nonnegative().optional(),
   }),
   // How the initiative was selected: an explicit/prefix slug, or a match
   // between the caller's cwd and one of the initiative's worktrees.
@@ -85,7 +105,10 @@ async function loadInitiativeSummary(
 ): Promise<InitiativeSummary | null> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
   try {
-    const { frontmatter } = await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
+    const { frontmatter } = await readMarkdownWithSchema(
+      briefPath,
+      BriefFrontmatterSchema,
+    );
     return {
       slug,
       title: frontmatter.title,
@@ -108,7 +131,9 @@ function compareInitiatives(a: InitiativeSummary, b: InitiativeSummary): number 
   return a.slug.localeCompare(b.slug);
 }
 
-async function collectInitiatives(activeRoot: string): Promise<InitiativeSummary[]> {
+async function collectInitiatives(
+  activeRoot: string,
+): Promise<InitiativeSummary[]> {
   const slugs = await listInitiativeSlugs(activeRoot);
   const summaries: InitiativeSummary[] = [];
   for (const slug of slugs) {
@@ -125,6 +150,27 @@ async function resolveCwdHint(activeRoot: string, slug: string): Promise<string>
   return preferred === null ? path.join(activeRoot, slug) : expandTilde(preferred);
 }
 
+/**
+ * Claim a `oneshot` lease for the session this bootstrap is about to start.
+ *
+ * "Oneshot" because this process has no idea how long the session it is
+ * priming will live — it prints a prompt and exits — so the lease is a TTL
+ * guess that `readLiveLeases` renders with the appropriate hedge. Failure is
+ * swallowed: a lease we could not write costs a future warning, whereas a
+ * throw here costs the caller their bootstrap.
+ */
+async function claimOneshotLease(
+  activeRoot: string,
+  slug: string,
+  cwd: string,
+): Promise<void> {
+  try {
+    await acquireLease({ activeRoot, slug, cwd, mode: 'oneshot' });
+  } catch {
+    // Advisory only.
+  }
+}
+
 async function bootstrapInitiative(
   activeRoot: string,
   slug: string,
@@ -133,29 +179,43 @@ async function bootstrapInitiative(
     resolvedFrom: 'slug' | 'cwd';
     cwdHintOverride?: string;
     adhoc?: boolean;
+    detectSiblings?: boolean;
+    deferLease?: boolean;
   },
 ): Promise<OpenResult & { metadata: BootstrapMetadata }> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
-  const { frontmatter: brief } = await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
+  const { frontmatter: brief } = await readMarkdownWithSchema(
+    briefPath,
+    BriefFrontmatterSchema,
+  );
   // When we resolved via cwd, launch in the worktree the user was standing in,
   // not the brief's default worktree.
   const cwdHint = opts.cwdHintOverride ?? (await resolveCwdHint(activeRoot, slug));
-  const archivedTaskIds = await archiveStaleTasks(path.join(activeRoot, slug), {
-    retentionDays: ARCHIVE_DONE_AFTER_DAYS,
-    now: new Date(),
-  });
+  const archivedTaskIds = await archiveStaleTasks(
+    path.join(activeRoot, slug),
+    { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
+  );
+  const detectSiblings = opts.detectSiblings !== false;
   const { prompt, metadata } = await assembleBootstrap({
     activeRoot,
     slug,
     includeLiveStatus: !opts.offline,
     archivedTaskIds,
     adhoc: opts.adhoc,
+    detectSiblings,
+    ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
   });
+  // After the probe, so this session never warns about itself.
+  if (detectSiblings && !opts.deferLease) {
+    await claimOneshotLease(activeRoot, slug, cwdHint);
+  }
   return {
     slug,
     prompt,
     cwd_hint: cwdHint,
-    ...(brief.channels && brief.channels.length > 0 ? { channels: brief.channels } : {}),
+    ...(brief.channels && brief.channels.length > 0
+      ? { channels: brief.channels }
+      : {}),
     metadata,
     resolved_from: opts.resolvedFrom,
   };
@@ -189,11 +249,22 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         description:
           'Frame the prompt as ad-hoc work on the workstream (awaiting the user’s task), not a continuation of the handoff / top task.',
       },
+      no_sibling_check: {
+        long: '--no-sibling-check',
+        description:
+          'Skip the check for another session already live on this initiative, and do not record a lease for this one.',
+      },
     },
-    usage: 'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc]',
+    usage:
+      'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
+    // `--offline` is a promise that this bootstrap touches nothing outside the
+    // active root; the sibling probe is local I/O, but honoring the flag keeps
+    // the fast path a single, predictable read set.
+    const detectSiblings = !args.no_sibling_check && !args.offline;
+    const deferLease = args.lease_mode === 'defer';
 
     if (args.slug) {
       const slug = await resolveSlug(activeRoot, args.slug);
@@ -201,6 +272,8 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         offline: args.offline,
         resolvedFrom: 'slug',
         adhoc: args.adhoc,
+        detectSiblings,
+        deferLease,
       });
     }
 
@@ -217,6 +290,8 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
           resolvedFrom: 'cwd',
           cwdHintOverride: matched.worktreePath,
           adhoc: args.adhoc,
+          detectSiblings,
+          deferLease,
         });
       }
     }
