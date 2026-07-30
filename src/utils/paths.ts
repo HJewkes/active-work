@@ -57,3 +57,14 @@ export function getInitiativeDir(slug: string): string {
 export function getLockPath(slug: string): string {
   return path.join(getInitiativeDir(slug), '.lock');
 }
+
+/**
+ * Resolve the root directory for the cross-initiative Drain miner store
+ * (AW-28): `templates.yml`, `occurrences.jsonl`, and per-tool-type Drain-tree
+ * snapshots. Lives under `getActiveRoot()` so `ACTIVE_ROOT` overrides and test
+ * isolation keep working, but outside any single initiative's directory since
+ * it spans transcripts across all initiatives.
+ */
+export function getMinerRoot(): string {
+  return path.join(getActiveRoot(), '.miner');
+}
