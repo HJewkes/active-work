@@ -88,6 +88,25 @@ async function writeSession(activeRoot: string, session: SessionFixture): Promis
   return stem;
 }
 
+/** Write an open task file into the fixture initiative: id plus given fields. */
+async function writeTask(
+  activeRoot: string,
+  id: string,
+  fields: string[],
+): Promise<void> {
+  await fs.writeFile(
+    path.join(activeRoot, SAMPLE_SLUG, 'tasks', `${id}.yml`),
+    [
+      `id: ${id}`,
+      ...fields,
+      'created: 2026-05-09',
+      'updated: 2026-05-10',
+      'done_at: null',
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('assembleBootstrap', () => {
   it('returns a prompt that includes the slug and brief title', async () => {
     await withTempActiveRoot(async (activeRoot) => {
@@ -267,6 +286,89 @@ describe('assembleBootstrap', () => {
       expect(si3Idx).toBeGreaterThan(-1);
       expect(si1Idx).toBeLessThan(si3Idx);
       expect(metadata.open_task_count).toBe(2);
+    });
+  });
+
+  it('summarizes an open task with its done_when, not its notes (AW-82)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      // SI-1 carries both fields; done_when is the completion criterion, so it wins.
+      expect(prompt).toContain('done when: It compiles');
+      expect(prompt).not.toContain('notes: Some blocking note here.');
+    });
+  });
+
+  it('falls back to a bounded, marked notes excerpt without done_when (AW-82)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeTask(activeRoot, 'SI-5', [
+        'title: No completion criterion',
+        'priority: 2',
+        'status: open',
+        'notes: |',
+        '  First note line.',
+        '  Second note line.',
+        '  Third note line.',
+        '  Fourth note line.',
+      ]);
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      expect(prompt).toContain(
+        'notes: First note line. Second note line.…' +
+          `(+2 lines — see \`active-work task list ${SAMPLE_SLUG} --json\`)`,
+      );
+      expect(prompt).not.toContain('Third note line.');
+    });
+  });
+
+  it('marks a notes excerpt clipped mid-line (AW-82)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeTask(activeRoot, 'SI-6', [
+        'title: Very chatty task',
+        'priority: 2',
+        'status: open',
+        `notes: Rambling context ${'x'.repeat(400)}`,
+      ]);
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      const line = prompt
+        .split('\n')
+        .find((l) => l.includes('notes: Rambling context'));
+      expect(line).toBeDefined();
+      expect(line!.length).toBeLessThan(300);
+      expect(line).toContain(
+        `…(+1 line — see \`active-work task list ${SAMPLE_SLUG} --json\`)`,
+      );
+    });
+  });
+
+  it('renders a task with neither done_when nor notes without blanking (AW-82)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await writeTask(activeRoot, 'SI-7', [
+        'title: Bare task',
+        'priority: 2',
+        'status: open',
+      ]);
+      const { prompt } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        ...offlineOpts,
+      });
+      const line = prompt.split('\n').find((l) => l.includes('[SI-7]'));
+      expect(line).toBe('2. [SI-7] (priority 2) Bare task');
     });
   });
 
