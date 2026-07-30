@@ -40,9 +40,10 @@ function write(body: string): void {
 
 function counts(): Record<string, number> {
   const session = db
-    .prepare<[], { turn_count: number; commit_count: number; push_count: number }>(
-      'SELECT turn_count, commit_count, push_count FROM sessions',
-    )
+    .prepare<
+      [],
+      { turn_count: number; commit_count: number; push_count: number }
+    >('SELECT turn_count, commit_count, push_count FROM sessions')
     .get()!;
   const scalar = (sql: string): number =>
     (db.prepare<[], { n: number }>(sql).get() as { n: number }).n;
