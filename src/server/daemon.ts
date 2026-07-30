@@ -111,7 +111,8 @@ function listenOn(app: ReturnType<typeof buildHttpApp>, port: number): Promise<S
     // Replace the request handler: route /mcp to the MCP transport
     // directly, falling through to hono for everything else.
     const honoHandler = server.listeners('request')[0] as
-      ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
+      | ((req: IncomingMessage, res: ServerResponse) => void)
+      | undefined;
     server.removeAllListeners('request');
     server.on('request', (req: IncomingMessage, res: ServerResponse) => {
       const url = req.url ?? '';

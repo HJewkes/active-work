@@ -74,10 +74,7 @@ export type StepResult = StepOk | StepErr;
 
 /** Resolve every defaultable dep so each step has a complete bag. */
 function resolveDeps(deps: SetupDeps): Required<
-  Omit<
-    SetupDeps,
-    'yes' | 'update' | 'repoRoot' | 'cliEntry' | 'supervisorActive'
-  >
+  Omit<SetupDeps, 'yes' | 'update' | 'repoRoot' | 'cliEntry' | 'supervisorActive'>
 > & {
   yes: boolean;
   update: boolean;
@@ -281,7 +278,8 @@ async function copyTree(fs: typeof fsp, src: string, dest: string): Promise<void
   // node:fs/promises has cp() in Node 22+.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cp = (fs as any).cp as
-    undefined | ((from: string, to: string, opts: { recursive: boolean }) => Promise<void>);
+    | undefined
+    | ((from: string, to: string, opts: { recursive: boolean }) => Promise<void>);
   if (cp) {
     await cp(src, dest, { recursive: true });
     return;
@@ -509,9 +507,7 @@ export async function stepSupervision(deps: SetupDeps = {}): Promise<StepResult>
 }
 
 /** Probe the platform supervisor; null when the platform has no integration. */
-async function probeSupervisor(
-  deps: SetupDeps,
-): Promise<{ kind: string; active: boolean } | null> {
+async function probeSupervisor(deps: SetupDeps): Promise<{ kind: string; active: boolean } | null> {
   const supervisor = getSupervisor();
   if (!supervisor) return null;
   return { kind: supervisor.kind, active: await supervisor.isActive(deps) };
