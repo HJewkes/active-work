@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { readArtifactHashes } from '../../src/utils/artifact-hash.js';
 import { readYaml, writeYaml } from '../../src/utils/yaml-io.js';
 
 const Schema = z.object({
@@ -49,5 +50,23 @@ describe('yaml round-trip', () => {
     const target = path.join(dir, 'broken.yml');
     await fs.writeFile(target, 'title: : :\n  - bad\n');
     await expect(readYaml(target, Schema)).rejects.toThrow(/broken\.yml/);
+  });
+});
+
+describe('artifact hash tracking (AW-66)', () => {
+  it('records a hash when writing a tracked artifact under tasks/', async () => {
+    const tasksDir = path.join(dir, 'tasks');
+    await fs.mkdir(tasksDir);
+    const target = path.join(tasksDir, 'AW-1.yml');
+    await writeYaml(target, { title: 'hello', count: 1, tags: [] }, Schema);
+    const manifest = await readArtifactHashes(dir);
+    expect(manifest['tasks/AW-1.yml']).toBeDefined();
+  });
+
+  it('leaves no manifest side effect for an unrelated .yml path', async () => {
+    const target = path.join(dir, 'scratch.yml');
+    await writeYaml(target, { title: 'hello', count: 1, tags: [] }, Schema);
+    const manifest = await readArtifactHashes(dir);
+    expect(manifest).toEqual({});
   });
 });

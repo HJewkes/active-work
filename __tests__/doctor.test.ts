@@ -5,6 +5,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { runDoctor, type DoctorDeps, type DoctorCheck } from '../src/doctor.js';
 import * as paths from '../src/utils/paths.js';
 import { NOTE_TITLE_MAX_LENGTH } from '../src/schemas/note.js';
+import { recordArtifactHash } from '../src/utils/artifact-hash.js';
 
 function statusOf(checks: DoctorCheck[], name: string): string {
   return checks.find((c) => c.name === name)!.status;
@@ -320,6 +321,35 @@ describe('runDoctor', () => {
   it('reports task-refs ok when there are no initiatives', async () => {
     const report = await runDoctor(healthyDeps());
     expect(statusOf(report.checks, 'task-refs')).toBe('ok');
+  });
+
+  it('reports artifact-hashes ok when there are no initiatives', async () => {
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'artifact-hashes')).toBe('ok');
+  });
+
+  it('reports artifact-hashes ok when a tracked file is unchanged since its last CLI write', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(initiativeDir, { recursive: true });
+    const artifactsPath = path.join(initiativeDir, 'artifacts.yml');
+    await fs.writeFile(artifactsPath, 'items: []\n', 'utf8');
+    await recordArtifactHash(initiativeDir, 'artifacts.yml', 'items: []\n');
+
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'artifact-hashes')).toBe('ok');
+  });
+
+  it('reports artifact-hashes warn when a tracked file was hand-edited', async () => {
+    const initiativeDir = path.join(activeRoot, 'alpha');
+    await fs.mkdir(initiativeDir, { recursive: true });
+    const artifactsPath = path.join(initiativeDir, 'artifacts.yml');
+    await recordArtifactHash(initiativeDir, 'artifacts.yml', 'items: []\n');
+    await fs.writeFile(artifactsPath, 'items:\n  - hand-added\n', 'utf8');
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'artifact-hashes')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('alpha/artifacts.yml');
   });
 
   it('warns when next_steps references a task that does not exist', async () => {

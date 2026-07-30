@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import YAML from 'yaml';
 import type { ZodType } from 'zod';
+import { classifyStructuredArtifact, recordArtifactHash } from './artifact-hash.js';
 import { atomicWrite } from './fs-atomic.js';
 import { coerceDates } from './coerce-dates.js';
 
@@ -45,4 +46,6 @@ export async function writeYaml<T>(
   }
   const yaml = YAML.stringify(result.data);
   await atomicWrite(filePath, yaml);
+  const artifact = classifyStructuredArtifact(filePath);
+  if (artifact) await recordArtifactHash(artifact.initiativeDir, artifact.relPath, yaml);
 }

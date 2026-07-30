@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { readArtifactHashes } from '../../src/utils/artifact-hash.js';
 import {
   readFrontmatter,
   readRawFrontmatter,
@@ -70,5 +71,23 @@ describe('readRawFrontmatter', () => {
     const { frontmatter, body } = await readRawFrontmatter(target);
     expect(frontmatter).toEqual({});
     expect(body).toContain('# just body');
+  });
+});
+
+describe('artifact hash tracking (AW-66)', () => {
+  it('records a hash when writing brief.md', async () => {
+    const target = path.join(dir, 'brief.md');
+    await writeFrontmatter(target, { title: 'Demo', state: 'focused' as const }, 'body', Schema);
+    const manifest = await readArtifactHashes(dir);
+    expect(manifest['brief.md']).toBeDefined();
+  });
+
+  it('leaves no manifest side effect for a session-shaped path', async () => {
+    const sessionsDir = path.join(dir, 'sessions');
+    await fs.mkdir(sessionsDir);
+    const target = path.join(sessionsDir, '2026-07-30-a.md');
+    await writeFrontmatter(target, { title: 'Demo', state: 'focused' as const }, 'body', Schema);
+    const manifest = await readArtifactHashes(dir);
+    expect(manifest).toEqual({});
   });
 });
