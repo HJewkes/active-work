@@ -78,6 +78,10 @@ import mcpRestart from './mcp-restart.js';
 import mcpStatus from './mcp-status.js';
 import mcpLogs from './mcp-logs.js';
 
+// Session-signal index
+import minerRefresh from './miner-refresh.js';
+import minerStatus from './miner-status.js';
+
 // Setup / uninstall
 import setup from './setup.js';
 import uninstall from './uninstall.js';
@@ -145,6 +149,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   mcpRestart,
   mcpStatus,
   mcpLogs,
+  // session-signal index
+  minerRefresh,
+  minerStatus,
   // setup / uninstall
   setup,
   uninstall,

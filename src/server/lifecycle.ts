@@ -9,6 +9,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { getStateRoot } from '../utils/paths.js';
+import type { HealthIndexState } from './health.js';
 
 export interface DaemonMeta {
   port: number;
@@ -112,6 +113,8 @@ export interface DaemonHealth {
   pid: number;
   uptime_ms: number;
   port: number;
+  /** Absent on a daemon predating the session index, or one not indexing. */
+  index?: HealthIndexState | null;
 }
 
 const HEALTH_TIMEOUT_MS = 500;

@@ -16,6 +16,9 @@ import { getLogger } from './logger.js';
 import { createMcpServer } from './mcp.js';
 import { EventHub } from './events.js';
 import { watchTree, type TreeWatcher } from './file-watch.js';
+import { startSessionIndexWatch, type SessionIndexWatcher } from './session-index-watch.js';
+import type { HealthIndexState } from './health.js';
+import type { SchedulerStatus } from '../miner/session-index/scheduler.js';
 import {
   isProcessAlive,
   readPidFile,
@@ -141,13 +144,32 @@ function closeServer(server: ServerType): Promise<void> {
   });
 }
 
+/** Project the scheduler's snapshot onto the shape `/health` publishes. */
+function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexState | null {
+  if (!status) return null;
+  return {
+    indexing: status.running,
+    pending: status.pending,
+    lastRunAt: status.last?.startedAt ?? null,
+    lastDurationMs: status.last?.durationMs ?? null,
+    consecutiveErrors: status.consecutiveErrors,
+  };
+}
+
 export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   const log = getLogger();
   await assertNotAlreadyRunning();
 
   const port = resolvePort(options);
   const hub = new EventHub();
-  const app = buildHttpApp({ port, hub });
+  // Declared before the app so `/health` can read the watcher's state through
+  // a closure; the watcher itself only starts once the port is bound.
+  let indexWatch: SessionIndexWatcher | null = null;
+  const app = buildHttpApp({
+    port,
+    hub,
+    indexState: () => toHealthIndexState(indexWatch?.status()),
+  });
   const server = await listenOn(app, port);
   const started = new Date().toISOString();
 
@@ -168,6 +190,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
     version: DAEMON_VERSION,
     started,
   });
+  indexWatch = startSessionIndexWatch(log);
   log.info({ pid: process.pid, port, started }, 'daemon started');
 
   await new Promise<void>((resolve) => {
@@ -181,6 +204,13 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
           watcher?.close();
         } catch (err) {
           log.error({ err }, 'error closing file watcher');
+        }
+        try {
+          // Awaited, unlike the sync live-reload close: a refresh may be
+          // mid-transaction and must commit before the process exits.
+          await indexWatch?.close();
+        } catch (err) {
+          log.error({ err }, 'error closing session index watcher');
         }
         try {
           await closeServer(server);
