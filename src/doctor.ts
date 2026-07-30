@@ -18,6 +18,7 @@ import { lintHashes, listInitiativeSlugs } from './lint/index.js';
 import { loadTasks } from './lint/load-tasks.js';
 import { loadNotesFromDir } from './notes/note-file.js';
 import { NOTE_TITLE_MAX_LENGTH } from './schemas/note.js';
+import { sweepAllLeases, type LeaseSweepResult } from './sessions/lease.js';
 import {
   deriveOpenLoops,
   findSessionIssues,
@@ -61,6 +62,8 @@ export interface DoctorDeps {
   probeDaemon?: () => Promise<DaemonProbe>;
   /** Whether a supervisor already owns the daemon; null when unsupported. */
   supervisorActive?: () => Promise<{ kind: string; active: boolean } | null>;
+  /** Sweep session leases; defaults to the real `.sessions/` walk. */
+  sweepLeases?: (activeRoot: string) => Promise<LeaseSweepResult>;
 }
 
 /**
@@ -404,6 +407,29 @@ async function checkNoteTitles(deps: DoctorDeps): Promise<DoctorCheck> {
   return noteTitlesCheck(overlong);
 }
 
+/**
+ * Session leases under `<activeRoot>/.sessions/` (CC-9).
+ *
+ * Dead leases are swept by whoever next bootstraps the initiative, so this is
+ * mostly a visibility check — but a directory that cannot be pruned means the
+ * sibling warning would eventually fire on every launch forever, and that is
+ * worth naming before the operator starts ignoring the warning. Never `fail`:
+ * leases are advisory, and an install is not broken because one is stuck.
+ */
+async function checkLeases(deps: DoctorDeps): Promise<DoctorCheck> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const result = await (deps.sweepLeases ?? sweepAllLeases)(activeRoot);
+  const counts = `${result.live} live, ${result.pruned} pruned`;
+  if (result.error) {
+    return {
+      name: 'session-leases',
+      status: 'warn',
+      detail: `could not sweep ${nodePath.join(activeRoot, '.sessions')} (${result.error}) — stale leases will keep warning every bootstrap`,
+    };
+  }
+  return { name: 'session-leases', status: 'ok', detail: counts };
+}
+
 function artifactHashesCheck(drifted: string[]): DoctorCheck {
   if (drifted.length === 0) {
     return {
@@ -433,7 +459,7 @@ async function checkArtifactHashes(deps: DoctorDeps): Promise<DoctorCheck> {
 
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const [installChecks, sessionChecks, noteTitles, artifactHashes] = await Promise.all([
+  const [installChecks, sessionChecks, noteTitles, artifactHashes, leases] = await Promise.all([
     Promise.all([
       checkNode(deps),
       checkActiveRoot(deps),
@@ -445,7 +471,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
     checkSessions(deps),
     checkNoteTitles(deps),
     checkArtifactHashes(deps),
+    checkLeases(deps),
   ]);
-  const checks = [...installChecks, ...sessionChecks, noteTitles, artifactHashes];
+  const checks = [...installChecks, ...sessionChecks, noteTitles, artifactHashes, leases];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }

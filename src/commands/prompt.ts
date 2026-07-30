@@ -14,6 +14,8 @@ const ArgsSchema = z.object({
   // Frame the prompt as ad-hoc work on the workstream rather than a
   // continuation of its handoff / top task.
   adhoc: z.boolean().optional(),
+  // Skip the check for another session already live on this initiative.
+  no_sibling_check: z.boolean().optional(),
 });
 
 type PromptArgs = z.infer<typeof ArgsSchema>;
@@ -41,8 +43,14 @@ const promptCommand = defineCommand<PromptArgs, string>({
         description:
           'Frame the prompt as ad-hoc work on the workstream, awaiting the user’s task, not a continuation of the handoff / top task.',
       },
+      no_sibling_check: {
+        long: '--no-sibling-check',
+        description:
+          'Skip the check for another session already live on this initiative.',
+      },
     },
-    usage: 'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc]',
+    usage:
+      'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -62,12 +70,18 @@ const promptCommand = defineCommand<PromptArgs, string>({
       slug = matched.slug;
     }
 
-    // Deliberately no archiveStaleTasks: `prompt` is a read-only view.
+    // Deliberately no archiveStaleTasks, and deliberately no `acquireLease`:
+    // `prompt` is a read-only view. It *detects* siblings — re-seeding context
+    // mid-session is exactly when you want to know another session is live —
+    // but recording a lease would make every re-seed look like a new session
+    // to the next bootstrap.
     const { prompt } = await assembleBootstrap({
       activeRoot,
       slug,
       includeLiveStatus: !args.offline,
       adhoc: args.adhoc,
+      detectSiblings: !args.no_sibling_check && !args.offline,
+      ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
     });
     return prompt;
   },

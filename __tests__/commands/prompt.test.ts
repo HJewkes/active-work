@@ -115,3 +115,84 @@ describe('prompt command', () => {
     });
   });
 });
+
+describe('prompt command — sibling session leases (CC-9)', () => {
+  const SLUG = 'sample-initiative';
+
+  async function withoutBranches(activeRoot: string): Promise<void> {
+    await fs.writeFile(
+      path.join(activeRoot, SLUG, 'artifacts.yml'),
+      'branches: []\nstashes: []\nworktrees: []\n',
+    );
+  }
+
+  async function leaseFiles(activeRoot: string): Promise<string[]> {
+    try {
+      return await fs.readdir(path.join(activeRoot, '.sessions', SLUG));
+    } catch {
+      return [];
+    }
+  }
+
+  async function writeOneshotLease(activeRoot: string, leaseId: string): Promise<void> {
+    const dir = path.join(activeRoot, '.sessions', SLUG);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, `${leaseId}.json`),
+      JSON.stringify({
+        lease_id: leaseId,
+        slug: SLUG,
+        cwd: '/tmp/other-checkout',
+        mode: 'oneshot',
+        started: new Date().toISOString(),
+      }),
+    );
+  }
+
+  // `prompt` is a read-only view: re-seeding context mid-session must not look
+  // like a new session to the next bootstrap.
+  it('records no lease of its own', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await promptCommand.run({ slug: SLUG }, makeCtx(activeRoot));
+      expect(await leaseFiles(activeRoot)).toEqual([]);
+      await expect(fs.stat(path.join(activeRoot, '.sessions'))).rejects.toThrow();
+    });
+  });
+
+  it('still warns about a live sibling', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await writeOneshotLease(activeRoot, 'abc123');
+      const out = (await promptCommand.run({ slug: SLUG }, makeCtx(activeRoot))) as string;
+      expect(out).toContain('# Another session may already be live');
+      expect(out).toContain('/tmp/other-checkout');
+    });
+  });
+
+  it('honors AW_LEASE_ID so a session never warns about itself', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await writeOneshotLease(activeRoot, 'abc123');
+      process.env.AW_LEASE_ID = 'abc123';
+      try {
+        const out = (await promptCommand.run({ slug: SLUG }, makeCtx(activeRoot))) as string;
+        expect(out).not.toContain('# Another session may already be live');
+      } finally {
+        delete process.env.AW_LEASE_ID;
+      }
+    });
+  });
+
+  it('--no-sibling-check suppresses the warning', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withoutBranches(activeRoot);
+      await writeOneshotLease(activeRoot, 'abc123');
+      const out = (await promptCommand.run(
+        { slug: SLUG, no_sibling_check: true },
+        makeCtx(activeRoot),
+      )) as string;
+      expect(out).not.toContain('# Another session may already be live');
+    });
+  });
+});

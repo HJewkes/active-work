@@ -25,6 +25,7 @@ Commands:
   audit                         Cross-initiative summary: lists every
                                 initiative, parse failures, and worktree path
                                 conflicts.
+  context                       context commands
   discover [options]            Scan configured sources (gh PRs, local git,
                                 projects root, Claude sessions) and emit
                                 unfiltered discovery hits.
@@ -33,16 +34,23 @@ Commands:
                                 supervision.
   drop [options] <ref>          Mark a discover hit as dropped so future
                                 discovers suppress it.
-  edit <slug> <target>          Open the operator's editor on brief.md or
-                                handoff.md.
+  edit <slug> <target>          Open the operator's editor on brief.md.
   focus [options] <slug>        Promote an initiative into the focused list at a
                                 given rank.
   fold [options] <ref>          Mark a discover hit as folded into an existing
                                 initiative.
   list                          List every initiative grouped by state. Replaces
                                 the legacy INDEX.md dump.
+  loops [options] <slug>        List an initiative's open-loop ledger. Open
+                                loops are the unresolved remainder; resolved
+                                ones carry the outcome and the reason they were
+                                closed, which the bootstrap only surfaces for
+                                recent abandonments.
   mcp                           mcp commands
+  migrate [options]             Preview (or apply) the pending v2→v3 open-loops
+                                migration.
   new [options] <slug>          Scaffold a new initiative directory.
+  note                          note commands
   open [options] [slug]         Bootstrap a Claude session for an initiative.
                                 Without a slug, resolves the initiative whose
                                 worktree contains the caller's cwd; falls back
@@ -50,6 +58,11 @@ Commands:
   paths <slug>                  Print all artifact paths for an initiative.
   pause [options] <slug>        Mark an initiative as paused with required
                                 restart metadata.
+  preflight [options] <slug>    Read-only pre-wrap sweep: the uncommitted trees,
+                                unpushed branches, and
+                                worktrees/branches/stashes present in git but
+                                missing from artifacts.yml, plus the checklist a
+                                wrap must answer. Writes nothing.
   prompt [options] [slug]       Print the bootstrap prompt for an initiative —
                                 the same text `aw` feeds Claude at launch —
                                 without any side effects. Resolves the
@@ -80,11 +93,21 @@ Commands:
                                 root.
   unpause <slug>                Move a paused initiative back to backburner.
   worktree                      worktree commands
-  wrap [options] <slug>         Close out a session in one atomic step: write
-                                the session file with its open-loop ledger
-                                (next_steps / resolves) and stamp the brief's
-                                updated date. Refuses an empty ledger unless
-                                --no-loops is passed.
+  wrap [options] <slug>         The last thing a session does. Treat it as the
+                                moment the process exits: everything not
+                                persisted before wrap returns is lost, so file
+                                it first and wrap last. Every category the
+                                session can leave behind needs an explicit
+                                answer, and omitting one is an error rather than
+                                a default — open loops (--next-steps /
+                                --resolves, or --no-loops), durable notes
+                                (--notes or --no-notes), and tasks created this
+                                session (--tasks-filed or --no-tasks). Writes
+                                the session file and its ledger, files the notes
+                                under sources/notes/, records any worktrees,
+                                branches and stashes the initiative had not
+                                written down, stamps the brief's updated date,
+                                and returns a receipt of what was filed.
   help [command]                display help for command
 
 Run `active-work <command> --help` for command-specific options.
@@ -214,6 +237,22 @@ Options:
   -h, --help  display help for command
 ```
 
+## active-work context graph
+
+```
+Usage: active-work context graph [options] <id>
+
+Trace every exact-ID reference to a task id, session, or loop ref across tasks,
+sessions, and artifacts
+
+Arguments:
+  id              id (string)
+
+Options:
+  --slug <value>  Limit the scan to one initiative (default: every initiative)
+  -h, --help      display help for command
+```
+
 ## active-work discover
 
 ```
@@ -261,7 +300,7 @@ Options:
 ```
 Usage: active-work edit [options] <slug> <target>
 
-Open the operator's editor on brief.md or handoff.md.
+Open the operator's editor on brief.md.
 
 Arguments:
   slug        slug (string)
@@ -311,6 +350,23 @@ List every initiative grouped by state. Replaces the legacy INDEX.md dump.
 
 Options:
   -h, --help  display help for command
+```
+
+## active-work loops
+
+```
+Usage: active-work loops [options] <slug>
+
+List an initiative's open-loop ledger. Open loops are the unresolved remainder;
+resolved ones carry the outcome and the reason they were closed, which the
+bootstrap only surfaces for recent abandonments.
+
+Arguments:
+  slug             slug (string)
+
+Options:
+  --state <value>  'open' (default) | 'resolved' | 'abandoned' | 'all'
+  -h, --help       display help for command
 ```
 
 ## active-work mcp logs
@@ -375,6 +431,19 @@ Options:
   -h, --help  display help for command
 ```
 
+## active-work migrate
+
+```
+Usage: active-work migrate [options]
+
+Preview (or apply) the pending v2→v3 open-loops migration.
+
+Options:
+  --dry-run   Report what would change; write nothing
+  --apply     Actually run the migration
+  -h, --help  display help for command
+```
+
 ## active-work new
 
 ```
@@ -393,6 +462,43 @@ Options:
   -h, --help             display help for command
 ```
 
+## active-work note add
+
+```
+Usage: active-work note add [options] <slug>
+
+File a durable note under <slug>/sources/notes/ — a process lesson, gotcha,
+decision, or FYI that a future session needs but that no task would carry.
+Actionable work belongs in `task add` instead.
+
+Arguments:
+  slug                 slug (string)
+
+Options:
+  --kind <value>       process | gotcha | fyi | decision
+  --title <value>      Short title, at most 120 chars (slugified into the
+                       filename)
+  --body <value>       Raw markdown body
+  --body-file <value>  Path to a file containing the markdown body
+  --tags <value>       Comma-separated tags
+  -h, --help           display help for command
+```
+
+## active-work note list
+
+```
+Usage: active-work note list [options] <slug>
+
+List durable notes for an initiative, newest first.
+
+Arguments:
+  slug            slug (string)
+
+Options:
+  --kind <value>  Only notes of this kind: process | gotcha | fyi | decision
+  -h, --help      display help for command
+```
+
 ## active-work open
 
 ```
@@ -403,18 +509,21 @@ initiative whose worktree contains the caller's cwd; falls back to the picker
 list when nothing matches.
 
 Arguments:
-  slug           slug (string)
+  slug                slug (string)
 
 Options:
-  --offline      Skip the live `gh`/`git` artifact lookup; render artifacts
-                 statically.
-  --cwd <value>  Directory to resolve the initiative from when no slug is given
-                 (default: current directory).
-  --pick         Always return the picker list; skip resolving the initiative
-                 from the current directory.
-  --adhoc        Frame the prompt as ad-hoc work on the workstream (awaiting the
-                 user’s task), not a continuation of the handoff / top task.
-  -h, --help     display help for command
+  --offline           Skip the live `gh`/`git` artifact lookup; render artifacts
+                      statically.
+  --cwd <value>       Directory to resolve the initiative from when no slug is
+                      given (default: current directory).
+  --pick              Always return the picker list; skip resolving the
+                      initiative from the current directory.
+  --adhoc             Frame the prompt as ad-hoc work on the workstream
+                      (awaiting the user’s task), not a continuation of the
+                      handoff / top task.
+  --no-sibling-check  Skip the check for another session already live on this
+                      initiative, and do not record a lease for this one.
+  -h, --help          display help for command
 ```
 
 ## active-work paths
@@ -447,6 +556,24 @@ Options:
   -h, --help                 display help for command
 ```
 
+## active-work preflight
+
+```
+Usage: active-work preflight [options] <slug>
+
+Read-only pre-wrap sweep: the uncommitted trees, unpushed branches, and
+worktrees/branches/stashes present in git but missing from artifacts.yml, plus
+the checklist a wrap must answer. Writes nothing.
+
+Arguments:
+  slug           slug (string)
+
+Options:
+  --cwd <value>  Directory to include in the swept repo set (default: current
+                 directory).
+  -h, --help     display help for command
+```
+
 ## active-work prompt
 
 ```
@@ -457,16 +584,19 @@ at launch — without any side effects. Resolves the initiative from a slug or t
 caller's cwd. Use it to re-seed context in a running session.
 
 Arguments:
-  slug           slug (string)
+  slug                slug (string)
 
 Options:
-  --offline      Skip the live `gh`/`git` artifact lookup; render artifacts
-                 statically.
-  --cwd <value>  Directory to resolve the initiative from when no slug is given
-                 (default: current directory).
-  --adhoc        Frame the prompt as ad-hoc work on the workstream, awaiting the
-                 user’s task, not a continuation of the handoff / top task.
-  -h, --help     display help for command
+  --offline           Skip the live `gh`/`git` artifact lookup; render artifacts
+                      statically.
+  --cwd <value>       Directory to resolve the initiative from when no slug is
+                      given (default: current directory).
+  --adhoc             Frame the prompt as ad-hoc work on the workstream,
+                      awaiting the user’s task, not a continuation of the
+                      handoff / top task.
+  --no-sibling-check  Skip the check for another session already live on this
+                      initiative.
+  -h, --help          display help for command
 ```
 
 ## active-work rename
@@ -775,8 +905,10 @@ Options:
 ```
 Usage: active-work worktree set [options] <slug> <path>
 
-Add or update a worktree entry on an existing initiative. A lone worktree is
-made default automatically; use --default to promote an added one.
+Add or update a registered worktree on an existing initiative. A lone worktree
+is made default automatically; use --default to promote an added one. Registered
+worktrees live in artifacts.yml alongside the ones wrap sweeps, and are what
+`aw` resolves a cwd against.
 
 Arguments:
   slug             slug (string)
@@ -810,29 +942,45 @@ Options:
 ```
 Usage: active-work wrap [options] <slug>
 
-Close out a session in one atomic step: write the session file with its
-open-loop ledger (next_steps / resolves) and stamp the brief's updated date.
-Refuses an empty ledger unless --no-loops is passed.
+The last thing a session does. Treat it as the moment the process exits:
+everything not persisted before wrap returns is lost, so file it first and wrap
+last. Every category the session can leave behind needs an explicit answer, and
+omitting one is an error rather than a default — open loops (--next-steps /
+--resolves, or --no-loops), durable notes (--notes or --no-notes), and tasks
+created this session (--tasks-filed or --no-tasks). Writes the session file and
+its ledger, files the notes under sources/notes/, records any worktrees,
+branches and stashes the initiative had not written down, stamps the brief's
+updated date, and returns a receipt of what was filed.
 
 Arguments:
-  slug                  slug (string)
+  slug                   slug (string)
 
 Options:
-  --session-id <value>  Claude session identifier
-  --started <value>     ISO 8601 session start timestamp
-  --ended <value>       ISO 8601 session end timestamp
-  --track <value>       'canonical' (mainline thread) | 'sidecar'
-                        (folded/derived) | 'adhoc' (parallel ad-hoc work)
-                        (default: canonical)
-  --body <value>        Raw markdown body (session narrative)
-  --body-file <value>   Path to a file containing the markdown body
-  --next-steps <value>  JSON array of loops this session opens:
-                        [{"id","text","kind":"task|pr|prose","ref"?}]
-  --resolves <value>    JSON array of loops this session closes:
-                        [{"ref":"<session-file-stem>#<id>","outcome":"done|abandoned","note"?}]
-  --no-loops            Assert that this session leaves nothing hanging. Records
-                        no_loops: true so a deliberate empty ledger is
-                        distinguishable from an unfiled one. Mutually exclusive
-                        with --next-steps / --resolves.
-  -h, --help            display help for command
+  --session-id <value>   Claude session identifier
+  --started <value>      ISO 8601 session start timestamp
+  --ended <value>        ISO 8601 session end timestamp
+  --track <value>        'canonical' (mainline thread) | 'sidecar'
+                         (folded/derived) | 'adhoc' (parallel ad-hoc work)
+                         (default: canonical)
+  --body <value>         Raw markdown body (session narrative)
+  --body-file <value>    Path to a file containing the markdown body
+  --next-steps <value>   JSON array of loops this session opens:
+                         [{"id","text","kind":"task|pr|prose","ref"?}]
+  --resolves <value>     JSON array of loops this session closes:
+                         [{"ref":"<session-file-stem>#<id>","outcome":"done|abandoned","note"?}]
+  --no-loops             Assert that this session leaves nothing hanging.
+                         Records no_loops: true so a deliberate empty ledger is
+                         distinguishable from an unfiled one. Mutually exclusive
+                         with --next-steps / --resolves.
+  --notes <value>        JSON array of durable notes to file under
+                         sources/notes/:
+                         [{"kind":"process|gotcha|fyi|decision","title","body","tags"?}]
+  --no-notes             Assert that this session produced no durable knowledge
+                         worth keeping. Mutually exclusive with --notes.
+  --tasks-filed <value>  JSON array of task ids created during this session,
+                         e.g. ["AW-66","AW-67"]. Each must already exist in the
+                         initiative.
+  --no-tasks             Assert that this session filed no tasks. Mutually
+                         exclusive with --tasks-filed.
+  -h, --help             display help for command
 ```
