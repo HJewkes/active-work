@@ -57,6 +57,100 @@ interface LineContext {
 
 const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit']);
 
+type SpanField = 'prompt' | 'assistant_response' | 'tool_input' | 'tool_result';
+
+/**
+ * Per-span cap on indexed text. A pasted build log or a 2MB file read would
+ * otherwise dominate the FTS index for no retrieval benefit; the locator still
+ * points at the full record on disk.
+ */
+export const SPAN_TEXT_CAP = 16 * 1024;
+
+/**
+ * Collect the string leaves of an already-parsed tool input.
+ *
+ * Deliberately not `JSON.stringify`: indexing the raw JSON would fill the FTS
+ * index with field names (`file_path`, `old_string`, …) that match every
+ * document and discriminate nothing. The leaves are the actual commands, paths
+ * and prompts a search is looking for.
+ */
+function stringLeaves(value: unknown, out: string[], depth = 0): void {
+  if (depth > 6 || out.length > 64) return;
+  if (typeof value === 'string') {
+    if (value.length > 0) out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) stringLeaves(item, out, depth + 1);
+    return;
+  }
+  const object = asObject(value);
+  if (object) for (const item of Object.values(object)) stringLeaves(item, out, depth + 1);
+}
+
+/** A `tool_result` block's content is either a bare string or text blocks. */
+function toolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((block) => str(asObject(block), 'text') ?? '')
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Split `output_tokens` into the share attributable to extended thinking.
+ *
+ * The API reports one `output_tokens` figure covering thinking, text and
+ * tool_use alike, so this is necessarily an estimate: the character share of
+ * the thinking blocks against all generated content on the same line. Derived
+ * here rather than as a rollup because it is a *stateless per-line* function of
+ * data that is all on this JSONL record — so it survives any chunk boundary and
+ * an incremental pass converges with a full rebuild by construction.
+ */
+function thinkingTokens(message: Json | null, outputTokens: number): number {
+  if (outputTokens <= 0) return 0;
+  let thinking = 0;
+  let total = 0;
+  for (const block of blocks(message)) {
+    const leaves: string[] = [];
+    if (block.type === 'thinking') stringLeaves(block.thinking, leaves);
+    else if (block.type === 'text') stringLeaves(block.text, leaves);
+    else if (block.type === 'tool_use') stringLeaves(block.input, leaves);
+    else continue;
+    const length = leaves.reduce((sum, part) => sum + part.length, 0);
+    total += length;
+    if (block.type === 'thinking') thinking += length;
+  }
+  if (total === 0 || thinking === 0) return 0;
+  return Math.min(outputTokens, Math.round((outputTokens * thinking) / total));
+}
+
+/**
+ * Project the prose out of a parsed line for the FTS index.
+ *
+ * Done here, at extraction time, because the line is already parsed — the
+ * alternative (re-reading the byte range at write time) would mean a second
+ * pass over every transcript. The writer tokenizes this and discards it; it is
+ * never stored, which is what keeps `searchable_spans` a pure locator table.
+ */
+function searchText(message: Json | null, field: SpanField): string {
+  const content = message?.content;
+  if (typeof content === 'string') return content.slice(0, SPAN_TEXT_CAP);
+
+  const parts: string[] = [];
+  for (const block of blocks(message)) {
+    if (field === 'tool_input') {
+      if (block.type === 'tool_use') stringLeaves(block.input, parts);
+    } else if (field === 'tool_result') {
+      if (block.type === 'tool_result') parts.push(toolResultText(block.content));
+    } else if (block.type === 'text') {
+      parts.push(str(block, 'text') ?? '');
+    }
+  }
+  return parts.filter(Boolean).join('\n').slice(0, SPAN_TEXT_CAP);
+}
+
 /**
  * Translates one transcript JSONL line into typed index rows.
  *
@@ -131,15 +225,13 @@ export class LineHandler {
   }
 
   /** Line-granular span: the locator addresses the whole JSONL record. */
-  private span(
-    ctx: LineContext,
-    field: 'prompt' | 'assistant_response' | 'tool_input' | 'tool_result',
-  ): void {
+  private span(ctx: LineContext, field: SpanField): void {
     this.acc.spans.push({
       field,
       factByteOffset: ctx.loc.byteOffset,
       byteOffset: ctx.loc.byteOffset,
       byteLength: ctx.loc.byteLength,
+      text: searchText(asObject(ctx.line.message), field),
     });
   }
 
@@ -327,14 +419,15 @@ export class LineHandler {
     const usage = asObject(message?.usage);
     const model = str(message, 'model');
     if (!usage || !model) return;
+    const outputTokens = int(usage, 'output_tokens');
     this.acc.addUsage({
       sessionId: ctx.sessionId,
       model,
       inputTokens: int(usage, 'input_tokens'),
-      outputTokens: int(usage, 'output_tokens'),
+      outputTokens,
       cacheReadTokens: int(usage, 'cache_read_input_tokens'),
       cacheCreationTokens: int(usage, 'cache_creation_input_tokens'),
-      thinkingTokens: 0,
+      thinkingTokens: thinkingTokens(message, outputTokens),
       requestCount: 1,
     });
   }

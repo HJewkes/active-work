@@ -81,7 +81,9 @@ describe('extractTranscript', () => {
         outputTokens: 180,
         cacheReadTokens: 45,
         cacheCreationTokens: 18,
-        thinkingTokens: 0,
+        // The one thinking block ('hmm', 3 chars) against that line's 8 chars
+        // of generated content: round(20 * 3/8).
+        thinkingTokens: 8,
         requestCount: 9,
       },
     ]);
