@@ -56,7 +56,7 @@ if (args.full) resetIndex(db);
 const transcripts = (await discoverTranscripts()).slice(0, args.limit);
 const outcomes = [];
 for (const transcript of transcripts) {
-  outcomes.push(await indexTranscript(db, transcript));
+  outcomes.push(await indexTranscript(db, transcript, { verifyContentHash: args.full }));
 }
 
 const summary = summarize(outcomes);

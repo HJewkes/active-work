@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,7 +71,7 @@ describe('indexTranscript', () => {
     await indexTranscript(db, bad);
 
     writeFileSync(bad.absolutePath, renderTranscript(FIXTURE_LINES), 'utf8');
-    await indexTranscript(db, bad);
+    await indexTranscript(db, bad, { verifyContentHash: true });
 
     const row = db
       .prepare<
@@ -96,4 +96,57 @@ describe('indexTranscript', () => {
       n: FIXTURE_LINES.length,
     });
   });
+
+  it('skips reading a transcript whose size and mtime are unchanged', async () => {
+    const good = write('good.jsonl', renderTranscript(FIXTURE_LINES));
+    await indexTranscript(db, good);
+    const before = statSync(good.absolutePath);
+
+    // Same byte length, different bytes, restored mtime: only a pass that
+    // actually re-reads the file could notice the change.
+    const rewritten = renderTranscript(FIXTURE_LINES).replace('please build it', 'please build IT');
+    writeFileSync(good.absolutePath, rewritten, 'utf8');
+    utimesSync(good.absolutePath, before.atime, before.mtime);
+
+    expect(await indexTranscript(db, good)).toMatchObject({ status: 'unchanged', factsAdded: 0 });
+  });
+
+  it('honours verifyContentHash by re-reading a transcript the fast path would skip', async () => {
+    const good = write('good.jsonl', renderTranscript(FIXTURE_LINES));
+    await indexTranscript(db, good, { verifyContentHash: true });
+    const first = hashOf(good.displayPath);
+
+    const before = statSync(good.absolutePath);
+    writeFileSync(
+      good.absolutePath,
+      renderTranscript(FIXTURE_LINES).replace('please build it', 'please build IT'),
+      'utf8',
+    );
+    utimesSync(good.absolutePath, before.atime, before.mtime);
+    await indexTranscript(db, good, { verifyContentHash: true });
+
+    expect(hashOf(good.displayPath)).not.toBe(first);
+  });
+
+  it('ingests a transcript in chunks without changing the result', async () => {
+    const good = write('good.jsonl', renderTranscript(FIXTURE_LINES));
+
+    const outcome = await indexTranscript(db, good, { chunkBytes: 64 });
+
+    expect(outcome).toMatchObject({ status: 'indexed', factsAdded: FIXTURE_LINES.length });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM facts').get()).toEqual({
+      n: FIXTURE_LINES.length,
+    });
+  });
 });
+
+function hashOf(displayPath: string): string | null {
+  return (
+    db
+      .prepare<
+        [string],
+        { content_hash: string | null }
+      >('SELECT content_hash FROM transcripts WHERE path = ?')
+      .get(displayPath)?.content_hash ?? null
+  );
+}
