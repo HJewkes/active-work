@@ -126,6 +126,7 @@ The most-used surface, grouped by purpose. Run `active-work <command> --help` fo
 | Daemon | `active-work mcp stop` | Stop the daemon |
 | Discover | `active-work discover` | Scan gh / git / projects / Claude sessions for untracked work |
 | Discover | `active-work audit` | Cross-initiative health summary |
+| Discover | `active-work context graph <id> [--slug S]` | Trace every exact-ID reference to a task id, session, or loop ref |
 
 ## Configuration
 

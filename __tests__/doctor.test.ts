@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { runDoctor, type DoctorDeps, type DoctorCheck } from '../src/doctor.js';
 import * as paths from '../src/utils/paths.js';
+import { NOTE_TITLE_MAX_LENGTH } from '../src/schemas/note.js';
 
 function statusOf(checks: DoctorCheck[], name: string): string {
   return checks.find((c) => c.name === name)!.status;
@@ -254,6 +255,36 @@ describe('runDoctor', () => {
     expect(check.status).toBe('warn');
     expect(check.detail).toContain('re-file the resolve from a later session');
     expect(check.detail).not.toContain('no such next_step');
+  });
+
+  it('flags a pre-existing note whose title exceeds the bound', async () => {
+    const notesDir = path.join(activeRoot, 'alpha', 'sources', 'notes');
+    await fs.mkdir(notesDir, { recursive: true });
+    const longTitle = 'x'.repeat(NOTE_TITLE_MAX_LENGTH + 1);
+    await fs.writeFile(
+      path.join(notesDir, '2026-01-02-long.md'),
+      `---\nkind: fyi\ntitle: ${longTitle}\ncreated: '2026-01-02'\n---\n\nbody\n`,
+      'utf8',
+    );
+
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'note-titles')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('alpha/sources/notes/2026-01-02-long.md');
+    expect(check.detail).toContain(`${NOTE_TITLE_MAX_LENGTH + 1} chars`);
+  });
+
+  it('reports note-titles ok when every note is within the bound', async () => {
+    const notesDir = path.join(activeRoot, 'alpha', 'sources', 'notes');
+    await fs.mkdir(notesDir, { recursive: true });
+    await fs.writeFile(
+      path.join(notesDir, '2026-01-02-short.md'),
+      "---\nkind: fyi\ntitle: Short\ncreated: '2026-01-02'\n---\n\nbody\n",
+      'utf8',
+    );
+
+    const report = await runDoctor(healthyDeps());
+    expect(statusOf(report.checks, 'note-titles')).toBe('ok');
   });
 
   it('reports session files that do not parse', async () => {

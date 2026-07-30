@@ -49,9 +49,11 @@ import artifactNote from './artifact-note.js';
 import artifactPrune from './artifact-prune.js';
 import artifactStatus from './artifact-status.js';
 import sourceAdd from './source-add.js';
+import sourceList from './source-list.js';
 
 // Worktree / cross-initiative reads
 import audit from './audit.js';
+import contextGraph from './context-graph.js';
 import list from './list.js';
 import worktreeSet from './worktree-set.js';
 import worktreeSetDefault from './worktree-set-default.js';
@@ -114,6 +116,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   noteList,
   // sources / artifacts
   sourceAdd,
+  sourceList,
   artifactAddBranch,
   artifactAddStash,
   artifactList,
@@ -125,6 +128,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   worktreeSetDefault,
   audit,
   list,
+  contextGraph,
   // discover / triage
   discover,
   fold,
