@@ -27,8 +27,7 @@ const ENDED = '2026-05-12T10:30:00Z';
 const sampleRepo = (): string => expandTilde('~/code/sample');
 
 /** No repo answers git, so the sweep finds nothing to record. */
-const NO_GIT: CommandRunner = () =>
-  Promise.resolve({ code: 1, stdout: '', stderr: '' });
+const NO_GIT: CommandRunner = () => Promise.resolve({ code: 1, stdout: '', stderr: '' });
 
 /**
  * A `~/code/sample` worktree on an unrecorded branch, dirty and two commits
@@ -85,10 +84,7 @@ function baseArgs(overrides: Record<string, unknown> = {}) {
 }
 
 async function readArtifacts(activeRoot: string): Promise<Record<string, unknown>> {
-  const raw = await fs.readFile(
-    path.join(activeRoot, SLUG, 'artifacts.yml'),
-    'utf8',
-  );
+  const raw = await fs.readFile(path.join(activeRoot, SLUG, 'artifacts.yml'), 'utf8');
   return YAML.parse(raw) as Record<string, unknown>;
 }
 
@@ -157,9 +153,7 @@ describe('wrap', () => {
       const raw = await fs.readFile(result.path, 'utf8');
       expect(raw).toContain('what happened');
 
-      const brief = await readFrontmatter(
-        path.join(activeRoot, SLUG, 'brief.md'),
-      );
+      const brief = await readFrontmatter(path.join(activeRoot, SLUG, 'brief.md'));
       expect(brief.updated).toBe(today());
     });
   });
@@ -171,9 +165,7 @@ describe('wrap', () => {
         baseArgs({
           session_id: 'sess-json',
           next_steps: JSON.stringify(NEXT_STEPS),
-          resolves: JSON.stringify([
-            { ref: priorRef, outcome: 'abandoned', note: 'superseded' },
-          ]),
+          resolves: JSON.stringify([{ ref: priorRef, outcome: 'abandoned', note: 'superseded' }]),
         }),
         makeCtx(activeRoot),
       );
@@ -204,10 +196,7 @@ describe('wrap', () => {
 
   it('records no_loops: true so a deliberate empty ledger is distinguishable', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const result = await wrap.run(
-        baseArgs({ no_loops: true }),
-        makeCtx(activeRoot),
-      );
+      const result = await wrap.run(baseArgs({ no_loops: true }), makeCtx(activeRoot));
       const frontmatter = await readFrontmatter(result.path);
       expect(frontmatter.next_steps).toEqual([]);
       expect(frontmatter.resolves).toEqual([]);
@@ -288,9 +277,7 @@ describe('wrap', () => {
     await withTempActiveRoot(async (activeRoot) => {
       const sessionsDir = path.join(activeRoot, SLUG, 'sessions');
       const before = await fs.readdir(sessionsDir);
-      const briefBefore = await readFrontmatter(
-        path.join(activeRoot, SLUG, 'brief.md'),
-      );
+      const briefBefore = await readFrontmatter(path.join(activeRoot, SLUG, 'brief.md'));
 
       await expect(
         wrap.run(
@@ -304,9 +291,7 @@ describe('wrap', () => {
       ).rejects.toThrow(/Frontmatter validation failed/);
 
       expect(await fs.readdir(sessionsDir)).toEqual(before);
-      const briefAfter = await readFrontmatter(
-        path.join(activeRoot, SLUG, 'brief.md'),
-      );
+      const briefAfter = await readFrontmatter(path.join(activeRoot, SLUG, 'brief.md'));
       expect(briefAfter.updated).toBe(briefBefore.updated);
     });
   });
@@ -320,10 +305,7 @@ describe('wrap', () => {
       const before = await fs.readdir(sessionsDir);
 
       await expect(
-        wrap.run(
-          baseArgs({ session_id: 'sess-rollback', no_loops: true }),
-          makeCtx(activeRoot),
-        ),
+        wrap.run(baseArgs({ session_id: 'sess-rollback', no_loops: true }), makeCtx(activeRoot)),
       ).rejects.toThrow(/Frontmatter validation failed/);
 
       expect(await fs.readdir(sessionsDir)).toEqual(before);
@@ -363,32 +345,27 @@ describe('wrap', () => {
   // AW-46: `resolves.ref` is `<stem>#<id>`, so an id or session_id carrying `#`,
   // whitespace or `/` yields a loop that no valid resolve can ever close.
   describe('id character sets (AW-46)', () => {
-    it.each(['step 1', 'a#b', 'a/b', 'with\ttab'])(
-      'rejects a next_steps id of %j',
-      async (id) => {
-        const steps = [{ id, text: 'x', kind: 'prose' }];
-        // Structured (MCP) callers are rejected at parse...
-        expect(() => baseArgs({ next_steps: steps })).toThrow(
-          /next_steps id must not contain/,
-        );
-        // ...and the CLI's JSON-string path writes nothing either.
-        await withTempActiveRoot(async (activeRoot) => {
-          const sessionsDir = path.join(activeRoot, SLUG, 'sessions');
-          const before = await fs.readdir(sessionsDir);
+    it.each(['step 1', 'a#b', 'a/b', 'with\ttab'])('rejects a next_steps id of %j', async (id) => {
+      const steps = [{ id, text: 'x', kind: 'prose' }];
+      // Structured (MCP) callers are rejected at parse...
+      expect(() => baseArgs({ next_steps: steps })).toThrow(/next_steps id must not contain/);
+      // ...and the CLI's JSON-string path writes nothing either.
+      await withTempActiveRoot(async (activeRoot) => {
+        const sessionsDir = path.join(activeRoot, SLUG, 'sessions');
+        const before = await fs.readdir(sessionsDir);
 
-          await expect(
-            wrap.run(
-              baseArgs({
-                session_id: 'sess-badid',
-                next_steps: JSON.stringify(steps),
-              }),
-              makeCtx(activeRoot),
-            ),
-          ).rejects.toThrow(/next_steps id must not contain/);
-          expect(await fs.readdir(sessionsDir)).toEqual(before);
-        });
-      },
-    );
+        await expect(
+          wrap.run(
+            baseArgs({
+              session_id: 'sess-badid',
+              next_steps: JSON.stringify(steps),
+            }),
+            makeCtx(activeRoot),
+          ),
+        ).rejects.toThrow(/next_steps id must not contain/);
+        expect(await fs.readdir(sessionsDir)).toEqual(before);
+      });
+    });
 
     it.each(['sess 1', 'a#b', '../escape', 'nested/id'])(
       'rejects a session_id of %j',
@@ -408,9 +385,7 @@ describe('wrap', () => {
           }),
           makeCtx(activeRoot),
         );
-        expect(result.filename).toBe(
-          '2026-05-12-0900-2026-07-26-book1-m4b-packaging.md',
-        );
+        expect(result.filename).toBe('2026-05-12-0900-2026-07-26-book1-m4b-packaging.md');
       });
     });
   });
@@ -441,9 +416,7 @@ describe('wrap', () => {
     });
 
     it('rejects when both --body and --body-file are provided', () => {
-      expect(() => baseArgs({ body_file: '/tmp/whatever.md' })).toThrow(
-        /mutually exclusive/,
-      );
+      expect(() => baseArgs({ body_file: '/tmp/whatever.md' })).toThrow(/mutually exclusive/);
     });
 
     it('rejects an invalid track value', () => {
@@ -480,18 +453,11 @@ describe('wrap', () => {
           }),
           ctx,
         );
-        expect(result.resolves_rejected).toEqual([
-          { ref: 'no-such-stem#n1', kind: 'missing' },
-        ]);
+        expect(result.resolves_rejected).toEqual([{ ref: 'no-such-stem#n1', kind: 'missing' }]);
         expect(ctx.warnings.join('\n')).toMatch(/no-such-stem#n1 \(missing\)/);
 
         // Write-and-report: the narrative survives the bad ref.
-        const written = path.join(
-          activeRoot,
-          SLUG,
-          'sessions',
-          '2026-05-12-0900-sess-missing.md',
-        );
+        const written = path.join(activeRoot, SLUG, 'sessions', '2026-05-12-0900-sess-missing.md');
         expect(await readFrontmatter(written)).toMatchObject({
           session_id: 'sess-missing',
         });
@@ -514,9 +480,7 @@ describe('wrap', () => {
           }),
           ctx,
         );
-        expect(result.resolves_rejected).toEqual([
-          { ref: tiedRef, kind: 'not-prior' },
-        ]);
+        expect(result.resolves_rejected).toEqual([{ ref: tiedRef, kind: 'not-prior' }]);
         expect(ctx.warnings.join('\n')).toMatch(/\(not-prior\)/);
       });
     });
@@ -535,9 +499,7 @@ describe('wrap', () => {
         expect(result.resolves_rejected).toEqual([
           { ref: '2026-05-12-0900-sess-self#n1', kind: 'self' },
         ]);
-        expect(ctx.warnings.join('\n')).toMatch(
-          /2026-05-12-0900-sess-self#n1 \(self\)/,
-        );
+        expect(ctx.warnings.join('\n')).toMatch(/2026-05-12-0900-sess-self#n1 \(self\)/);
       });
     });
 
@@ -557,9 +519,7 @@ describe('wrap', () => {
         );
         expect(result.closed).toEqual({ resolves_applied: 1 });
         expect(result.ready_to_end).toBe(false);
-        expect(ctx.warnings.join('\n')).toMatch(
-          /1 of 2 --resolves entries closed no loop/,
-        );
+        expect(ctx.warnings.join('\n')).toMatch(/1 of 2 --resolves entries closed no loop/);
       });
     });
 
@@ -727,9 +687,7 @@ describe('wrap', () => {
         });
         const raw = await fs.readFile(path.join(notesDir, files[0]!), 'utf8');
         expect(raw).toContain('Nesting a second lock');
-        expect(result.files_updated).toContain(
-          path.join('sources', 'notes', files[0]!),
-        );
+        expect(result.files_updated).toContain(path.join('sources', 'notes', files[0]!));
       });
     });
 
@@ -775,14 +733,14 @@ describe('wrap', () => {
             stderr: '',
           });
         }
-        return GIT_WITH_WORK(bin, args[1] === LINKED ? [args[0]!, sampleRepo(), ...args.slice(2)] : args);
+        return GIT_WITH_WORK(
+          bin,
+          args[1] === LINKED ? [args[0]!, sampleRepo(), ...args.slice(2)] : args,
+        );
       });
       await withTempActiveRoot(async (activeRoot) => {
         const ctx = makeCtx(activeRoot);
-        const result = await wrap.run(
-          baseArgs({ session_id: 'sess-sweep', no_loops: true }),
-          ctx,
-        );
+        const result = await wrap.run(baseArgs({ session_id: 'sess-sweep', no_loops: true }), ctx);
 
         expect(result.filed).toMatchObject({ worktrees: 1, branches: 1, stashes: 1 });
         expect(result.files_updated).toContain('artifacts.yml');
@@ -828,10 +786,7 @@ describe('wrap', () => {
     it('records nothing and refuses nothing when there is nothing to record', async () => {
       await withTempActiveRoot(async (activeRoot) => {
         const ctx = makeCtx(activeRoot);
-        const result = await wrap.run(
-          baseArgs({ session_id: 'sess-clean', no_loops: true }),
-          ctx,
-        );
+        const result = await wrap.run(baseArgs({ session_id: 'sess-clean', no_loops: true }), ctx);
         expect(result.filed).toMatchObject({ worktrees: 0, branches: 0, stashes: 0 });
         expect(result.files_updated).toEqual(['brief.md']);
         expect(ctx.warnings).toEqual([]);
@@ -902,9 +857,7 @@ describe('wrap', () => {
       // one result the caller needed, leaving the rejection readable only by
       // parsing an error string.
       expect(result.ready_to_end).toBe(false);
-      expect(result.resolves_rejected).toEqual([
-        { ref: 'no-such-stem#n1', kind: 'missing' },
-      ]);
+      expect(result.resolves_rejected).toEqual([{ ref: 'no-such-stem#n1', kind: 'missing' }]);
       expect(result.closed).toEqual({ resolves_applied: 0 });
       expect(ctx.warnings.join('\n')).toMatch(/closed no loop/);
     });
@@ -913,21 +866,12 @@ describe('wrap', () => {
   it('serializes concurrent wraps on the initiative lock', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const results = await Promise.all([
-        wrap.run(
-          baseArgs({ session_id: 'race', no_loops: true }),
-          makeCtx(activeRoot),
-        ),
-        wrap.run(
-          baseArgs({ session_id: 'race', no_loops: true }),
-          makeCtx(activeRoot),
-        ),
+        wrap.run(baseArgs({ session_id: 'race', no_loops: true }), makeCtx(activeRoot)),
+        wrap.run(baseArgs({ session_id: 'race', no_loops: true }), makeCtx(activeRoot)),
       ]);
 
       const filenames = results.map((r) => r.filename).sort();
-      expect(filenames).toEqual([
-        '2026-05-12-0900-race-1.md',
-        '2026-05-12-0900-race.md',
-      ]);
+      expect(filenames).toEqual(['2026-05-12-0900-race-1.md', '2026-05-12-0900-race.md']);
     });
   });
 });

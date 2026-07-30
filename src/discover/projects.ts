@@ -17,9 +17,7 @@ export interface DiscoverProjectsResult {
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const RECENT_THRESHOLD_DAYS = 30;
 
-export async function discoverProjects(
-  projectsRoot: string,
-): Promise<DiscoverProjectsResult> {
+export async function discoverProjects(projectsRoot: string): Promise<DiscoverProjectsResult> {
   const hits: DiscoveryHit[] = [];
   const errors: DiscoverySourceError[] = [];
 
@@ -57,9 +55,7 @@ export async function discoverProjects(
     }
     const ageDays = (now - mtimeMs) / MS_PER_DAY;
     const recency =
-      ageDays <= RECENT_THRESHOLD_DAYS
-        ? `modified <${RECENT_THRESHOLD_DAYS}d ago`
-        : 'older';
+      ageDays <= RECENT_THRESHOLD_DAYS ? `modified <${RECENT_THRESHOLD_DAYS}d ago` : 'older';
     hits.push({
       source: 'projects',
       ref: entry.name,

@@ -35,11 +35,7 @@ export async function readYaml<T>(filePath: string, schema: ZodType<T>): Promise
  * Validation runs before any disk write so an invalid object never lands on
  * disk.
  */
-export async function writeYaml<T>(
-  filePath: string,
-  data: T,
-  schema: ZodType<T>,
-): Promise<void> {
+export async function writeYaml<T>(filePath: string, data: T, schema: ZodType<T>): Promise<void> {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new Error(`Schema validation failed for ${filePath}: ${result.error.message}`);

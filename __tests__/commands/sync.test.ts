@@ -134,9 +134,7 @@ describe('sync', () => {
   it('fails on a dirty tree when --require-clean is set', async () => {
     const { runner, calls } = scenario({ dirty: true });
     setGitRunner(runner);
-    await expect(syncCmd.run({ require_clean: true }, ctx)).rejects.toBeInstanceOf(
-      UsageError,
-    );
+    await expect(syncCmd.run({ require_clean: true }, ctx)).rejects.toBeInstanceOf(UsageError);
     expect(calls.some((c) => c[0] === 'commit')).toBe(false);
   });
 

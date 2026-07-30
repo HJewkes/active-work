@@ -89,11 +89,7 @@ async function writeSession(activeRoot: string, session: SessionFixture): Promis
 }
 
 /** Write an open task file into the fixture initiative: id plus given fields. */
-async function writeTask(
-  activeRoot: string,
-  id: string,
-  fields: string[],
-): Promise<void> {
+async function writeTask(activeRoot: string, id: string, fields: string[]): Promise<void> {
   await fs.writeFile(
     path.join(activeRoot, SAMPLE_SLUG, 'tasks', `${id}.yml`),
     [
@@ -343,24 +339,16 @@ describe('assembleBootstrap', () => {
         now: FIXTURE_NOW,
         ...offlineOpts,
       });
-      const line = prompt
-        .split('\n')
-        .find((l) => l.includes('notes: Rambling context'));
+      const line = prompt.split('\n').find((l) => l.includes('notes: Rambling context'));
       expect(line).toBeDefined();
       expect(line!.length).toBeLessThan(300);
-      expect(line).toContain(
-        `…(+1 line — see \`active-work task list ${SAMPLE_SLUG} --json\`)`,
-      );
+      expect(line).toContain(`…(+1 line — see \`active-work task list ${SAMPLE_SLUG} --json\`)`);
     });
   });
 
   it('renders a task with neither done_when nor notes without blanking (AW-82)', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      await writeTask(activeRoot, 'SI-7', [
-        'title: Bare task',
-        'priority: 2',
-        'status: open',
-      ]);
+      await writeTask(activeRoot, 'SI-7', ['title: Bare task', 'priority: 2', 'status: open']);
       const { prompt } = await assembleBootstrap({
         activeRoot,
         slug: SAMPLE_SLUG,

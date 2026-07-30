@@ -7,8 +7,7 @@ import pc from 'picocolors';
  * runners), every helper returns its input unchanged so JSON and human
  * output stay free of escape codes when they would only add noise.
  */
-const enabled =
-  !('NO_COLOR' in process.env) && process.stdout.isTTY === true;
+const enabled = !('NO_COLOR' in process.env) && process.stdout.isTTY === true;
 
 const identity = (s: string): string => s;
 

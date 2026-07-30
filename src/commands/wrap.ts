@@ -11,17 +11,10 @@ import {
   type SessionResolve,
 } from '../schemas/session.js';
 import { writeSessionFile } from '../sessions/session-file.js';
-import {
-  findDanglingResolves,
-  type DanglingKind,
-} from '../sessions/open-loops.js';
+import { findDanglingResolves, type DanglingKind } from '../sessions/open-loops.js';
 import { writeNoteFile } from '../notes/note-file.js';
 import { loadTasks } from '../lint/load-tasks.js';
-import {
-  recordUnrecorded,
-  sweepInitiative,
-  type SweepResult,
-} from '../wrap/sweep.js';
+import { recordUnrecorded, sweepInitiative, type SweepResult } from '../wrap/sweep.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
@@ -125,11 +118,7 @@ interface Ledger {
   resolves: SessionResolve[];
 }
 
-function parseLedger<T>(
-  raw: string | T[] | undefined,
-  schema: z.ZodType<T[]>,
-  field: string,
-): T[] {
+function parseLedger<T>(raw: string | T[] | undefined, schema: z.ZodType<T[]>, field: string): T[] {
   if (raw === undefined) return [];
   if (Array.isArray(raw)) return schema.parse(raw);
   let json: unknown;
@@ -191,12 +180,7 @@ function requireAnswer(
   if (!filled) throw new ValidationError(messages.empty);
 }
 
-function requireAnswers(
-  args: Args,
-  ledger: Ledger,
-  notes: NoteInput[],
-  taskIds: string[],
-): void {
+function requireAnswers(args: Args, ledger: Ledger, notes: NoteInput[], taskIds: string[]): void {
   const hasLoops = ledger.next_steps.length > 0 || ledger.resolves.length > 0;
   requireAnswer(hasLoops, args.no_loops ?? false, GATES.loops);
   requireAnswer(notes.length > 0, args.no_notes ?? false, GATES.notes);
@@ -346,8 +330,7 @@ async function rejectedResolves(
 }
 
 const REMEDY: Record<DanglingKind, string> = {
-  missing:
-    'no loop carries that ref — check the session-file stem and the next_steps id',
+  missing: 'no loop carries that ref — check the session-file stem and the next_steps id',
   'not-prior':
     'the loop was opened by a session that did not end strictly before this one — re-file the resolve from a later session',
   self: 'a session cannot close a loop it opened — carry it as a next_step instead',
@@ -363,11 +346,7 @@ const REMEDY: Record<DanglingKind, string> = {
  * to describe was also the one case no caller could read them, leaving the
  * machine-readable half of the contract available only as prose to parse.
  */
-function rejectionReport(
-  sessionPath: string,
-  rejected: RejectedResolve[],
-  total: number,
-): string {
+function rejectionReport(sessionPath: string, rejected: RejectedResolve[], total: number): string {
   const lines = rejected.map((r) => `  - ${r.ref} (${r.kind}): ${REMEDY[r.kind]}`);
   return (
     `Session written to ${sessionPath}, but ${rejected.length} of ${total} ` +
@@ -377,11 +356,7 @@ function rejectionReport(
   );
 }
 
-function filesUpdated(
-  initiativeDir: string,
-  notePaths: string[],
-  recorded: Filed,
-): string[] {
+function filesUpdated(initiativeDir: string, notePaths: string[], recorded: Filed): string[] {
   const files = ['brief.md'];
   if (recorded.worktrees + recorded.branches + recorded.stashes > 0) {
     files.push('artifacts.yml');
@@ -499,9 +474,7 @@ export default defineCommand<Args, Result>({
         notePaths = await fileNotes(initiativeDir, notes, written.updated);
         recorded = await sweepAndRecord(args.slug, ctx.activeRoot, ctx.warnings);
       } catch (err) {
-        await Promise.all(
-          [...notePaths, written.path].map((p) => fs.rm(p, { force: true })),
-        );
+        await Promise.all([...notePaths, written.path].map((p) => fs.rm(p, { force: true })));
         throw err;
       }
 

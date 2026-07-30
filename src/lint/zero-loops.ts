@@ -40,10 +40,7 @@ async function readSessionFrontmatter(filePath: string): Promise<SessionFrontmat
  * Malformed session files are skipped: this rule is warn-only and must never
  * throw on a broken initiative.
  */
-export async function lintZeroLoops(
-  slug: string,
-  initiativeDir: string,
-): Promise<LintFinding[]> {
+export async function lintZeroLoops(slug: string, initiativeDir: string): Promise<LintFinding[]> {
   const sessionsDir = path.join(initiativeDir, 'sessions');
   let entries: string[];
   try {

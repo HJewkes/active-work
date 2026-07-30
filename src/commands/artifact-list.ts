@@ -27,9 +27,7 @@ type Result = z.infer<typeof ResultSchema>;
 
 async function readForSlug(slug: string): Promise<Artifacts> {
   const artifactsPath = path.join(getInitiativeDir(slug), 'artifacts.yml');
-  return withFileLock(getLockPath(slug), () =>
-    readYaml(artifactsPath, ArtifactsSchema),
-  );
+  return withFileLock(getLockPath(slug), () => readYaml(artifactsPath, ArtifactsSchema));
 }
 
 async function listInitiativeSlugs(): Promise<string[]> {
@@ -80,9 +78,7 @@ export default defineCommand<Args, Result>({
       return { items };
     }
     if (!args.slug) {
-      throw new UsageError(
-        'artifact.list requires <slug> or --all-initiatives',
-      );
+      throw new UsageError('artifact.list requires <slug> or --all-initiatives');
     }
     const artifacts = await readForSlug(args.slug);
     return { items: [{ slug: args.slug, artifacts }] };

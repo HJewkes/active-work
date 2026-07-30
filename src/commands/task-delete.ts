@@ -31,11 +31,7 @@ export default defineCommand<Args, Result>({
   async run(args) {
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
-      const file = path.join(
-        getInitiativeDir(args.slug),
-        'tasks',
-        `${args.id}.yml`,
-      );
+      const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
       try {
         await fs.unlink(file);
       } catch (err) {

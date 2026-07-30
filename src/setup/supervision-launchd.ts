@@ -62,10 +62,7 @@ function serviceTarget(uid: number): string {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export interface PlistOptions {
@@ -81,9 +78,7 @@ export function renderPlist(opts: PlistOptions): string {
   const argv = [node, opts.cliEntry, 'mcp', 'serve'];
   if (opts.port !== undefined) argv.push('--port', String(opts.port));
   const logDir = getLogDir(opts.homeDir);
-  const programArgs = argv
-    .map((a) => `    <string>${escapeXml(a)}</string>`)
-    .join('\n');
+  const programArgs = argv.map((a) => `    <string>${escapeXml(a)}</string>`).join('\n');
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -155,10 +150,7 @@ function runOnce(
 export async function isAgentLoaded(deps: SetupDeps = {}): Promise<boolean> {
   const { spawn, uid, platform } = resolveLocalDeps(deps);
   if (!isDarwin(platform)) return false;
-  const result = await runOnce(spawn, 'launchctl', [
-    'print',
-    serviceTarget(uid),
-  ]);
+  const result = await runOnce(spawn, 'launchctl', ['print', serviceTarget(uid)]);
   if (result.spawnError) return false;
   return result.code === 0;
 }
@@ -216,10 +208,7 @@ export async function installLaunchAgent(
 
     // Boot out any stale instance first so bootstrap is idempotent. A missing
     // service exits non-zero ("No such process") — that is expected, not fatal.
-    const bootout = await runOnce(spawn, 'launchctl', [
-      'bootout',
-      serviceTarget(uid),
-    ]);
+    const bootout = await runOnce(spawn, 'launchctl', ['bootout', serviceTarget(uid)]);
     if (bootout.spawnError) {
       return {
         ok: true,
@@ -229,11 +218,7 @@ export async function installLaunchAgent(
       };
     }
 
-    const bootstrap = await runOnce(spawn, 'launchctl', [
-      'bootstrap',
-      `gui/${uid}`,
-      plistPath,
-    ]);
+    const bootstrap = await runOnce(spawn, 'launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
     if (bootstrap.spawnError) {
       return {
         ok: false,
@@ -268,9 +253,7 @@ export async function installLaunchAgent(
  * Boot out the LaunchAgent and remove the plist.
  * No-op on non-macOS or when the plist is absent.
  */
-export async function uninstallLaunchAgent(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function uninstallLaunchAgent(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, spawn, paths, uid, platform } = resolveLocalDeps(deps);
   if (!isDarwin(platform)) {
     return {
@@ -298,10 +281,7 @@ export async function uninstallLaunchAgent(
       };
     }
     // Best-effort bootout; a not-loaded agent exits non-zero, which is fine.
-    const bootout = await runOnce(spawn, 'launchctl', [
-      'bootout',
-      serviceTarget(uid),
-    ]);
+    const bootout = await runOnce(spawn, 'launchctl', ['bootout', serviceTarget(uid)]);
     await fs.rm(plistPath, { force: true });
     if (bootout.spawnError) {
       return {

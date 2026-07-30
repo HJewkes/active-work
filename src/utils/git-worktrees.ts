@@ -165,14 +165,7 @@ async function countRevs(
 ): Promise<number | null> {
   const git = getGitRunner();
   try {
-    const res = await git('git', [
-      '-C',
-      worktreePath,
-      'rev-list',
-      '--count',
-      range,
-      ...extra,
-    ]);
+    const res = await git('git', ['-C', worktreePath, 'rev-list', '--count', range, ...extra]);
     if (res.code !== 0) return null;
     const count = Number(res.stdout.trim());
     return Number.isFinite(count) ? count : null;
@@ -195,12 +188,7 @@ async function readAheadBehind(
 async function isPresent(worktreePath: string): Promise<boolean> {
   const git = getGitRunner();
   try {
-    const res = await git('git', [
-      '-C',
-      worktreePath,
-      'rev-parse',
-      '--is-inside-work-tree',
-    ]);
+    const res = await git('git', ['-C', worktreePath, 'rev-parse', '--is-inside-work-tree']);
     return res.code === 0 && res.stdout.trim() === 'true';
   } catch {
     return false;

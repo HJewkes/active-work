@@ -56,9 +56,7 @@ describe('preflight', () => {
       expect(res.unrecorded.worktrees).toEqual([
         { path: '/tmp/wt-live', repo: '~/code/sample', branch: 'feat/live' },
       ]);
-      expect(res.unrecorded.branches).toEqual([
-        { repo: '~/code/sample', name: 'feat/live' },
-      ]);
+      expect(res.unrecorded.branches).toEqual([{ repo: '~/code/sample', name: 'feat/live' }]);
       expect(res.dirty).toEqual([
         { path: '/tmp/wt-live', repo: '~/code/sample', files_changed: 2 },
       ]);

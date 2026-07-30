@@ -18,10 +18,19 @@ async function scaffoldInitiative(
   const dir = path.join(root, slug);
   await fs.mkdir(path.join(dir, 'tasks'), { recursive: true });
 
-  const briefBody = Array.from({ length: opts.briefBodyLines }, (_, i) => `brief ${i + 1}`).join('\n');
-  const briefContent = ['---', 'schema_version: 1', `title: ${slug}`, 'state: focused', '---', '', briefBody, ''].join(
+  const briefBody = Array.from({ length: opts.briefBodyLines }, (_, i) => `brief ${i + 1}`).join(
     '\n',
   );
+  const briefContent = [
+    '---',
+    'schema_version: 1',
+    `title: ${slug}`,
+    'state: focused',
+    '---',
+    '',
+    briefBody,
+    '',
+  ].join('\n');
   await fs.writeFile(path.join(dir, 'brief.md'), briefContent, 'utf8');
 
   const notesBlock = Array.from({ length: opts.notesLines }, (_, i) => `  n${i + 1}`).join('\n');

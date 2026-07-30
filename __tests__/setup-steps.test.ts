@@ -111,10 +111,7 @@ describe('stepWriteSchemaVersion', () => {
     await fs.mkdir(paths.activeRoot, { recursive: true });
     const result = await stepWriteSchemaVersion({ paths });
     expect(result.ok).toBe(true);
-    const stamped = await fs.readFile(
-      path.join(paths.activeRoot, '.schema-version'),
-      'utf8',
-    );
+    const stamped = await fs.readFile(path.join(paths.activeRoot, '.schema-version'), 'utf8');
     expect(stamped.trim()).toBe('4');
   });
 });
@@ -152,24 +149,16 @@ describe('stepWriteConfigStub', () => {
       expect(result.done).toBe(false);
       expect(result.message).toMatch(/left untouched/);
     }
-    const raw = JSON.parse(
-      await fs.readFile(path.join(paths.configRoot, 'config.json'), 'utf8'),
-    );
+    const raw = JSON.parse(await fs.readFile(path.join(paths.configRoot, 'config.json'), 'utf8'));
     expect(raw.discovery.githubRepos).toEqual(['foo/bar']);
   });
 
   it('overwrites when --update is set', async () => {
     await fs.mkdir(paths.configRoot, { recursive: true });
-    await fs.writeFile(
-      path.join(paths.configRoot, 'config.json'),
-      '{"old":true}\n',
-      'utf8',
-    );
+    await fs.writeFile(path.join(paths.configRoot, 'config.json'), '{"old":true}\n', 'utf8');
     const result = await stepWriteConfigStub({ paths, update: true });
     expect(result.ok).toBe(true);
-    const raw = JSON.parse(
-      await fs.readFile(path.join(paths.configRoot, 'config.json'), 'utf8'),
-    );
+    const raw = JSON.parse(await fs.readFile(path.join(paths.configRoot, 'config.json'), 'utf8'));
     expect(raw.discovery).toBeDefined();
   });
 });
@@ -185,11 +174,7 @@ describe('stepInstallSkill', () => {
     cleanup = t.cleanup;
     repoRoot = path.join(paths.homeDir, '..', 'repo');
     await fs.mkdir(path.join(repoRoot, 'skill'), { recursive: true });
-    await fs.writeFile(
-      path.join(repoRoot, 'skill', 'SKILL.md'),
-      '# active-work skill\n',
-      'utf8',
-    );
+    await fs.writeFile(path.join(repoRoot, 'skill', 'SKILL.md'), '# active-work skill\n', 'utf8');
   });
   afterEach(() => cleanup());
 
@@ -197,13 +182,7 @@ describe('stepInstallSkill', () => {
     const result = await stepInstallSkill({ paths, repoRoot });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.done).toBe(true);
-    const target = path.join(
-      paths.homeDir,
-      '.claude',
-      'skills',
-      'active-work',
-      'SKILL.md',
-    );
+    const target = path.join(paths.homeDir, '.claude', 'skills', 'active-work', 'SKILL.md');
     expect(existsSync(target)).toBe(true);
   });
 
@@ -376,12 +355,7 @@ describe('stepSupervision', () => {
       }
       expect(
         existsSync(
-          path.join(
-            paths.homeDir,
-            'Library',
-            'LaunchAgents',
-            'dev.hjewkes.active-work.plist',
-          ),
+          path.join(paths.homeDir, 'Library', 'LaunchAgents', 'dev.hjewkes.active-work.plist'),
         ),
       ).toBe(true);
       expect(calls.some((c) => c.includes('bootstrap'))).toBe(true);
@@ -445,7 +419,9 @@ describe('stepSupervision', () => {
         expect(result.message).toMatch(/systemctl --user enable/);
       }
       // The unit file is still written so a later real session can enable it.
-      expect(existsSync(path.join(paths.homeDir, '.config', 'systemd', 'user', 'active-work.service'))).toBe(true);
+      expect(
+        existsSync(path.join(paths.homeDir, '.config', 'systemd', 'user', 'active-work.service')),
+      ).toBe(true);
     } finally {
       cleanup();
     }

@@ -3,10 +3,7 @@ import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
-import {
-  readArtifactsFile,
-  writeArtifactsFile,
-} from '../utils/registered-worktrees.js';
+import { readArtifactsFile, writeArtifactsFile } from '../utils/registered-worktrees.js';
 import { readFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
@@ -38,18 +35,13 @@ export default defineCommand({
       let frontmatter: BriefFrontmatter;
       let body: string;
       try {
-        ({ frontmatter, body } = await readFrontmatter(
-          briefPath,
-          BriefFrontmatterSchema,
-        ));
+        ({ frontmatter, body } = await readFrontmatter(briefPath, BriefFrontmatterSchema));
       } catch (err) {
         throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
       const artifacts = await readArtifactsFile(initiativeDir);
       if (!artifacts.worktrees.some((entry) => entry.name === label)) {
-        throw new NotFoundError(
-          `Worktree label "${label}" is not registered for "${slug}"`,
-        );
+        throw new NotFoundError(`Worktree label "${label}" is not registered for "${slug}"`);
       }
       const worktrees = artifacts.worktrees.map((entry) => {
         const next = { ...entry };

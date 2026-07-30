@@ -5,10 +5,7 @@ import focusCmd from '../../src/commands/focus.js';
 import unfocusCmd from '../../src/commands/unfocus.js';
 import pauseCmd from '../../src/commands/pause.js';
 import unpauseCmd from '../../src/commands/unpause.js';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../../src/schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../../src/schemas/brief.js';
 import { readRawFrontmatter } from '../../src/utils/gray-matter-io.js';
 import type { CommandContext } from '../../src/registry/types.js';
 import { UsageError, NotFoundError } from '../../src/errors.js';
@@ -48,21 +45,12 @@ async function seedInitiative(
   // Validate before writing so a malformed seed fails loudly.
   BriefFrontmatterSchema.parse(front);
   const yaml = Object.entries(front)
-    .map(([k, v]) =>
-      typeof v === 'string' ? `${k}: ${v}` : `${k}: ${String(v)}`,
-    )
+    .map(([k, v]) => (typeof v === 'string' ? `${k}: ${v}` : `${k}: ${String(v)}`))
     .join('\n');
-  await fs.writeFile(
-    path.join(dir, 'brief.md'),
-    `---\n${yaml}\n---\n\n# ${slug}\n`,
-    'utf8',
-  );
+  await fs.writeFile(path.join(dir, 'brief.md'), `---\n${yaml}\n---\n\n# ${slug}\n`, 'utf8');
 }
 
-async function readBrief(
-  activeRoot: string,
-  slug: string,
-): Promise<BriefFrontmatter> {
+async function readBrief(activeRoot: string, slug: string): Promise<BriefFrontmatter> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
   const { frontmatter } = await readRawFrontmatter(briefPath);
   const normalized: Record<string, unknown> = { ...frontmatter };
@@ -98,14 +86,9 @@ describe('focus command', () => {
     await withTempActiveRoot(async (root) => {
       await seedInitiative(root, 'beta', { state: 'backburner' });
       // Now there is sample-initiative at rank 1. Focus beta at rank 1.
-      const result = await focusCmd.run(
-        { slug: 'beta', rank: 1 },
-        ctx(root),
-      );
+      const result = await focusCmd.run({ slug: 'beta', rank: 1 }, ctx(root));
       expect(result.rank).toBe(1);
-      expect(result.shifted).toEqual([
-        { slug: 'sample-initiative', from: 1, to: 2 },
-      ]);
+      expect(result.shifted).toEqual([{ slug: 'sample-initiative', from: 1, to: 2 }]);
 
       expect((await readBrief(root, 'beta')).rank).toBe(1);
       expect((await readBrief(root, 'sample-initiative')).rank).toBe(2);
@@ -119,10 +102,7 @@ describe('focus command', () => {
       await seedInitiative(root, 'delta', { state: 'focused', rank: 3 });
 
       // Move delta to rank 1
-      const result = await focusCmd.run(
-        { slug: 'delta', rank: 1 },
-        ctx(root),
-      );
+      const result = await focusCmd.run({ slug: 'delta', rank: 1 }, ctx(root));
       expect(result.rank).toBe(1);
 
       const sample = await readBrief(root, 'sample-initiative');
@@ -138,17 +118,17 @@ describe('focus command', () => {
     await withTempActiveRoot(async (root) => {
       await seedInitiative(root, 'epsilon', { state: 'backburner' });
       // Only sample is focused (1), so max insert position is 2.
-      await expect(
-        focusCmd.run({ slug: 'epsilon', rank: 99 }, ctx(root)),
-      ).rejects.toBeInstanceOf(UsageError);
+      await expect(focusCmd.run({ slug: 'epsilon', rank: 99 }, ctx(root))).rejects.toBeInstanceOf(
+        UsageError,
+      );
     });
   });
 
   it('throws NotFoundError when slug does not exist', async () => {
     await withTempActiveRoot(async (root) => {
-      await expect(
-        focusCmd.run({ slug: 'no-such', rank: 1 }, ctx(root)),
-      ).rejects.toBeInstanceOf(NotFoundError);
+      await expect(focusCmd.run({ slug: 'no-such', rank: 1 }, ctx(root))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
     });
   });
 });
@@ -160,10 +140,7 @@ describe('unfocus command', () => {
       await seedInitiative(root, 'two', { state: 'focused', rank: 2 });
       await seedInitiative(root, 'three', { state: 'focused', rank: 3 });
 
-      const result = await unfocusCmd.run(
-        { slug: 'sample-initiative' },
-        ctx(root),
-      );
+      const result = await unfocusCmd.run({ slug: 'sample-initiative' }, ctx(root));
       expect(result.slug).toBe('sample-initiative');
       expect(result.renumbered).toEqual([
         { slug: 'two', from: 2, to: 1 },
@@ -181,9 +158,9 @@ describe('unfocus command', () => {
   it('throws UsageError when initiative is not focused', async () => {
     await withTempActiveRoot(async (root) => {
       await seedInitiative(root, 'backed', { state: 'backburner' });
-      await expect(
-        unfocusCmd.run({ slug: 'backed' }, ctx(root)),
-      ).rejects.toBeInstanceOf(UsageError);
+      await expect(unfocusCmd.run({ slug: 'backed' }, ctx(root))).rejects.toBeInstanceOf(
+        UsageError,
+      );
     });
   });
 });
@@ -260,9 +237,9 @@ describe('unpause command', () => {
 
   it('throws UsageError when initiative is not paused', async () => {
     await withTempActiveRoot(async (root) => {
-      await expect(
-        unpauseCmd.run({ slug: 'sample-initiative' }, ctx(root)),
-      ).rejects.toBeInstanceOf(UsageError);
+      await expect(unpauseCmd.run({ slug: 'sample-initiative' }, ctx(root))).rejects.toBeInstanceOf(
+        UsageError,
+      );
     });
   });
 });

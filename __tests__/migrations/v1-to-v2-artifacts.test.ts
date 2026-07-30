@@ -80,7 +80,13 @@ describe('v1ToV2Artifacts migrator', () => {
 
   it('is a no-op on already-v2 files', async () => {
     const file = path.join(ws.activeRoot, 'sample', 'artifacts.yml');
-    const v2Body = ['branches:', '  - repo: ~/code/sample', '    name: feat/sample', 'stashes: []', ''].join('\n');
+    const v2Body = [
+      'branches:',
+      '  - repo: ~/code/sample',
+      '    name: feat/sample',
+      'stashes: []',
+      '',
+    ].join('\n');
     await writeFile_(file, v2Body);
 
     await v1ToV2Artifacts.run(ws.activeRoot);

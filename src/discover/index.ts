@@ -70,9 +70,7 @@ export async function runDiscovery(config: DiscoveryConfig): Promise<DiscoveryRe
 async function loadSlugs(activeRoot: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(activeRoot, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-      .map((e) => e.name);
+    return entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name);
   } catch {
     return [];
   }

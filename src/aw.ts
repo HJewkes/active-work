@@ -67,14 +67,10 @@ const STATE_LABEL: Record<InitiativeSummary['state'], string> = {
   done: 'done',
 };
 
-async function pickInitiative(
-  initiatives: InitiativeSummary[],
-): Promise<string | null> {
+async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string | null> {
   if (initiatives.length === 0) {
     process.stderr.write(
-      color.red(
-        'No initiatives found. Create one with `active-work new <slug>`.\n',
-      ),
+      color.red('No initiatives found. Create one with `active-work new <slug>`.\n'),
     );
     return null;
   }
@@ -93,11 +89,7 @@ async function pickInitiative(
   return String(choice);
 }
 
-function spawnClaude(
-  prompt: string,
-  cwd: string,
-  channels?: string[],
-): Promise<number> {
+function spawnClaude(prompt: string, cwd: string, channels?: string[]): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn('claude', buildClaudeArgs(prompt, channels), {
       cwd,
@@ -115,9 +107,7 @@ function spawnClaude(
         resolve(127);
         return;
       }
-      process.stderr.write(
-        color.red(`error: failed to launch claude: ${err.message}\n`),
-      );
+      process.stderr.write(color.red(`error: failed to launch claude: ${err.message}\n`));
       resolve(EXIT.GENERIC);
     });
     child.on('exit', (code, signal) => {
@@ -191,20 +181,12 @@ export async function main(argv: string[]): Promise<void> {
         opened = (await runOpen({ slug: choice, adhoc })) as OpenSuccess;
       } else {
         opened = result;
-        process.stderr.write(
-          color.dim(
-            `Opening ${opened.slug} — matched current directory.\n`,
-          ),
-        );
+        process.stderr.write(color.dim(`Opening ${opened.slug} — matched current directory.\n`));
       }
     } else {
       opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
     }
-    const code = await spawnClaude(
-      opened.prompt,
-      opened.cwd_hint,
-      opened.channels,
-    );
+    const code = await spawnClaude(opened.prompt, opened.cwd_hint, opened.channels);
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);

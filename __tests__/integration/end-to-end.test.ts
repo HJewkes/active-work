@@ -7,13 +7,7 @@
  * regression in any single command surfaces here.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  promises as fs,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { promises as fs, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -299,14 +293,12 @@ describe('end-to-end: full lifecycle through the registry', () => {
     const claudeHit = first.hits.find((h) => h.source === 'claude-session' && h.ref === sessionRef);
     expect(claudeHit).toBeDefined();
 
-    await runCmd(
-      'fold',
-      { ref: sessionRef, into: 'triage-target', note: 'absorbed' },
-      activeRoot,
-    );
+    await runCmd('fold', { ref: sessionRef, into: 'triage-target', note: 'absorbed' }, activeRoot);
 
     const second = await runCmd<DiscoverResult>('discover', {}, activeRoot);
-    const stillThere = second.hits.find((h) => h.source === 'claude-session' && h.ref === sessionRef);
+    const stillThere = second.hits.find(
+      (h) => h.source === 'claude-session' && h.ref === sessionRef,
+    );
     expect(stillThere).toBeUndefined();
   });
 

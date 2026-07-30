@@ -54,9 +54,11 @@ interface ScannedSession {
 async function listJsonlFiles(root: string): Promise<string[]> {
   let projectDirs: string[];
   try {
-    projectDirs = await fs.readdir(root, { withFileTypes: true }).then((entries) =>
-      entries.filter((e) => e.isDirectory()).map((e) => path.join(root, e.name)),
-    );
+    projectDirs = await fs
+      .readdir(root, { withFileTypes: true })
+      .then((entries) =>
+        entries.filter((e) => e.isDirectory()).map((e) => path.join(root, e.name)),
+      );
   } catch {
     return [];
   }
@@ -214,9 +216,7 @@ export async function runSessions(args: Args): Promise<Result> {
   if (!includeActive) {
     const activeRoots = await listActiveInitiativeRoots();
     if (activeRoots.length > 0) {
-      filtered = scanned.filter(
-        (s) => !activeRoots.some((root) => isPathPrefix(root, s.cwd)),
-      );
+      filtered = scanned.filter((s) => !activeRoots.some((root) => isPathPrefix(root, s.cwd)));
     }
   }
 

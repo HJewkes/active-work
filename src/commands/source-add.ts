@@ -97,8 +97,7 @@ async function movePath(src: string, dest: string): Promise<void> {
 
 export default defineCommand<Args, Result>({
   name: 'source.add',
-  description:
-    'Move a source file into <slug>/sources/ with a conventional filename.',
+  description: 'Move a source file into <slug>/sources/ with a conventional filename.',
   args: ArgsSchema,
   result: ResultSchema,
   cli: {
@@ -133,9 +132,7 @@ export default defineCommand<Args, Result>({
     await fs.mkdir(sourcesDir, { recursive: true });
 
     if ((await pathExists(targetPath)) && !args.force) {
-      throw new ValidationError(
-        `target already exists: ${targetPath} (use --force to overwrite)`,
-      );
+      throw new ValidationError(`target already exists: ${targetPath} (use --force to overwrite)`);
     }
 
     await movePath(sourcePath, targetPath);

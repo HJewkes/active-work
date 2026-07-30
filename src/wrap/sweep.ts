@@ -286,10 +286,7 @@ function unrecordedWorktrees(
   return candidates.filter((entry) => !seen.has(normalizePath(entry.path)));
 }
 
-function unrecordedBranches(
-  candidates: BranchEntry[],
-  recorded: BranchEntry[],
-): BranchEntry[] {
+function unrecordedBranches(candidates: BranchEntry[], recorded: BranchEntry[]): BranchEntry[] {
   const key = (repo: string, name: string): string => `${repoKey(repo)} ${name}`;
   const seen = new Set(recorded.map((entry) => key(entry.repo, entry.name)));
   return candidates.filter((entry) => !seen.has(key(entry.repo, entry.name)));
@@ -300,10 +297,7 @@ function unrecordedBranches(
  * recorded before a sha was known — a recorded stash with no sha is otherwise
  * invisible to the sweep and gets appended a second time on every wrap.
  */
-function unrecordedStashes(
-  candidates: StashEntry[],
-  recorded: StashEntry[],
-): StashEntry[] {
+function unrecordedStashes(candidates: StashEntry[], recorded: StashEntry[]): StashEntry[] {
   const key = (repo: string, tail: string): string => `${repoKey(repo)} ${tail}`;
   const shas = new Set<string>();
   const labels = new Set<string>();

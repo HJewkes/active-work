@@ -69,12 +69,7 @@ async function currentBranch(root: string): Promise<string> {
 }
 
 async function assertUpstream(root: string, branch: string): Promise<void> {
-  const res = await git(root, [
-    'rev-parse',
-    '--abbrev-ref',
-    '--symbolic-full-name',
-    '@{u}',
-  ]);
+  const res = await git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
   if (res.code !== 0) {
     throw new UsageError(
       `branch "${branch}" has no upstream configured.\n` +
@@ -157,8 +152,7 @@ async function push(root: string): Promise<void> {
 
 export default defineCommand<Args, Result>({
   name: 'sync',
-  description:
-    'Sync the active root over git: auto-commit local edits, pull --rebase, then push.',
+  description: 'Sync the active root over git: auto-commit local edits, pull --rebase, then push.',
   args: ArgsSchema,
   result: ResultSchema,
   cli: {

@@ -37,8 +37,6 @@ export interface Command<Args = unknown, Result = unknown> {
 export type AnyCommand = Command<any, any>;
 export type CommandRegistry = Map<string, AnyCommand>;
 
-export function defineCommand<Args, Result>(
-  cmd: Command<Args, Result>,
-): Command<Args, Result> {
+export function defineCommand<Args, Result>(cmd: Command<Args, Result>): Command<Args, Result> {
   return cmd;
 }

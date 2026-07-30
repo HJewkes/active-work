@@ -30,7 +30,10 @@ function fakeResolver(command: string, args: string[]): EditorResolver {
   return async () => ({ command, args });
 }
 
-function recordingSpawner(exitCode: number, onCall?: (cmd: string, args: string[]) => void): {
+function recordingSpawner(
+  exitCode: number,
+  onCall?: (cmd: string, args: string[]) => void,
+): {
   spawner: EditorSpawner;
   calls: { command: string; args: string[] }[];
 } {
@@ -89,10 +92,7 @@ describe('edit command', () => {
     await withTempActiveRoot(async (root) => {
       const briefPath = path.join(root, 'sample-initiative', 'brief.md');
       const spawner: EditorSpawner = async () => {
-        await fs.writeFile(
-          briefPath,
-          '---\nschema_version: 1\ntitle: x\nstate: wat\n---\nbody\n',
-        );
+        await fs.writeFile(briefPath, '---\nschema_version: 1\ntitle: x\nstate: wat\n---\nbody\n');
         return 0;
       };
 

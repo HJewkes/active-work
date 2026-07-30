@@ -19,9 +19,7 @@ describe('runMigrations', () => {
 
   it('throws ConfigError when fromVersion is newer than CURRENT_VERSION', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await expect(runMigrations(root, CURRENT_VERSION + 1)).rejects.toBeInstanceOf(
-        ConfigError,
-      );
+      await expect(runMigrations(root, CURRENT_VERSION + 1)).rejects.toBeInstanceOf(ConfigError);
       await expect(runMigrations(root, CURRENT_VERSION + 1)).rejects.toThrow(
         /downgrade not supported/i,
       );

@@ -44,16 +44,11 @@ const BASE = [
 ].join('\n');
 
 async function readArtifacts(dir: string) {
-  return ArtifactsSchema.parse(
-    YAML.parse(await readFile(path.join(dir, 'artifacts.yml'), 'utf8')),
-  );
+  return ArtifactsSchema.parse(YAML.parse(await readFile(path.join(dir, 'artifacts.yml'), 'utf8')));
 }
 
 async function readBriefData(dir: string): Promise<Record<string, unknown>> {
-  return matter(await readFile(path.join(dir, 'brief.md'), 'utf8')).data as Record<
-    string,
-    unknown
-  >;
+  return matter(await readFile(path.join(dir, 'brief.md'), 'utf8')).data as Record<string, unknown>;
 }
 
 describe('v3 -> v4 worktrees', () => {
@@ -61,18 +56,14 @@ describe('v3 -> v4 worktrees', () => {
     const dir = await writeInitiative(
       'sample',
       BASE +
-        ['worktrees:', '  main:', '    path: ~/code/sample', '    default: true', ''].join(
-          '\n',
-        ),
+        ['worktrees:', '  main:', '    path: ~/code/sample', '    default: true', ''].join('\n'),
       'branches: []\nstashes: []\n',
     );
 
     await v3ToV4Worktrees.run(activeRoot);
 
     expect(await readArtifacts(dir)).toMatchObject({
-      worktrees: [
-        { path: '~/code/sample', repo: '~/code/sample', name: 'main', default: true },
-      ],
+      worktrees: [{ path: '~/code/sample', repo: '~/code/sample', name: 'main', default: true }],
     });
     expect(await readBriefData(dir)).not.toHaveProperty('worktrees');
   });
@@ -99,9 +90,7 @@ describe('v3 -> v4 worktrees', () => {
     const dir = await writeInitiative(
       'swept',
       BASE +
-        ['worktrees:', '  main:', '    path: ~/code/swept', '    default: true', ''].join(
-          '\n',
-        ),
+        ['worktrees:', '  main:', '    path: ~/code/swept', '    default: true', ''].join('\n'),
       [
         'branches: []',
         'stashes: []',
@@ -179,9 +168,7 @@ describe('v3 -> v4 worktrees', () => {
     const dir = await writeInitiative(
       'twice',
       BASE +
-        ['worktrees:', '  main:', '    path: ~/code/twice', '    default: true', ''].join(
-          '\n',
-        ),
+        ['worktrees:', '  main:', '    path: ~/code/twice', '    default: true', ''].join('\n'),
       'branches: []\nstashes: []\n',
     );
 

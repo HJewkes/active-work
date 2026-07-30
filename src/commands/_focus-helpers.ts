@@ -1,9 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
 import { readFrontmatter } from '../utils/gray-matter-io.js';
 
@@ -49,10 +46,7 @@ export async function loadAllBriefs(): Promise<InitiativeBrief[]> {
       continue;
     }
     if (!stat.isFile()) continue;
-    const { frontmatter, body } = await readFrontmatter(
-      briefPath,
-      BriefFrontmatterSchema,
-    );
+    const { frontmatter, body } = await readFrontmatter(briefPath, BriefFrontmatterSchema);
     briefs.push({ slug: name, briefPath, frontmatter, body });
   }
   briefs.sort((a, b) => a.slug.localeCompare(b.slug));

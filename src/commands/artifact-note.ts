@@ -43,9 +43,7 @@ export default defineCommand<Args, Result>({
     const artifactsPath = path.join(getInitiativeDir(args.slug), 'artifacts.yml');
     return withFileLock(getLockPath(args.slug), async () => {
       const current = await readYaml(artifactsPath, ArtifactsSchema);
-      const idx = current.branches.findIndex(
-        (b) => b.repo === args.repo && b.name === args.name,
-      );
+      const idx = current.branches.findIndex((b) => b.repo === args.repo && b.name === args.name);
       if (idx < 0) {
         throw new UsageError(
           `No tracked branch '${args.name}' in repo '${args.repo}'. Add it first via 'artifact add-branch'.`,

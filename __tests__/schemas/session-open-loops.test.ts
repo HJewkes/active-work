@@ -38,9 +38,7 @@ describe('SessionFrontmatterSchema open-loop fields', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues.some((i) => i.path.join('.') === 'next_steps.1.id')).toBe(
-        true,
-      );
+      expect(result.error.issues.some((i) => i.path.join('.') === 'next_steps.1.id')).toBe(true);
     }
   });
 
@@ -59,9 +57,7 @@ describe('SessionFrontmatterSchema open-loop fields', () => {
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error.issues.some((i) => i.path.join('.') === 'resolves.0.note')).toBe(
-        true,
-      );
+      expect(result.error.issues.some((i) => i.path.join('.') === 'resolves.0.note')).toBe(true);
     }
   });
 

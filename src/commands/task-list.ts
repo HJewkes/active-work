@@ -86,9 +86,7 @@ export default defineCommand<Args, Result>({
       ? await listSlugs()
       : (() => {
           if (!args.slug) {
-            throw new UsageError(
-              'task.list requires --all-initiatives or a slug',
-            );
+            throw new UsageError('task.list requires --all-initiatives or a slug');
           }
           return [args.slug];
         })();

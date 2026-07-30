@@ -25,10 +25,7 @@ describe('prompt command', () => {
 
   it('resolves a unique prefix', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const out = await promptCommand.run(
-        { slug: 'sample', offline: true },
-        makeCtx(activeRoot),
-      );
+      const out = await promptCommand.run({ slug: 'sample', offline: true }, makeCtx(activeRoot));
       expect(out).toContain('Sample Initiative');
     });
   });
@@ -78,12 +75,7 @@ describe('prompt command', () => {
   it('does not archive stale done tasks (side-effect-free)', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       // Seed a done task old enough that `open` would archive it.
-      const taskPath = path.join(
-        activeRoot,
-        'sample-initiative',
-        'tasks',
-        'SI-9.yml',
-      );
+      const taskPath = path.join(activeRoot, 'sample-initiative', 'tasks', 'SI-9.yml');
       await fs.writeFile(
         taskPath,
         [
@@ -98,19 +90,11 @@ describe('prompt command', () => {
         ].join('\n'),
       );
 
-      await promptCommand.run(
-        { slug: 'sample-initiative', offline: true },
-        makeCtx(activeRoot),
-      );
+      await promptCommand.run({ slug: 'sample-initiative', offline: true }, makeCtx(activeRoot));
 
       // The task file stays put — `prompt` never archives.
       await expect(fs.stat(taskPath)).resolves.toBeDefined();
-      const archiveDir = path.join(
-        activeRoot,
-        'sample-initiative',
-        'tasks',
-        'archive',
-      );
+      const archiveDir = path.join(activeRoot, 'sample-initiative', 'tasks', 'archive');
       await expect(fs.stat(archiveDir)).rejects.toThrow();
     });
   });

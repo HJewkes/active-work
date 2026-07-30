@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  fetchArtifacts,
-  fetchInitiatives,
-  fetchTasks,
-} from '../../src/dashboard/utils/api.js';
+import { fetchArtifacts, fetchInitiatives, fetchTasks } from '../../src/dashboard/utils/api.js';
 
 interface CapturedRequest {
   url: string;
@@ -17,13 +13,9 @@ function stubFetch(envelope: unknown): {
 } {
   const captured: CapturedRequest[] = [];
   const original = globalThis.fetch;
-  globalThis.fetch = (async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    const bodyText =
-      typeof init?.body === 'string' ? init.body : String(init?.body ?? 'null');
+    const bodyText = typeof init?.body === 'string' ? init.body : String(init?.body ?? 'null');
     captured.push({
       url,
       method: init?.method ?? 'GET',

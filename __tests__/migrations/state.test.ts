@@ -5,10 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ConfigError } from '../../src/errors.js';
 import { CURRENT_VERSION } from '../../src/migrations/index.js';
-import {
-  ensureSchemaVersion,
-  readSchemaVersion,
-} from '../../src/schemas/state.js';
+import { ensureSchemaVersion, readSchemaVersion } from '../../src/schemas/state.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
 
 const schemaVersionFile = (root: string): string => join(root, '.schema-version');
@@ -61,11 +58,7 @@ describe('ensureSchemaVersion', () => {
 
   it('throws ConfigError when .schema-version is newer than CURRENT_VERSION', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await writeFile(
-        schemaVersionFile(root),
-        `${CURRENT_VERSION + 1}\n`,
-        'utf8',
-      );
+      await writeFile(schemaVersionFile(root), `${CURRENT_VERSION + 1}\n`, 'utf8');
 
       await expect(ensureSchemaVersion(root)).rejects.toBeInstanceOf(ConfigError);
       await expect(ensureSchemaVersion(root)).rejects.toThrow(/downgrade not supported/i);
