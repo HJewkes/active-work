@@ -315,26 +315,84 @@ function compareTasksByPriority(a: Task, b: Task): number {
   return a.id.localeCompare(b.id);
 }
 
+function nonBlankLines(text: string | undefined): string[] {
+  if (!text) return [];
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 function firstLine(text: string | undefined): string | undefined {
-  if (!text) return undefined;
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.length > 0) return trimmed;
+  return nonBlankLines(text)[0];
+}
+
+const TASK_SUMMARY_MAX_LINES = 2;
+const TASK_SUMMARY_MAX_CHARS = 200;
+
+/**
+ * Collapse `lines` into one bounded summary line, marking anything left behind.
+ *
+ * Same reasoning as `truncateLines`: a silently clipped excerpt reads as the
+ * whole thought, so the cut is marked and paired with the command that prints
+ * the field untruncated.
+ */
+function summarizeField(
+  label: string,
+  lines: string[],
+  pointer: string,
+): string {
+  const kept = lines.slice(0, TASK_SUMMARY_MAX_LINES);
+  const joined = kept.join(' ');
+  const clamped =
+    joined.length > TASK_SUMMARY_MAX_CHARS
+      ? joined
+          .slice(0, TASK_SUMMARY_MAX_CHARS)
+          .replace(/\s+\S*$/, '')
+          .trimEnd()
+      : joined;
+  // A mid-line cut still leaves content on that line, so it counts as remaining.
+  const remaining = lines.length - kept.length + (clamped === joined ? 0 : 1);
+  if (remaining === 0) return `${label}${clamped}`;
+  const noun = remaining === 1 ? 'line' : 'lines';
+  return `${label}${clamped}…(+${remaining} ${noun} — see ${pointer})`;
+}
+
+/**
+ * The line under a task title answers "what does finishing this look like?".
+ *
+ * `done_when` answers it directly, so it wins. But roughly half the open tasks
+ * in a real initiative have no `done_when`, and there a blank line reads as "no
+ * context exists" when the notes are sitting right there on disk — so notes
+ * become a bounded, marked fallback rather than nothing. Neither form is the
+ * record of truth: both point at the command that prints the field in full.
+ */
+function renderTaskSummary(task: Task, slug: string): string | undefined {
+  const pointer = `\`active-work task list ${slug} --json\``;
+  const doneWhen = nonBlankLines(task.done_when);
+  if (doneWhen.length > 0) {
+    return summarizeField('done when: ', doneWhen, pointer);
   }
+  const notes = nonBlankLines(task.notes);
+  if (notes.length > 0) return summarizeField('notes: ', notes, pointer);
   return undefined;
 }
 
-function renderTaskLine(idx: number, task: Task): string {
+function renderTaskLine(idx: number, task: Task, slug: string): string {
   const meta: string[] = [`priority ${task.priority}`];
   if (task.severity) meta.push(`severity ${task.severity}`);
   if (task.estimate !== undefined) meta.push(`est ${task.estimate}`);
   let line = `${idx}. [${task.id}] (${meta.join(', ')}) ${task.title}`;
-  const note = firstLine(task.notes);
-  if (note) line += `\n   ${note}`;
+  const summary = renderTaskSummary(task, slug);
+  if (summary) line += `\n   ${summary}`;
   return line;
 }
 
-function renderTopTasks(tasks: Task[], topN: number): { body: string; count: number } {
+function renderTopTasks(
+  tasks: Task[],
+  topN: number,
+  slug: string,
+): { body: string; count: number } {
   const openTasks = tasks
     .filter((t) => t.status === 'open')
     .sort(compareTasksByPriority);
@@ -343,7 +401,7 @@ function renderTopTasks(tasks: Task[], topN: number): { body: string; count: num
   }
   const shown = openTasks.slice(0, topN);
   return {
-    body: shown.map((task, i) => renderTaskLine(i + 1, task)).join('\n'),
+    body: shown.map((task, i) => renderTaskLine(i + 1, task, slug)).join('\n'),
     count: openTasks.length,
   };
 }
@@ -950,7 +1008,7 @@ export async function assembleBootstrap(
       BRIEF_BODY_MAX_LINES,
       path.join(initiativeDir, 'brief.md'),
     ) || '_(no brief body)_';
-  const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks);
+  const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks, slug);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
     tasks,
     recentlyDoneDays,
