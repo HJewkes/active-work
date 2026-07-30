@@ -9,6 +9,7 @@ import {
   getConfigRoot,
   getInitiativeDir,
   getLockPath,
+  getMinerRoot,
   getStateRoot,
 } from '../../src/utils/paths.js';
 
@@ -67,5 +68,10 @@ describe('initiative paths', () => {
   it('builds the lockfile path inside the initiative directory', () => {
     vi.stubEnv('ACTIVE_ROOT', '/tmp/aw-paths-test');
     expect(getLockPath('foo')).toBe('/tmp/aw-paths-test/foo/.lock');
+  });
+
+  it('builds the miner root outside any initiative directory', () => {
+    vi.stubEnv('ACTIVE_ROOT', '/tmp/aw-paths-test');
+    expect(getMinerRoot()).toBe('/tmp/aw-paths-test/.miner');
   });
 });
