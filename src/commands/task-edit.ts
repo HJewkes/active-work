@@ -34,6 +34,26 @@ function isEditable(field: string): field is EditableField {
   return (EDITABLE_FIELDS as readonly string[]).includes(field);
 }
 
+/**
+ * The CLI/MCP dispatcher can't coerce `value` generically because its type
+ * depends on `field` at runtime (unlike other commands, where each arg has
+ * a fixed zod type). Coerce here, against the field it's actually landing on.
+ */
+function coerceValue(field: EditableField, value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  if (field === 'priority' || field === 'estimate') {
+    const n = Number(value);
+    return Number.isNaN(n) ? value : n;
+  }
+  if (field === 'tags') {
+    return value
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+  return value;
+}
+
 export default defineCommand<Args, Task>({
   name: 'task.edit',
   description: 'Edit a single field on a task',
@@ -43,9 +63,10 @@ export default defineCommand<Args, Task>({
     positional: ['slug', 'id', 'field', 'value'],
   },
   async run(args) {
-    if (!isEditable(args.field)) {
+    const { field } = args;
+    if (!isEditable(field)) {
       throw new UsageError(
-        `Field is not editable: ${args.field} (allowed: ${EDITABLE_FIELDS.join(', ')})`,
+        `Field is not editable: ${field} (allowed: ${EDITABLE_FIELDS.join(', ')})`,
       );
     }
     getActiveRoot();
@@ -61,7 +82,10 @@ export default defineCommand<Args, Task>({
         throw err;
       }
       const date = today();
-      const next: Record<string, unknown> = { ...task, [args.field]: args.value };
+      const next: Record<string, unknown> = {
+        ...task,
+        [field]: coerceValue(field, args.value),
+      };
       next.updated = date;
       if (args.field === 'status' && args.value === 'done') {
         next.done_at = date;

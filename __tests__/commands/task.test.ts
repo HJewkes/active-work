@@ -319,6 +319,31 @@ describe('task.edit', () => {
     });
   });
 
+  it('coerces stringly-typed values from the CLI/MCP boundary', async () => {
+    await withTempActiveRoot(async (root) => {
+      // The dispatcher can't statically type `value` (it depends on `field` at
+      // runtime), so commander/MCP callers may pass numbers/arrays as raw
+      // strings. The command must coerce them itself before validation.
+      const t1 = await taskEdit.run(
+        { slug: SLUG, id: 'SI-1', field: 'priority', value: '9' },
+        ctx(root),
+      );
+      expect(t1.priority).toBe(9);
+
+      const t2 = await taskEdit.run(
+        { slug: SLUG, id: 'SI-1', field: 'estimate', value: '4' },
+        ctx(root),
+      );
+      expect(t2.estimate).toBe(4);
+
+      const t3 = await taskEdit.run(
+        { slug: SLUG, id: 'SI-1', field: 'tags', value: 'x, y' },
+        ctx(root),
+      );
+      expect(t3.tags).toEqual(['x', 'y']);
+    });
+  });
+
   it('rejects unknown fields', async () => {
     await withTempActiveRoot(async (root) => {
       await expect(
