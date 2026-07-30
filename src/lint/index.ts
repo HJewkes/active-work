@@ -3,6 +3,7 @@ import path from 'node:path';
 import { getActiveRoot } from '../utils/paths.js';
 import { lintBrief } from './brief.js';
 import { lintOpenLoops } from './open-loops.js';
+import { lintSources } from './sources.js';
 import { lintTasks } from './task.js';
 import { lintZeroLoops } from './zero-loops.js';
 import { DEFAULT_LIMITS, type LintFinding, type LintLimits } from './types.js';
@@ -13,6 +14,7 @@ export { lintBrief } from './brief.js';
 export { lintTasks } from './task.js';
 export { lintOpenLoops } from './open-loops.js';
 export { lintZeroLoops } from './zero-loops.js';
+export { lintSources } from './sources.js';
 
 interface LintOptions {
   activeRoot?: string;
@@ -35,13 +37,14 @@ export async function lintSlug(
   const limits = options.limits ?? DEFAULT_LIMITS;
   const now = options.now ?? new Date();
   const initiativeDir = path.join(activeRoot, slug);
-  const [brief, tasks, openLoops, zeroLoops] = await Promise.all([
+  const [brief, tasks, openLoops, zeroLoops, sources] = await Promise.all([
     lintBrief(slug, initiativeDir, limits),
     lintTasks(slug, initiativeDir, limits),
     lintOpenLoops(slug, initiativeDir, limits, now),
     lintZeroLoops(slug, initiativeDir),
+    lintSources(slug, initiativeDir),
   ]);
-  return [...brief, ...tasks, ...openLoops, ...zeroLoops];
+  return [...brief, ...tasks, ...openLoops, ...zeroLoops, ...sources];
 }
 
 export async function listInitiativeSlugs(activeRoot: string): Promise<string[]> {
