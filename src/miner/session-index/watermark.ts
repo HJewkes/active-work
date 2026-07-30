@@ -65,7 +65,7 @@ export function advanceWatermark(
   db.prepare(
     `UPDATE transcripts SET last_byte_offset = @lastByteOffset, prefix_hash = @prefixHash,
        last_indexed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), file_size = @fileSize,
-       file_mtime = @fileMtime, content_hash = @contentHash, status = 'ok',
+       file_mtime = @fileMtime, content_hash = COALESCE(@contentHash, content_hash), status = 'ok',
        quarantine_reason = NULL
      WHERE transcript_id = @transcriptId`,
   ).run({ ...update, transcriptId });
@@ -83,19 +83,31 @@ export function markTranscriptStatus(
 }
 
 /**
- * Size, mtime and whole-file content hash — the durability triple that turns
- * "the source JSONL is gone or was rewritten" into a detectable state instead
- * of silently rotten byte-offset locators.
+ * Size, mtime and (optionally) whole-file content hash — the durability triple
+ * that turns "the source JSONL is gone or was rewritten" into a detectable
+ * state instead of silently rotten byte-offset locators.
+ *
+ * `withContentHash` is opt-in because it streams the entire file: doing it on
+ * every transcript of every refresh is O(corpus) per pass and blows the
+ * incremental latency budget on its own. Callers turn it on for `--full` and
+ * for a small rolling subset per pass, which keeps drift detection eventually
+ * consistent without paying for it continuously. `advanceWatermark` keeps any
+ * previously stored hash when this returns `null`.
  */
 export async function fileDurability(
   filePath: string,
+  withContentHash = false,
 ): Promise<Pick<WatermarkUpdate, 'fileSize' | 'fileMtime' | 'contentHash'>> {
   const stat = await fs.stat(filePath);
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
   return {
     fileSize: stat.size,
     fileMtime: stat.mtime.toISOString(),
-    contentHash: hash.digest('hex'),
+    contentHash: withContentHash ? await hashFile(filePath) : null,
   };
+}
+
+async function hashFile(filePath: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
+  return hash.digest('hex');
 }

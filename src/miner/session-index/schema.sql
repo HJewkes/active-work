@@ -209,6 +209,16 @@ CREATE INDEX IF NOT EXISTS idx_spans_fact ON searchable_spans(fact_id);
 -- stores only a locator, the real text lives in the raw JSONL on disk, so there
 -- is no content table for `content_rowid` to point at. rowid == span_id.
 --
+-- MANDATORY QUERY RULE: never trust a raw `spans_fts` rowid. Every read must
+-- join through
+--   `spans_fts JOIN searchable_spans ON spans_fts.rowid = searchable_spans.span_id`
+-- A contentless FTS5 table cannot delete a row without its original text, so
+-- per-transcript purges (rotation) and `resetIndex` both strand FTS rows whose
+-- `searchable_spans` row is gone. The join makes those orphans invisible;
+-- `refresh --full` (which runs `VALUES('delete-all')`) is the only thing that
+-- physically removes them, and `miner status` warns once the orphan ratio
+-- passes 20%.
+--
 -- Caveat for any future Cloudflare D1 backup path: `wrangler d1 export` fails
 -- for the WHOLE database if any FTS5 virtual table exists (confirmed on a
 -- sibling project). Export tooling would have to DROP this table, export, then

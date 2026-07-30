@@ -16,8 +16,10 @@ export const SCHEMA_VERSION = 1;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real
- * `.sql` file (diffable, syntax-highlighted). It is not bundled by `tsup`, so
- * anything shipping this subsystem in `dist/` must copy `schema.sql` alongside.
+ * `.sql` file (diffable, syntax-highlighted). tsup bundles code but not assets,
+ * so `scripts/copy-schema.mjs` (wired as the build's `onSuccess` hook) places
+ * `schema.sql` next to the bundle — `import.meta.url` then resolves it in both
+ * `src/` (tsx) and `dist/` (published) layouts.
  */
 function loadSchemaSql(): string {
   return readFileSync(fileURLToPath(new URL('./schema.sql', import.meta.url)), 'utf8');

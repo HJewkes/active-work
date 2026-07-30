@@ -39,6 +39,7 @@
     "export:aw-data": "node tools/export-aw-data.mjs",
     "cost:rollup": "node tools/cost-rollup.mjs",
     "eval:miner": "node tools/eval-miner.mjs",
+    "index:eval": "node tools/eval-session-index.mjs",
     "check:tools": "for f in tools/*.mjs; do node --check \"$f\" || exit 1; done && node -e \"JSON.parse(require('fs').readFileSync('tools/pricing/models.json','utf8'))\"",
     "postinstall": "node scripts/postinstall.js",
     "preuninstall": "node scripts/preuninstall.js",

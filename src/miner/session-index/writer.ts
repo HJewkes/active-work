@@ -136,6 +136,11 @@ const DERIVED_TABLES = [
 export function resetIndex(db: SessionIndexDb): void {
   db.transaction(() => {
     for (const table of DERIVED_TABLES) db.prepare(`DELETE FROM ${table}`).run();
+    // A contentless FTS5 table cannot delete a row without re-supplying its
+    // original text, so `DELETE FROM searchable_spans` leaves `spans_fts` rows
+    // behind. `'delete-all'` is the only command that clears them — this is the
+    // one place orphaned FTS rows are collected.
+    db.prepare(`INSERT INTO spans_fts(spans_fts) VALUES('delete-all')`).run();
     db.prepare('UPDATE transcripts SET last_byte_offset = 0, prefix_hash = NULL').run();
   })();
 }
