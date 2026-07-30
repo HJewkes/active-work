@@ -30,6 +30,12 @@ export interface BuildHttpAppOptions {
    * because the index watcher starts after the app is built.
    */
   indexState?: () => HealthIndexState | null;
+  /**
+   * Whether startup has finished (PID file written). Until it has, `/health`
+   * answers 503: the port binds before the PID file exists, so a caller that
+   * treated a bound port as "ready" could look the daemon up and find nothing.
+   */
+  ready?: () => boolean;
 }
 
 /** Interval between SSE keep-alive comments (ms). */
@@ -38,9 +44,10 @@ const HEARTBEAT_MS = 25_000;
 export function buildHttpApp(options: BuildHttpAppOptions): Hono {
   const app = new Hono();
 
-  app.get('/health', (c) =>
-    c.json(buildHealthPayload(options.port, options.indexState?.() ?? null)),
-  );
+  app.get('/health', (c) => {
+    if (options.ready && !options.ready()) return c.json({ ok: false, starting: true }, 503);
+    return c.json(buildHealthPayload(options.port, options.indexState?.() ?? null));
+  });
 
   app.get('/version', (c) => c.json({ version: DAEMON_VERSION }));
 

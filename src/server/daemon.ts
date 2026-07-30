@@ -165,9 +165,11 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   // Declared before the app so `/health` can read the watcher's state through
   // a closure; the watcher itself only starts once the port is bound.
   let indexWatch: SessionIndexWatcher | null = null;
+  let ready = false;
   const app = buildHttpApp({
     port,
     hub,
+    ready: () => ready,
     indexState: () => toHealthIndexState(indexWatch?.status()),
   });
   const server = await listenOn(app, port);
@@ -190,6 +192,9 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
     version: DAEMON_VERSION,
     started,
   });
+  // Only now is a `/health` probe answerable: the PID file exists, so anything
+  // that finds the daemon healthy can also find the daemon.
+  ready = true;
   indexWatch = startSessionIndexWatch(log);
   log.info({ pid: process.pid, port, started }, 'daemon started');
 
