@@ -563,6 +563,22 @@ Options:
   -h, --help           display help for command
 ```
 
+## active-work source list
+
+```
+Usage: active-work source list [options] <slug>
+
+List an initiative's sources, derived by reading sources/*.md — never a stored
+index.
+
+Arguments:
+  slug            slug (string)
+
+Options:
+  --type <value>  Only sources of this type: pr | deepdive | session | pointer
+  -h, --help      display help for command
+```
+
 ## active-work sync
 
 ```

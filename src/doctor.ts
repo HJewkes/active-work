@@ -16,6 +16,8 @@ import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './s
 import { getSupervisor } from './setup/supervision.js';
 import { listInitiativeSlugs } from './lint/index.js';
 import { loadTasks } from './lint/load-tasks.js';
+import { loadNotesFromDir } from './notes/note-file.js';
+import { NOTE_TITLE_MAX_LENGTH } from './schemas/note.js';
 import {
   deriveOpenLoops,
   findSessionIssues,
@@ -365,9 +367,46 @@ function describeMalformed(slug: string, entry: MalformedSession): string {
   return `${slug}/sessions/${entry.file} (${entry.reason})`;
 }
 
+function noteTitlesCheck(entries: string[]): DoctorCheck {
+  if (entries.length === 0) {
+    return {
+      name: 'note-titles',
+      status: 'ok',
+      detail: `every note title is at most ${NOTE_TITLE_MAX_LENGTH} characters`,
+    };
+  }
+  return {
+    name: 'note-titles',
+    status: 'warn',
+    // `note.add` rejects these now, so anything here predates the bound: the
+    // read path stays permissive on purpose, and this is the only place those
+    // notes get named.
+    detail:
+      `note title longer than ${NOTE_TITLE_MAX_LENGTH} characters ` +
+      `(rename the title in the file's frontmatter): ${entries.join('; ')}`,
+  };
+}
+
+/** Notes whose stored title exceeds the write-time bound. */
+async function checkNoteTitles(deps: DoctorDeps): Promise<DoctorCheck> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  const slugs = await listInitiativeSlugs(activeRoot);
+  const overlong: string[] = [];
+  for (const slug of slugs) {
+    const { notes } = await loadNotesFromDir(nodePath.join(activeRoot, slug));
+    for (const note of notes) {
+      if (note.frontmatter.title.length <= NOTE_TITLE_MAX_LENGTH) continue;
+      overlong.push(
+        `${slug}/sources/notes/${note.filename} (${note.frontmatter.title.length} chars)`,
+      );
+    }
+  }
+  return noteTitlesCheck(overlong);
+}
+
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const [installChecks, sessionChecks] = await Promise.all([
+  const [installChecks, sessionChecks, noteTitles] = await Promise.all([
     Promise.all([
       checkNode(deps),
       checkActiveRoot(deps),
@@ -377,7 +416,8 @@ export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
       checkSupervisor(deps),
     ]),
     checkSessions(deps),
+    checkNoteTitles(deps),
   ]);
-  const checks = [...installChecks, ...sessionChecks];
+  const checks = [...installChecks, ...sessionChecks, noteTitles];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }
