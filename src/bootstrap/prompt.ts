@@ -347,10 +347,17 @@ function renderTopTasks(tasks: Task[], topN: number): { body: string; count: num
   };
 }
 
+/**
+ * Recently-done tasks are backward-looking: they cost tokens in every bootstrap
+ * but are rarely acted on. A count plus the exact lookup command keeps the
+ * signal ("this much shipped here") at fixed size and lets the agent pull the
+ * detail on the rare occasion it matters.
+ */
 function renderRecentlyDone(
   tasks: Task[],
   windowDays: number,
   now: Date,
+  slug: string,
 ): { body: string | null; count: number } {
   const cutoff = now.getTime() - windowDays * MS_PER_DAY;
   const done = tasks
@@ -361,7 +368,10 @@ function renderRecentlyDone(
     })
     .sort((a, b) => (a.done_at! < b.done_at! ? 1 : -1));
   if (done.length === 0) return { body: null, count: 0 };
-  const body = done.map((t) => `- [${t.id}] ${t.title} — done ${t.done_at}`).join('\n');
+  const noun = done.length === 1 ? 'task' : 'tasks';
+  const body =
+    `${done.length} ${noun} completed — ` +
+    `\`active-work task list ${slug} --status done --json\``;
   return { body, count: done.length };
 }
 
@@ -853,6 +863,7 @@ export async function assembleBootstrap(
     tasks,
     recentlyDoneDays,
     now,
+    slug,
   );
   let artifactsBody: string | null = null;
   if (!includeLiveStatus || artifacts.branches.length === 0) {

@@ -294,8 +294,44 @@ describe('assembleBootstrap', () => {
         ...offlineOpts,
       });
       expect(prompt).toContain('# Recently done (last 14 days)');
-      expect(prompt).toContain('[SI-2]');
+      expect(prompt).toContain(
+        `1 task completed — \`active-work task list ${SAMPLE_SLUG} --status done --json\``,
+      );
       expect(metadata.recently_done_count).toBe(1);
+    });
+  });
+
+  it('summarizes recently-done as a count and pointer, never a task dump', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const tasksDir = path.join(activeRoot, SAMPLE_SLUG, 'tasks');
+      await fs.writeFile(
+        path.join(tasksDir, 'SI-4.yml'),
+        [
+          'id: SI-4',
+          'title: Another finished task',
+          'priority: 4',
+          'status: done',
+          'created: 2026-05-08',
+          'updated: 2026-05-10',
+          'done_at: 2026-05-10',
+          '',
+        ].join('\n'),
+      );
+
+      const { prompt, metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        recentlyDoneDays: 14,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain(
+        `2 tasks completed — \`active-work task list ${SAMPLE_SLUG} --status done --json\``,
+      );
+      expect(prompt).not.toContain('Another finished task');
+      expect(prompt).not.toContain('Second sample task, already done');
+      expect(metadata.recently_done_count).toBe(2);
     });
   });
 
