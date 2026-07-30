@@ -4,10 +4,7 @@ import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.
 import type { WorktreeEntry } from '../schemas/artifacts.js';
 import { getActiveRoot, getLockPath, expandTilde } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
-import {
-  readArtifactsFile,
-  writeArtifactsFile,
-} from '../utils/registered-worktrees.js';
+import { readArtifactsFile, writeArtifactsFile } from '../utils/registered-worktrees.js';
 import { readFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { today } from '../utils/today.js';
 import { ValidationError } from '../errors.js';
@@ -62,10 +59,7 @@ export default defineCommand({
       let frontmatter: BriefFrontmatter;
       let body: string;
       try {
-        ({ frontmatter, body } = await readFrontmatter(
-          briefPath,
-          BriefFrontmatterSchema,
-        ));
+        ({ frontmatter, body } = await readFrontmatter(briefPath, BriefFrontmatterSchema));
       } catch (err) {
         throw new ValidationError(err instanceof Error ? err.message : String(err));
       }
@@ -84,8 +78,7 @@ export default defineCommand({
       // silently demote it).
       const named = artifacts.worktrees.filter((e) => e.name !== undefined);
       const hadOthers = named.some((entry) => entry.name !== label);
-      const makeDefault =
-        args.default === true || !hadOthers || byLabel?.default === true;
+      const makeDefault = args.default === true || !hadOthers || byLabel?.default === true;
 
       const updated: WorktreeEntry = {
         ...(target ?? {}),

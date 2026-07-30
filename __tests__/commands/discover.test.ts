@@ -143,10 +143,7 @@ describe('track command', () => {
   it('refuses to overwrite an existing initiative', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       await expect(
-        trackCmd.run(
-          { ref: 'feat/dup', slug: 'sample-initiative' },
-          baseCtx(activeRoot),
-        ),
+        trackCmd.run({ ref: 'feat/dup', slug: 'sample-initiative' }, baseCtx(activeRoot)),
       ).rejects.toBeInstanceOf(UsageError);
     });
   });

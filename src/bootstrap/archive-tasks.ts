@@ -39,9 +39,7 @@ export async function archiveStaleTasks(
   } catch {
     return [];
   }
-  const ymlFiles = entries.filter(
-    (n) => n.endsWith('.yml') || n.endsWith('.yaml'),
-  );
+  const ymlFiles = entries.filter((n) => n.endsWith('.yml') || n.endsWith('.yaml'));
   const cutoffMs = opts.now.getTime() - opts.retentionDays * MS_PER_DAY;
   const archiveDir = path.join(tasksDir, 'archive');
   const archived: string[] = [];

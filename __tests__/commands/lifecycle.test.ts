@@ -37,18 +37,10 @@ describe('new', () => {
 
       const briefPath = path.join(root, 'alpha-init', 'brief.md');
       expect((await fs.stat(briefPath)).isFile()).toBe(true);
-      expect(
-        (await fs.stat(path.join(root, 'alpha-init', 'artifacts.yml'))).isFile(),
-      ).toBe(true);
-      expect(
-        (await fs.stat(path.join(root, 'alpha-init', 'tasks'))).isDirectory(),
-      ).toBe(true);
-      expect(
-        (await fs.stat(path.join(root, 'alpha-init', 'sessions'))).isDirectory(),
-      ).toBe(true);
-      expect(
-        (await fs.stat(path.join(root, 'alpha-init', 'sources'))).isDirectory(),
-      ).toBe(true);
+      expect((await fs.stat(path.join(root, 'alpha-init', 'artifacts.yml'))).isFile()).toBe(true);
+      expect((await fs.stat(path.join(root, 'alpha-init', 'tasks'))).isDirectory()).toBe(true);
+      expect((await fs.stat(path.join(root, 'alpha-init', 'sessions'))).isDirectory()).toBe(true);
+      expect((await fs.stat(path.join(root, 'alpha-init', 'sources'))).isDirectory()).toBe(true);
 
       const raw = await fs.readFile(briefPath, 'utf8');
       const parsed = matter(raw);
@@ -62,9 +54,7 @@ describe('new', () => {
       }
       // The worktree is registered in artifacts.yml, not the brief (AW-67).
       const artifacts = ArtifactsSchema.parse(
-        YAML.parse(
-          await fs.readFile(path.join(root, 'alpha-init', 'artifacts.yml'), 'utf8'),
-        ),
+        YAML.parse(await fs.readFile(path.join(root, 'alpha-init', 'artifacts.yml'), 'utf8')),
       );
       expect(artifacts.worktrees).toEqual([
         { path: '~/code/alpha', repo: '~/code/alpha', name: 'main', default: true },
@@ -83,17 +73,17 @@ describe('new', () => {
   it('refuses a duplicate slug', async () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'dup', title: 'D' }, ctxFor(root));
-      await expect(
-        newCmd.run({ slug: 'dup', title: 'D2' }, ctxFor(root)),
-      ).rejects.toThrow(ValidationError);
+      await expect(newCmd.run({ slug: 'dup', title: 'D2' }, ctxFor(root))).rejects.toThrow(
+        ValidationError,
+      );
     });
   });
 
   it('rejects an invalid slug', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await expect(
-        newCmd.run({ slug: 'Bad Slug', title: 'X' }, ctxFor(root)),
-      ).rejects.toThrow(ValidationError);
+      await expect(newCmd.run({ slug: 'Bad Slug', title: 'X' }, ctxFor(root))).rejects.toThrow(
+        ValidationError,
+      );
     });
   });
 });
@@ -108,10 +98,7 @@ describe('set', () => {
       const stale = before.replace(/updated: .+/, 'updated: 2024-01-01');
       await fs.writeFile(briefPath, stale, 'utf8');
 
-      await setCmd.run(
-        { slug: 'sf', field: 'owner', value: 'henry' },
-        ctxFor(root),
-      );
+      await setCmd.run({ slug: 'sf', field: 'owner', value: 'henry' }, ctxFor(root));
 
       const parsed = matter(await fs.readFile(briefPath, 'utf8'));
       expect((parsed.data as Record<string, unknown>).owner).toBe('henry');
@@ -130,9 +117,7 @@ describe('set', () => {
         { slug: 'nest', field: 'worktrees.main.path', value: '~/new-path' },
         ctxFor(root),
       );
-      const parsed = matter(
-        await fs.readFile(path.join(root, 'nest', 'brief.md'), 'utf8'),
-      );
+      const parsed = matter(await fs.readFile(path.join(root, 'nest', 'brief.md'), 'utf8'));
       expect(parsed.data).not.toHaveProperty('worktrees');
 
       // The real registration is untouched.
@@ -149,10 +134,7 @@ describe('set', () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'bad', title: 'B' }, ctxFor(root));
       await expect(
-        setCmd.run(
-          { slug: 'bad', field: 'state', value: 'garbage' },
-          ctxFor(root),
-        ),
+        setCmd.run({ slug: 'bad', field: 'state', value: 'garbage' }, ctxFor(root)),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -160,10 +142,7 @@ describe('set', () => {
   it('throws NotFoundError when the slug is missing', async () => {
     await withEmptyActiveRoot(async (root) => {
       await expect(
-        setCmd.run(
-          { slug: 'nope', field: 'owner', value: 'x' },
-          ctxFor(root),
-        ),
+        setCmd.run({ slug: 'nope', field: 'owner', value: 'x' }, ctxFor(root)),
       ).rejects.toThrow(NotFoundError);
     });
   });
@@ -188,9 +167,7 @@ describe('touch', () => {
 
   it('throws NotFoundError for missing slug', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await expect(touchCmd.run({ slug: 'no' }, ctxFor(root))).rejects.toThrow(
-        NotFoundError,
-      );
+      await expect(touchCmd.run({ slug: 'no' }, ctxFor(root))).rejects.toThrow(NotFoundError);
     });
   });
 });
@@ -213,9 +190,7 @@ describe('paths', () => {
 
   it('throws NotFoundError for a missing slug', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await expect(pathsCmd.run({ slug: 'gone' }, ctxFor(root))).rejects.toThrow(
-        NotFoundError,
-      );
+      await expect(pathsCmd.run({ slug: 'gone' }, ctxFor(root))).rejects.toThrow(NotFoundError);
     });
   });
 });
@@ -224,16 +199,11 @@ describe('rename', () => {
   it('moves the directory', async () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'old-name', title: 'O' }, ctxFor(root));
-      const out = await renameCmd.run(
-        { old_slug: 'old-name', new_slug: 'new-name' },
-        ctxFor(root),
-      );
+      const out = await renameCmd.run({ old_slug: 'old-name', new_slug: 'new-name' }, ctxFor(root));
       expect(out.from).toBe(path.join(root, 'old-name'));
       expect(out.to).toBe(path.join(root, 'new-name'));
       await expect(fs.stat(path.join(root, 'old-name'))).rejects.toThrow();
-      expect((await fs.stat(path.join(root, 'new-name'))).isDirectory()).toBe(
-        true,
-      );
+      expect((await fs.stat(path.join(root, 'new-name'))).isDirectory()).toBe(true);
     });
   });
 
@@ -242,10 +212,7 @@ describe('rename', () => {
       await newCmd.run({ slug: 'a-one', title: 'A' }, ctxFor(root));
       await newCmd.run({ slug: 'b-two', title: 'B' }, ctxFor(root));
       await expect(
-        renameCmd.run(
-          { old_slug: 'a-one', new_slug: 'b-two' },
-          ctxFor(root),
-        ),
+        renameCmd.run({ old_slug: 'a-one', new_slug: 'b-two' }, ctxFor(root)),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -254,10 +221,7 @@ describe('rename', () => {
     await withEmptyActiveRoot(async (root) => {
       await newCmd.run({ slug: 'src', title: 'S' }, ctxFor(root));
       await expect(
-        renameCmd.run(
-          { old_slug: 'src', new_slug: 'Bad Name' },
-          ctxFor(root),
-        ),
+        renameCmd.run({ old_slug: 'src', new_slug: 'Bad Name' }, ctxFor(root)),
       ).rejects.toThrow(ValidationError);
     });
   });
@@ -325,9 +289,9 @@ describe('archive', () => {
 
         // Recreate the source then try archiving again into the same YYYY-MM bucket.
         await newCmd.run({ slug: 'twice', title: 'T' }, ctxFor(root));
-        await expect(
-          archiveCmd.run({ slug: 'twice', domain }, ctxFor(root)),
-        ).rejects.toThrow(ValidationError);
+        await expect(archiveCmd.run({ slug: 'twice', domain }, ctxFor(root))).rejects.toThrow(
+          ValidationError,
+        );
       } finally {
         await cleanArchive(root, domain);
       }

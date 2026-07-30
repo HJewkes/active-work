@@ -9,12 +9,7 @@
  * paths and never need to think about CORS.
  */
 
-import type {
-  ArtifactsResult,
-  InitiativesResult,
-  JsonEnvelope,
-  TasksResult,
-} from '../types.js';
+import type { ArtifactsResult, InitiativesResult, JsonEnvelope, TasksResult } from '../types.js';
 
 async function rpc<T>(name: string, body: unknown): Promise<T> {
   const res = await fetch(`/rpc/${name}`, {

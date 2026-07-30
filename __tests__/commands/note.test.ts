@@ -16,11 +16,7 @@ function notesDir(root: string): string {
   return path.join(root, SLUG, 'sources', 'notes');
 }
 
-async function writeNoteFixture(
-  root: string,
-  filename: string,
-  contents: string,
-): Promise<void> {
+async function writeNoteFixture(root: string, filename: string, contents: string): Promise<void> {
   await fs.mkdir(notesDir(root), { recursive: true });
   await fs.writeFile(path.join(notesDir(root), filename), contents, 'utf8');
 }
@@ -43,10 +39,7 @@ describe('note.add', () => {
         ctx,
       );
 
-      const expected = path.join(
-        notesDir(root),
-        `${today()}-env-paths-ignores-xdg-on-darwin.md`,
-      );
+      const expected = path.join(notesDir(root), `${today()}-env-paths-ignores-xdg-on-darwin.md`);
       expect(res.path).toBe(expected);
       expect(res.kind).toBe('gotcha');
 
@@ -90,9 +83,9 @@ describe('note.add', () => {
   it('requires exactly one of --body and --body-file', () => {
     const base = { slug: SLUG, kind: 'fyi', title: 'Body rules' };
     expect(noteAddCmd.args.safeParse(base).success).toBe(false);
-    expect(
-      noteAddCmd.args.safeParse({ ...base, body: 'a', body_file: '/tmp/b.md' }).success,
-    ).toBe(false);
+    expect(noteAddCmd.args.safeParse({ ...base, body: 'a', body_file: '/tmp/b.md' }).success).toBe(
+      false,
+    );
     expect(noteAddCmd.args.safeParse({ ...base, body: 'a' }).success).toBe(true);
   });
 
@@ -120,10 +113,7 @@ describe('note.add', () => {
   it('rejects an unknown initiative', async () => {
     await withTempActiveRoot(async () => {
       await expect(
-        noteAddCmd.run(
-          { slug: 'does-not-exist', kind: 'fyi', title: 'Nope', body: 'x' },
-          ctx,
-        ),
+        noteAddCmd.run({ slug: 'does-not-exist', kind: 'fyi', title: 'Nope', body: 'x' }, ctx),
       ).rejects.toThrow(/not found/i);
     });
   });
@@ -132,8 +122,16 @@ describe('note.add', () => {
 describe('note.list', () => {
   it('returns notes newest first', async () => {
     await withTempActiveRoot(async (root) => {
-      await writeNoteFixture(root, '2026-01-02-older.md', noteFixture('fyi', 'Older', '2026-01-02'));
-      await writeNoteFixture(root, '2026-07-01-newer.md', noteFixture('process', 'Newer', '2026-07-01'));
+      await writeNoteFixture(
+        root,
+        '2026-01-02-older.md',
+        noteFixture('fyi', 'Older', '2026-01-02'),
+      );
+      await writeNoteFixture(
+        root,
+        '2026-07-01-newer.md',
+        noteFixture('process', 'Newer', '2026-07-01'),
+      );
 
       const res = await noteListCmd.run({ slug: SLUG }, ctx);
       expect(res.notes.map((n) => n.title)).toEqual(['Newer', 'Older']);

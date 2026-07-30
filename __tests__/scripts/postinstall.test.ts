@@ -41,13 +41,7 @@ describe('scripts/postinstall.js', () => {
     const result = runPostinstall(homeDir);
     expect(result.status).toBe(0);
 
-    const installedSkill = path.join(
-      homeDir,
-      '.claude',
-      'skills',
-      'active-work',
-      'SKILL.md',
-    );
+    const installedSkill = path.join(homeDir, '.claude', 'skills', 'active-work', 'SKILL.md');
     expect(existsSync(installedSkill)).toBe(true);
 
     const content = readFileSync(installedSkill, 'utf8');
@@ -55,13 +49,7 @@ describe('scripts/postinstall.js', () => {
     expect(content).toContain('description:');
 
     // References ship alongside SKILL.md.
-    const referencesDir = path.join(
-      homeDir,
-      '.claude',
-      'skills',
-      'active-work',
-      'references',
-    );
+    const referencesDir = path.join(homeDir, '.claude', 'skills', 'active-work', 'references');
     expect(existsSync(path.join(referencesDir, 'onboarding.md'))).toBe(true);
     expect(existsSync(path.join(referencesDir, 'auditing-existing-work.md'))).toBe(true);
     expect(existsSync(path.join(referencesDir, 'cli-dev.md'))).toBe(true);
@@ -76,13 +64,7 @@ describe('scripts/postinstall.js', () => {
     const second = runPostinstall(homeDir);
     expect(second.status).toBe(0);
 
-    const installedSkill = path.join(
-      homeDir,
-      '.claude',
-      'skills',
-      'active-work',
-      'SKILL.md',
-    );
+    const installedSkill = path.join(homeDir, '.claude', 'skills', 'active-work', 'SKILL.md');
     expect(existsSync(installedSkill)).toBe(true);
     const content = readFileSync(installedSkill, 'utf8');
     expect(content).toContain('name: active-work');

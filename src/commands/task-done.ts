@@ -26,11 +26,7 @@ export default defineCommand<Args, Task>({
   async run(args) {
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
-      const file = path.join(
-        getInitiativeDir(args.slug),
-        'tasks',
-        `${args.id}.yml`,
-      );
+      const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
       let task: Task;
       try {
         task = await readYaml(file, TaskSchema);

@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  successEnvelope,
-  errorEnvelope,
-} from '../../src/registry/json-envelope.js';
+import { successEnvelope, errorEnvelope } from '../../src/registry/json-envelope.js';
 
 describe('successEnvelope', () => {
   it('returns ok: true with data and no warnings key when warnings omitted', () => {

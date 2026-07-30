@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
 // Accepts standard ISO 8601 datetimes with timezone (Z or ±HH:MM), optional fractional seconds.
-const ISO_8601_REGEX =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 const isValidIso8601 = (value: string): boolean => {
   if (!ISO_8601_REGEX.test(value)) return false;
@@ -104,10 +103,7 @@ export const SessionFrontmatterSchema = z
     }
     checkUniqueStepIds(value.next_steps, ctx);
     checkAbandonedHasNote(value.resolves, ctx);
-    if (
-      value.no_loops === true &&
-      (value.next_steps.length > 0 || value.resolves.length > 0)
-    ) {
+    if (value.no_loops === true && (value.next_steps.length > 0 || value.resolves.length > 0)) {
       ctx.addIssue({
         code: 'custom',
         path: ['no_loops'],

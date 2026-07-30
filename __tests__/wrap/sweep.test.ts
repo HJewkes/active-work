@@ -413,9 +413,7 @@ describe('sweepInitiative upstream semantics', () => {
       ]);
       // Unknown dirt is enough to make the branch worth recording, even though
       // there is nothing to push.
-      expect(res.unrecorded.branches).toEqual([
-        { repo: '~/code/sample', name: 'feat/unreadable' },
-      ]);
+      expect(res.unrecorded.branches).toEqual([{ repo: '~/code/sample', name: 'feat/unreadable' }]);
     });
   });
 
@@ -473,9 +471,7 @@ describe('sweepInitiative repo-set dedupe', () => {
       expect(res.repos).toEqual([SAMPLE_REPO]);
       // SAMPLE_REPO is the registered worktree, already recorded (AW-67).
       expect(res.unrecorded.worktrees.map((w) => w.path)).toEqual([LINKED]);
-      expect(res.unrecorded.branches).toEqual([
-        { repo: '~/code/sample', name: 'feat/linked' },
-      ]);
+      expect(res.unrecorded.branches).toEqual([{ repo: '~/code/sample', name: 'feat/linked' }]);
       expect(res.unrecorded.stashes).toHaveLength(1);
       expect(res.dirty).toHaveLength(1);
       expect(res.unpushed).toHaveLength(1);

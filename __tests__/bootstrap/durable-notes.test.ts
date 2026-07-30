@@ -9,11 +9,7 @@ const SLUG = 'sample-initiative';
 const NOW = new Date('2026-07-28T12:00:00Z');
 const offlineOpts = { includeLiveStatus: false, now: NOW } as const;
 
-async function writeNote(
-  root: string,
-  filename: string,
-  contents: string,
-): Promise<void> {
+async function writeNote(root: string, filename: string, contents: string): Promise<void> {
   const dir = path.join(root, SLUG, 'sources', 'notes');
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, filename), contents, 'utf8');
@@ -37,8 +33,16 @@ describe('bootstrap durable notes', () => {
 
   it('renders one compact line per note, newest first', async () => {
     await withTempActiveRoot(async (root) => {
-      await writeNote(root, '2026-01-02-old-lesson.md', noteFixture('process', 'Old lesson', '2026-01-02'));
-      await writeNote(root, '2026-07-01-fresh-gotcha.md', noteFixture('gotcha', 'Fresh gotcha', '2026-07-01'));
+      await writeNote(
+        root,
+        '2026-01-02-old-lesson.md',
+        noteFixture('process', 'Old lesson', '2026-01-02'),
+      );
+      await writeNote(
+        root,
+        '2026-07-01-fresh-gotcha.md',
+        noteFixture('gotcha', 'Fresh gotcha', '2026-07-01'),
+      );
 
       const { prompt } = await assembleBootstrap({
         activeRoot: root,
@@ -55,7 +59,11 @@ describe('bootstrap durable notes', () => {
 
   it('keeps notes far older than the recently-done window', async () => {
     await withTempActiveRoot(async (root) => {
-      await writeNote(root, '2024-03-04-ancient.md', noteFixture('decision', 'Ancient decision', '2024-03-04'));
+      await writeNote(
+        root,
+        '2024-03-04-ancient.md',
+        noteFixture('decision', 'Ancient decision', '2024-03-04'),
+      );
 
       const { prompt } = await assembleBootstrap({
         activeRoot: root,
@@ -106,7 +114,11 @@ describe('bootstrap durable notes', () => {
 
   it('places the section after tasks and before open artifacts', async () => {
     await withTempActiveRoot(async (root) => {
-      await writeNote(root, '2026-06-01-placement.md', noteFixture('fyi', 'Placement', '2026-06-01'));
+      await writeNote(
+        root,
+        '2026-06-01-placement.md',
+        noteFixture('fyi', 'Placement', '2026-06-01'),
+      );
 
       const { prompt } = await assembleBootstrap({
         activeRoot: root,

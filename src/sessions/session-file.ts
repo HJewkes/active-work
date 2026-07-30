@@ -57,17 +57,12 @@ export function buildSessionStem(started: string, sessionId: string): string {
 }
 
 /** Absolute path a session with this stem would occupy on a first write. */
-export function sessionFilePathForStem(
-  slug: string,
-  stem: string,
-  activeRoot?: string,
-): string {
+export function sessionFilePathForStem(slug: string, stem: string, activeRoot?: string): string {
   return path.join(resolveSessionsDir(slug, activeRoot), `${stem}.md`);
 }
 
 function resolveSessionsDir(slug: string, activeRoot?: string): string {
-  const dir =
-    activeRoot === undefined ? getInitiativeDir(slug) : path.join(activeRoot, slug);
+  const dir = activeRoot === undefined ? getInitiativeDir(slug) : path.join(activeRoot, slug);
   return path.join(dir, 'sessions');
 }
 
@@ -104,9 +99,7 @@ async function pickAvailableFilename(
  * frontmatter first. `wrap` is the only command that writes sessions through
  * here; `fold` writes its derived sidecars directly.
  */
-export async function writeSessionFile(
-  input: SessionWriteInput,
-): Promise<SessionWriteResult> {
+export async function writeSessionFile(input: SessionWriteInput): Promise<SessionWriteResult> {
   const sessionsDir = resolveSessionsDir(input.slug, input.activeRoot);
   await fs.mkdir(sessionsDir, { recursive: true });
 

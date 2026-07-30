@@ -56,8 +56,7 @@ export default defineCommand<Args, Result>({
     options: {
       state: {
         long: '--state',
-        description:
-          "'open' (default) | 'resolved' | 'abandoned' | 'all'",
+        description: "'open' (default) | 'resolved' | 'abandoned' | 'all'",
       },
     },
     usage: 'active-work loops <slug> [--state open|resolved|abandoned|all]',

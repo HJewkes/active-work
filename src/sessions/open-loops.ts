@@ -155,9 +155,7 @@ interface Analysis {
   malformed: MalformedSession[];
 }
 
-type LoadResult =
-  | { ok: true; session: LoadedSession }
-  | { ok: false; problem: MalformedSession };
+type LoadResult = { ok: true; session: LoadedSession } | { ok: false; problem: MalformedSession };
 
 function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -221,9 +219,7 @@ function toLoadedSession(
  * The one loader for session files. Callers that need a different order sort a
  * copy; this order is what makes `dangling` reporting stable.
  */
-export async function loadSessionsFromDir(
-  initiativeDir: string,
-): Promise<LoadedSessions> {
+export async function loadSessionsFromDir(initiativeDir: string): Promise<LoadedSessions> {
   const sessionsDir = path.join(initiativeDir, 'sessions');
   let entries: string[];
   try {
@@ -380,10 +376,7 @@ function toOpenLoop(entry: LoopEntry, now: Date): OpenLoop {
  * Callers holding a `loadSessionsFromDir` result (bootstrap does — it renders
  * the same sessions) use this so the files are read and parsed exactly once.
  */
-export function deriveOpenLoopsFrom(
-  loaded: LoadedSessions,
-  opts: DeriveOptions,
-): OpenLoop[] {
+export function deriveOpenLoopsFrom(loaded: LoadedSessions, opts: DeriveOptions): OpenLoop[] {
   const { loops, resolutions } = analyzeLoaded(loaded);
   return loops
     .filter((entry) => !resolutions.has(entry.ref) && !isAutoResolved(entry, opts))
@@ -403,11 +396,7 @@ export async function deriveOpenLoops(
   return deriveOpenLoopsFrom(await loadSessionsFromDir(initiativeDir), opts);
 }
 
-function toResolvedLoop(
-  entry: LoopEntry,
-  resolution: Resolution,
-  now: Date,
-): ResolvedLoop {
+function toResolvedLoop(entry: LoopEntry, resolution: Resolution, now: Date): ResolvedLoop {
   const ageMs = now.getTime() - new Date(resolution.closedAt).getTime();
   return {
     ref: entry.ref,
@@ -456,9 +445,7 @@ export async function deriveResolvedLoops(
 }
 
 /** `resolves` entries that did not close a loop, each tagged with why. */
-export async function findDanglingResolves(
-  initiativeDir: string,
-): Promise<DanglingResolve[]> {
+export async function findDanglingResolves(initiativeDir: string): Promise<DanglingResolve[]> {
   const { dangling } = await analyze(initiativeDir);
   return dangling;
 }

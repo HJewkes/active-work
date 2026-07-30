@@ -5,8 +5,7 @@ import { CURRENT_VERSION, runMigrations } from '../migrations/index.js';
 
 const SCHEMA_VERSION_FILENAME = '.schema-version';
 
-const schemaVersionPath = (activeRoot: string): string =>
-  join(activeRoot, SCHEMA_VERSION_FILENAME);
+const schemaVersionPath = (activeRoot: string): string => join(activeRoot, SCHEMA_VERSION_FILENAME);
 
 const isNodeErrnoException = (err: unknown): err is NodeJS.ErrnoException =>
   typeof err === 'object' && err !== null && 'code' in err;

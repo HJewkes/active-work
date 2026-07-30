@@ -71,9 +71,7 @@ export interface AcquiredLease {
 }
 
 /** Write a lease file and hand back its id plus a release handle. */
-export async function acquireLease(
-  input: AcquireLeaseInput,
-): Promise<AcquiredLease> {
+export async function acquireLease(input: AcquireLeaseInput): Promise<AcquiredLease> {
   const { activeRoot, slug, cwd, mode, pid, label, now = new Date() } = input;
   const leaseId = randomBytes(8).toString('hex');
   const lease: Lease = LeaseSchema.parse({
@@ -86,11 +84,7 @@ export async function acquireLease(
     ...(label ? { label } : {}),
   });
   await fs.mkdir(leaseDir(activeRoot, slug), { recursive: true });
-  await fs.writeFile(
-    leasePath(activeRoot, slug, leaseId),
-    JSON.stringify(lease, null, 2),
-    'utf8',
-  );
+  await fs.writeFile(leasePath(activeRoot, slug, leaseId), JSON.stringify(lease, null, 2), 'utf8');
   return {
     leaseId,
     release: () => releaseLease(activeRoot, slug, leaseId),
@@ -123,11 +117,7 @@ export async function releaseLease(
  * signal that Ctrl-C sends to the whole foreground process group. Swallows
  * everything: a failed unlink at exit must not change the exit code.
  */
-export function releaseLeaseSync(
-  activeRoot: string,
-  slug: string,
-  leaseId: string,
-): void {
+export function releaseLeaseSync(activeRoot: string, slug: string, leaseId: string): void {
   try {
     unlinkSync(leasePath(activeRoot, slug, leaseId));
   } catch {
@@ -155,9 +145,7 @@ export interface ReadLiveLeasesInput {
   isAlive?: (pid: number) => boolean;
 }
 
-export type SiblingProbe = (
-  input: ReadLiveLeasesInput,
-) => Promise<LiveSibling[]>;
+export type SiblingProbe = (input: ReadLiveLeasesInput) => Promise<LiveSibling[]>;
 
 function isLive(lease: Lease, now: Date, isAlive: (pid: number) => boolean): boolean {
   const ageMs = now.getTime() - new Date(lease.started).getTime();
@@ -208,16 +196,8 @@ async function unlinkQuietly(file: string): Promise<void> {
  *
  * Returns `[]` on any unexpected failure. Callers are on the bootstrap path.
  */
-export async function readLiveLeases(
-  input: ReadLiveLeasesInput,
-): Promise<LiveSibling[]> {
-  const {
-    activeRoot,
-    slug,
-    now = new Date(),
-    excludeLeaseId,
-    isAlive = isProcessAlive,
-  } = input;
+export async function readLiveLeases(input: ReadLiveLeasesInput): Promise<LiveSibling[]> {
+  const { activeRoot, slug, now = new Date(), excludeLeaseId, isAlive = isProcessAlive } = input;
   try {
     const dir = leaseDir(activeRoot, slug);
     let entries: string[];

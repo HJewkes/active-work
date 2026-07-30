@@ -4,10 +4,7 @@ import type { Dirent } from 'node:fs';
 import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
-import {
-  readRegisteredWorktrees,
-  type RegisteredWorktree,
-} from '../utils/registered-worktrees.js';
+import { readRegisteredWorktrees, type RegisteredWorktree } from '../utils/registered-worktrees.js';
 import { readFrontmatter } from '../utils/gray-matter-io.js';
 import { defineCommand } from '../registry/index.js';
 
@@ -37,7 +34,6 @@ const resultSchema = z.object({
   parse_errors: z.array(parseErrorSchema),
   worktree_conflicts: z.array(conflictSchema),
 });
-
 
 const STATE_ORDER: Record<BriefFrontmatter['state'], number> = {
   focused: 0,
@@ -85,10 +81,7 @@ export async function scanInitiatives(activeRoot: string): Promise<ScanResult> {
       continue;
     }
     try {
-      const { frontmatter } = await readFrontmatter(
-        briefPath,
-        BriefFrontmatterSchema,
-      );
+      const { frontmatter } = await readFrontmatter(briefPath, BriefFrontmatterSchema);
       const worktrees = await readRegisteredWorktrees(path.join(activeRoot, slug));
       entries.push({ slug, frontmatter, worktrees });
     } catch (err) {
@@ -100,9 +93,7 @@ export async function scanInitiatives(activeRoot: string): Promise<ScanResult> {
   return { entries, errors };
 }
 
-function detectWorktreeConflicts(
-  entries: ScanEntry[],
-): Array<{ path: string; slugs: string[] }> {
+function detectWorktreeConflicts(entries: ScanEntry[]): Array<{ path: string; slugs: string[] }> {
   const byPath = new Map<string, Set<string>>();
   for (const { slug, worktrees } of entries) {
     // Only registered worktrees conflict. Two initiatives whose sweeps both
@@ -127,10 +118,7 @@ function detectWorktreeConflicts(
   return conflicts;
 }
 
-function compareInitiatives(
-  a: ScanEntry,
-  b: ScanEntry,
-): number {
+function compareInitiatives(a: ScanEntry, b: ScanEntry): number {
   const aRank = a.frontmatter.rank ?? Number.POSITIVE_INFINITY;
   const bRank = b.frontmatter.rank ?? Number.POSITIVE_INFINITY;
   if (aRank !== bRank) return aRank - bRank;
@@ -150,18 +138,14 @@ export default defineCommand({
   async run() {
     const activeRoot = getActiveRoot();
     const { entries, errors } = await scanInitiatives(activeRoot);
-    const initiatives = [...entries]
-      .sort(compareInitiatives)
-      .map(({ slug, frontmatter }) => ({
-        slug,
-        title: frontmatter.title,
-        state: frontmatter.state,
-        ...(frontmatter.rank !== undefined ? { rank: frontmatter.rank } : {}),
-        updated: frontmatter.updated,
-        ...(frontmatter.ship_target !== undefined
-          ? { ship_target: frontmatter.ship_target }
-          : {}),
-      }));
+    const initiatives = [...entries].sort(compareInitiatives).map(({ slug, frontmatter }) => ({
+      slug,
+      title: frontmatter.title,
+      state: frontmatter.state,
+      ...(frontmatter.rank !== undefined ? { rank: frontmatter.rank } : {}),
+      updated: frontmatter.updated,
+      ...(frontmatter.ship_target !== undefined ? { ship_target: frontmatter.ship_target } : {}),
+    }));
     return {
       initiatives,
       parse_errors: errors,

@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { writeFrontmatter } from '../utils/gray-matter-io.js';
@@ -68,9 +65,7 @@ export default defineCommand<Args, Result>({
     const wasFocused = target.frontmatter.state === 'focused';
     const survivors = wasFocused
       ? briefs
-          .filter(
-            (b) => b.frontmatter.state === 'focused' && b.slug !== slug,
-          )
+          .filter((b) => b.frontmatter.state === 'focused' && b.slug !== slug)
           .map((b) => {
             if (b.frontmatter.rank === undefined) {
               throw new Error(`Focused initiative ${b.slug} missing rank`);
@@ -100,12 +95,7 @@ export default defineCommand<Args, Result>({
         updated: updateDate,
       };
       delete (paused as Partial<BriefFrontmatter>).rank;
-      await writeFrontmatter(
-        target.briefPath,
-        paused,
-        target.body,
-        BriefFrontmatterSchema,
-      );
+      await writeFrontmatter(target.briefPath, paused, target.body, BriefFrontmatterSchema);
 
       for (const op of renumberOps) {
         const brief = briefs.find((b) => b.slug === op.slug);
@@ -116,12 +106,7 @@ export default defineCommand<Args, Result>({
           rank: op.to,
           updated: updateDate,
         };
-        await writeFrontmatter(
-          brief.briefPath,
-          next,
-          brief.body,
-          BriefFrontmatterSchema,
-        );
+        await writeFrontmatter(brief.briefPath, next, brief.body, BriefFrontmatterSchema);
       }
     });
 
@@ -129,10 +114,7 @@ export default defineCommand<Args, Result>({
   },
 });
 
-async function applyLocked(
-  slugs: string[],
-  fn: () => Promise<void>,
-): Promise<void> {
+async function applyLocked(slugs: string[], fn: () => Promise<void>): Promise<void> {
   const recurse = async (index: number): Promise<void> => {
     if (index === slugs.length) {
       await fn();

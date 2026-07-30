@@ -294,8 +294,7 @@ async function statusForWorktree(entry: WorktreeEntry): Promise<WorktreeStatus> 
 
 const artifactStatus = defineCommand<Args, Result>({
   name: 'artifact.status',
-  description:
-    'Pull live PR and branch state for the initiative via `git` + `gh`. Read-only.',
+  description: 'Pull live PR and branch state for the initiative via `git` + `gh`. Read-only.',
   args: ArgsSchema,
   result: ResultSchema,
   cli: {
@@ -306,16 +305,8 @@ const artifactStatus = defineCommand<Args, Result>({
     const current = await withFileLock(getLockPath(args.slug), () =>
       readYaml(artifactsPath, ArtifactsSchema),
     );
-    const branches = await mapConcurrent(
-      current.branches,
-      MAX_CONCURRENCY,
-      statusForBranch,
-    );
-    const worktrees = await mapConcurrent(
-      current.worktrees,
-      MAX_CONCURRENCY,
-      statusForWorktree,
-    );
+    const branches = await mapConcurrent(current.branches, MAX_CONCURRENCY, statusForBranch);
+    const worktrees = await mapConcurrent(current.worktrees, MAX_CONCURRENCY, statusForWorktree);
     return { slug: args.slug, branches, worktrees };
   },
 });

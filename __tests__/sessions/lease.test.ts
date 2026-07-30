@@ -153,9 +153,7 @@ describe('readLiveLeases', () => {
         pid: 4321,
         now: minutesBefore(NOW, 10),
       });
-      expect(
-        await readLiveLeases({ activeRoot, slug: SLUG, now: NOW, isAlive: dead }),
-      ).toEqual([]);
+      expect(await readLiveLeases({ activeRoot, slug: SLUG, now: NOW, isAlive: dead })).toEqual([]);
       expect(await leaseFiles(activeRoot, SLUG)).toEqual([]);
     });
   });
@@ -172,9 +170,9 @@ describe('readLiveLeases', () => {
         pid: 4321,
         now: new Date(NOW.getTime() - LAUNCHER_MAX_AGE_MS - 1000),
       });
-      expect(
-        await readLiveLeases({ activeRoot, slug: SLUG, now: NOW, isAlive: alive }),
-      ).toEqual([]);
+      expect(await readLiveLeases({ activeRoot, slug: SLUG, now: NOW, isAlive: alive })).toEqual(
+        [],
+      );
       expect(await leaseFiles(activeRoot, SLUG)).toEqual([]);
     });
   });

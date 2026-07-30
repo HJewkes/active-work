@@ -8,9 +8,7 @@ import { NotFoundError } from '../errors.js';
 import { readMarkdownWithSchema } from '../bootstrap/prompt.js';
 
 /** List initiative slugs (immediate, non-dotfile subdirectories of the root). */
-export async function listInitiativeSlugs(
-  activeRoot: string,
-): Promise<string[]> {
+export async function listInitiativeSlugs(activeRoot: string): Promise<string[]> {
   let entries: Dirent[];
   try {
     entries = await fs.readdir(activeRoot, { withFileTypes: true });
@@ -27,25 +25,18 @@ export async function listInitiativeSlugs(
  * Resolve a user-supplied slug (exact or unique prefix) to a full slug.
  * Throws NotFoundError on no match, and on an ambiguous prefix.
  */
-export async function resolveSlug(
-  activeRoot: string,
-  input: string,
-): Promise<string> {
+export async function resolveSlug(activeRoot: string, input: string): Promise<string> {
   const slugs = await listInitiativeSlugs(activeRoot);
   if (slugs.includes(input)) return input;
   const matches = slugs.filter((s) => s.startsWith(input));
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
-    throw new NotFoundError(
-      `Ambiguous slug '${input}'. Candidates: ${matches.join(', ')}`,
-    );
+    throw new NotFoundError(`Ambiguous slug '${input}'. Candidates: ${matches.join(', ')}`);
   }
   if (slugs.length === 0) {
     throw new NotFoundError(`No initiatives found under ${activeRoot}`);
   }
-  throw new NotFoundError(
-    `No initiative matches '${input}'. Known: ${slugs.join(', ')}`,
-  );
+  throw new NotFoundError(`No initiative matches '${input}'. Known: ${slugs.join(', ')}`);
 }
 
 /** True when `child` is `parent` itself or nested beneath it. */

@@ -50,11 +50,7 @@ export default defineCommand<Args, Task>({
     }
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
-      const file = path.join(
-        getInitiativeDir(args.slug),
-        'tasks',
-        `${args.id}.yml`,
-      );
+      const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
       let task: Task;
       try {
         task = await readYaml(file, TaskSchema);
@@ -72,9 +68,7 @@ export default defineCommand<Args, Task>({
       }
       const parsed = TaskSchema.safeParse(next);
       if (!parsed.success) {
-        throw new ValidationError(
-          `Invalid value for ${args.field}: ${parsed.error.message}`,
-        );
+        throw new ValidationError(`Invalid value for ${args.field}: ${parsed.error.message}`);
       }
       await writeYaml(file, parsed.data, TaskSchema);
       return parsed.data;

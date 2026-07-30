@@ -26,9 +26,7 @@ export async function readFrontmatter<T>(
   const coerced = coerceDates(parsed.data);
   const result = schema.safeParse(coerced);
   if (!result.success) {
-    throw new Error(
-      `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
-    );
+    throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
   }
   return { frontmatter: result.data, body: parsed.content };
 }
@@ -63,9 +61,7 @@ export async function writeFrontmatter<T>(
 ): Promise<void> {
   const result = schema.safeParse(frontmatter);
   if (!result.success) {
-    throw new Error(
-      `Frontmatter validation failed for ${filePath}: ${result.error.message}`,
-    );
+    throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
   }
   const stringified = matter.stringify(body, result.data as object);
   await atomicWrite(filePath, stringified);

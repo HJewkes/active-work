@@ -11,13 +11,7 @@
  * and asserting the orchestrator only binds the matching one.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 

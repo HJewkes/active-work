@@ -1,11 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  buildChannelArgs,
-  buildClaudeArgs,
-  parseLauncherFlags,
-} from '../src/launcher-args.js';
+import { buildChannelArgs, buildClaudeArgs, parseLauncherFlags } from '../src/launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from '../src/launcher-lease.js';
 import { withTempActiveRoot } from './setup/test-helpers.js';
 
@@ -33,9 +29,7 @@ describe('buildChannelArgs', () => {
 
   it('collects all targets under a single variadic flag', () => {
     const args = buildChannelArgs(['a', 'b', 'c']);
-    const flags = args.filter(
-      (a) => a === '--dangerously-load-development-channels',
-    );
+    const flags = args.filter((a) => a === '--dangerously-load-development-channels');
     expect(flags).toHaveLength(1);
   });
 
@@ -45,10 +39,7 @@ describe('buildChannelArgs', () => {
   // path in Claude Code's channel gate.
   it('routes plugin targets under --channels, never the dev flag', () => {
     const args = buildChannelArgs(['plugin:voltras-channel@voltras-local']);
-    expect(args).toEqual([
-      '--channels',
-      'plugin:voltras-channel@voltras-local',
-    ]);
+    expect(args).toEqual(['--channels', 'plugin:voltras-channel@voltras-local']);
     expect(args).not.toContain('--dangerously-load-development-channels');
   });
 
@@ -68,16 +59,9 @@ describe('buildChannelArgs', () => {
   });
 
   it('groups each kind under one flag when the kinds are interleaved', () => {
-    const args = buildChannelArgs([
-      'plugin:a@m',
-      'bare',
-      'plugin:b@m',
-      'server:s',
-    ]);
+    const args = buildChannelArgs(['plugin:a@m', 'bare', 'plugin:b@m', 'server:s']);
     expect(args.filter((a) => a === '--channels')).toHaveLength(1);
-    expect(
-      args.filter((a) => a === '--dangerously-load-development-channels'),
-    ).toHaveLength(1);
+    expect(args.filter((a) => a === '--dangerously-load-development-channels')).toHaveLength(1);
     expect(args).toEqual([
       '--channels',
       'plugin:a@m',
@@ -109,10 +93,7 @@ describe('buildClaudeArgs', () => {
   // Two variadic channel flags can now be present at once, so the `--`
   // terminator has to survive whichever one lands last in the argv.
   it('keeps the prompt behind `--` with both channel kinds present', () => {
-    const args = buildClaudeArgs('the bootstrap prompt', [
-      'plugin:foo@market',
-      'voltras',
-    ]);
+    const args = buildClaudeArgs('the bootstrap prompt', ['plugin:foo@market', 'voltras']);
     expect(args).toEqual([
       '--channels',
       'plugin:foo@market',
@@ -195,9 +176,7 @@ describe('buildLauncherEnv', () => {
   });
 
   it('omits the var entirely when no lease was acquired', () => {
-    expect(buildLauncherEnv({ PATH: '/usr/bin' }, undefined)).not.toHaveProperty(
-      'AW_LEASE_ID',
-    );
+    expect(buildLauncherEnv({ PATH: '/usr/bin' }, undefined)).not.toHaveProperty('AW_LEASE_ID');
   });
 });
 

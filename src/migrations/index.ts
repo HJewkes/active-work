@@ -73,9 +73,7 @@ export async function runMigrations(
   }
 
   if (cursor !== CURRENT_VERSION) {
-    throw new ConfigError(
-      `Migration chain ended at v${cursor}, expected v${CURRENT_VERSION}.`,
-    );
+    throw new ConfigError(`Migration chain ended at v${cursor}, expected v${CURRENT_VERSION}.`);
   }
 
   return { ran };

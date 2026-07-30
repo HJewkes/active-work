@@ -72,14 +72,10 @@ const STATE_LABEL: Record<InitiativeSummary['state'], string> = {
   done: 'done',
 };
 
-async function pickInitiative(
-  initiatives: InitiativeSummary[],
-): Promise<string | null> {
+async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string | null> {
   if (initiatives.length === 0) {
     process.stderr.write(
-      color.red(
-        'No initiatives found. Create one with `active-work new <slug>`.\n',
-      ),
+      color.red('No initiatives found. Create one with `active-work new <slug>`.\n'),
     );
     return null;
   }
@@ -124,9 +120,7 @@ function spawnClaude(
         resolve(127);
         return;
       }
-      process.stderr.write(
-        color.red(`error: failed to launch claude: ${err.message}\n`),
-      );
+      process.stderr.write(color.red(`error: failed to launch claude: ${err.message}\n`));
       resolve(EXIT.GENERIC);
     });
     child.on('exit', (code, signal) => {
@@ -200,11 +194,7 @@ export async function main(argv: string[]): Promise<void> {
         opened = (await runOpen({ slug: choice, adhoc })) as OpenSuccess;
       } else {
         opened = result;
-        process.stderr.write(
-          color.dim(
-            `Opening ${opened.slug} — matched current directory.\n`,
-          ),
-        );
+        process.stderr.write(color.dim(`Opening ${opened.slug} — matched current directory.\n`));
       }
     } else {
       opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
@@ -215,8 +205,7 @@ export async function main(argv: string[]): Promise<void> {
         slug: opened.slug,
         cwd: opened.cwd_hint,
       },
-      (leaseId) =>
-        spawnClaude(opened.prompt, opened.cwd_hint, opened.channels, leaseId),
+      (leaseId) => spawnClaude(opened.prompt, opened.cwd_hint, opened.channels, leaseId),
     );
     process.exit(code);
   } catch (err) {

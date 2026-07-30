@@ -84,11 +84,7 @@ describe('discoverWorktrees', () => {
   it('enumerates worktrees from porcelain output', async () => {
     setGitRunner(gitFake({ worktree: () => ({ code: 0, stdout: PORCELAIN }) }));
     const found = await discoverWorktrees('/repo/main');
-    expect(found.map((w) => w.path)).toEqual([
-      '/repo/main',
-      '/repo/wt-detached',
-      '/repo/bare',
-    ]);
+    expect(found.map((w) => w.path)).toEqual(['/repo/main', '/repo/wt-detached', '/repo/bare']);
   });
 
   it('returns an empty list when git fails', async () => {

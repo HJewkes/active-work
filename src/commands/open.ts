@@ -1,14 +1,8 @@
 import path from 'node:path';
 import { z } from 'zod';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getActiveRoot, expandTilde } from '../utils/paths.js';
-import {
-  defaultWorktreePath,
-  readRegisteredWorktrees,
-} from '../utils/registered-worktrees.js';
+import { defaultWorktreePath, readRegisteredWorktrees } from '../utils/registered-worktrees.js';
 import { defineCommand } from '../registry/index.js';
 import {
   assembleBootstrap,
@@ -17,11 +11,7 @@ import {
 } from '../bootstrap/prompt.js';
 import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
 import { acquireLease } from '../sessions/lease.js';
-import {
-  listInitiativeSlugs,
-  resolveSlug,
-  resolveSlugFromCwd,
-} from './_open-helpers.js';
+import { listInitiativeSlugs, resolveSlug, resolveSlugFromCwd } from './_open-helpers.js';
 
 /** Done tasks older than this are auto-archived on bootstrap (AW-8). */
 const ARCHIVE_DONE_AFTER_DAYS = 30;
@@ -66,9 +56,7 @@ const OpenResultSchema = z.object({
   metadata: z.object({
     slug: z.string(),
     brief_title: z.string(),
-    last_session: z
-      .object({ filename: z.string(), ended: z.string() })
-      .optional(),
+    last_session: z.object({ filename: z.string(), ended: z.string() }).optional(),
     time_since_last_session_human: z.string().optional(),
     open_task_count: z.number().int().nonnegative(),
     recently_done_count: z.number().int().nonnegative(),
@@ -105,10 +93,7 @@ async function loadInitiativeSummary(
 ): Promise<InitiativeSummary | null> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
   try {
-    const { frontmatter } = await readMarkdownWithSchema(
-      briefPath,
-      BriefFrontmatterSchema,
-    );
+    const { frontmatter } = await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
     return {
       slug,
       title: frontmatter.title,
@@ -131,9 +116,7 @@ function compareInitiatives(a: InitiativeSummary, b: InitiativeSummary): number 
   return a.slug.localeCompare(b.slug);
 }
 
-async function collectInitiatives(
-  activeRoot: string,
-): Promise<InitiativeSummary[]> {
+async function collectInitiatives(activeRoot: string): Promise<InitiativeSummary[]> {
   const slugs = await listInitiativeSlugs(activeRoot);
   const summaries: InitiativeSummary[] = [];
   for (const slug of slugs) {
@@ -159,11 +142,7 @@ async function resolveCwdHint(activeRoot: string, slug: string): Promise<string>
  * swallowed: a lease we could not write costs a future warning, whereas a
  * throw here costs the caller their bootstrap.
  */
-async function claimOneshotLease(
-  activeRoot: string,
-  slug: string,
-  cwd: string,
-): Promise<void> {
+async function claimOneshotLease(activeRoot: string, slug: string, cwd: string): Promise<void> {
   try {
     await acquireLease({ activeRoot, slug, cwd, mode: 'oneshot' });
   } catch {
@@ -184,17 +163,14 @@ async function bootstrapInitiative(
   },
 ): Promise<OpenResult & { metadata: BootstrapMetadata }> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
-  const { frontmatter: brief } = await readMarkdownWithSchema(
-    briefPath,
-    BriefFrontmatterSchema,
-  );
+  const { frontmatter: brief } = await readMarkdownWithSchema(briefPath, BriefFrontmatterSchema);
   // When we resolved via cwd, launch in the worktree the user was standing in,
   // not the brief's default worktree.
   const cwdHint = opts.cwdHintOverride ?? (await resolveCwdHint(activeRoot, slug));
-  const archivedTaskIds = await archiveStaleTasks(
-    path.join(activeRoot, slug),
-    { retentionDays: ARCHIVE_DONE_AFTER_DAYS, now: new Date() },
-  );
+  const archivedTaskIds = await archiveStaleTasks(path.join(activeRoot, slug), {
+    retentionDays: ARCHIVE_DONE_AFTER_DAYS,
+    now: new Date(),
+  });
   const detectSiblings = opts.detectSiblings !== false;
   const { prompt, metadata } = await assembleBootstrap({
     activeRoot,
@@ -213,9 +189,7 @@ async function bootstrapInitiative(
     slug,
     prompt,
     cwd_hint: cwdHint,
-    ...(brief.channels && brief.channels.length > 0
-      ? { channels: brief.channels }
-      : {}),
+    ...(brief.channels && brief.channels.length > 0 ? { channels: brief.channels } : {}),
     metadata,
     resolved_from: opts.resolvedFrom,
   };

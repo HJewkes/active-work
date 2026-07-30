@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  BriefFrontmatterSchema,
-  type BriefFrontmatter,
-} from '../schemas/brief.js';
+import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { writeFrontmatter } from '../utils/gray-matter-io.js';
@@ -45,9 +42,7 @@ export default defineCommand<Args, Result>({
       throw new NotFoundError(`Initiative not found: ${slug}`);
     }
     if (target.frontmatter.state !== 'focused') {
-      throw new UsageError(
-        `Cannot unfocus ${slug}: state is ${target.frontmatter.state}`,
-      );
+      throw new UsageError(`Cannot unfocus ${slug}: state is ${target.frontmatter.state}`);
     }
 
     const survivors = briefs
@@ -79,12 +74,7 @@ export default defineCommand<Args, Result>({
         updated: updateDate,
       };
       delete (cleared as Partial<BriefFrontmatter>).rank;
-      await writeFrontmatter(
-        target.briefPath,
-        cleared,
-        target.body,
-        BriefFrontmatterSchema,
-      );
+      await writeFrontmatter(target.briefPath, cleared, target.body, BriefFrontmatterSchema);
 
       // Renumber survivors that actually moved.
       for (const op of renumberOps) {
@@ -96,12 +86,7 @@ export default defineCommand<Args, Result>({
           rank: op.to,
           updated: updateDate,
         };
-        await writeFrontmatter(
-          brief.briefPath,
-          next,
-          brief.body,
-          BriefFrontmatterSchema,
-        );
+        await writeFrontmatter(brief.briefPath, next, brief.body, BriefFrontmatterSchema);
       }
     });
 
@@ -109,10 +94,7 @@ export default defineCommand<Args, Result>({
   },
 });
 
-async function applyLocked(
-  slugs: string[],
-  fn: () => Promise<void>,
-): Promise<void> {
+async function applyLocked(slugs: string[], fn: () => Promise<void>): Promise<void> {
   const recurse = async (index: number): Promise<void> => {
     if (index === slugs.length) {
       await fn();

@@ -23,16 +23,12 @@
  */
 export function buildChannelArgs(channels: string[] | undefined): string[] {
   if (!channels || channels.length === 0) return [];
-  const targets = channels.map((raw) =>
-    /^(server|plugin):/.test(raw) ? raw : `server:${raw}`,
-  );
+  const targets = channels.map((raw) => (/^(server|plugin):/.test(raw) ? raw : `server:${raw}`));
   const plugins = targets.filter((t) => t.startsWith('plugin:'));
   const servers = targets.filter((t) => !t.startsWith('plugin:'));
   return [
     ...(plugins.length > 0 ? ['--channels', ...plugins] : []),
-    ...(servers.length > 0
-      ? ['--dangerously-load-development-channels', ...servers]
-      : []),
+    ...(servers.length > 0 ? ['--dangerously-load-development-channels', ...servers] : []),
   ];
 }
 
@@ -71,7 +67,6 @@ export function parseLauncherFlags(args: string[]): LauncherFlags {
     pick: args.includes('--pick'),
     adhoc: args.some((a) => ADHOC_FLAGS.includes(a)),
     positional,
-    usageError:
-      positional.some((a) => a.startsWith('-')) || positional.length > 1,
+    usageError: positional.some((a) => a.startsWith('-')) || positional.length > 1,
   };
 }

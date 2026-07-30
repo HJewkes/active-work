@@ -12,11 +12,7 @@ function get(app: ReturnType<typeof buildHttpApp>, p: string): Promise<Response>
   return app.fetch(new Request(`http://127.0.0.1:${TEST_PORT}${p}`));
 }
 
-function post(
-  app: ReturnType<typeof buildHttpApp>,
-  p: string,
-  body: unknown,
-): Promise<Response> {
+function post(app: ReturnType<typeof buildHttpApp>, p: string, body: unknown): Promise<Response> {
   return app.fetch(
     new Request(`http://127.0.0.1:${TEST_PORT}${p}`, {
       method: 'POST',
@@ -141,11 +137,7 @@ describe('GET /ui/*', () => {
   // at <repo>/dist/dashboard, /ui must serve it — not the "not built"
   // placeholder. Inert when the dashboard hasn't been built (e.g. unit-only CI).
   it('serves the built bundle when dist/dashboard exists', async () => {
-    const repoRoot = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-    );
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const bundle = path.join(repoRoot, 'dist', 'dashboard', 'index.html');
     if (!existsSync(bundle)) return; // no build present; nothing to guard
 

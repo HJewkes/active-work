@@ -20,11 +20,7 @@
  *
  * Every layer tolerates the lease already being gone.
  */
-import {
-  acquireLease,
-  releaseLease,
-  releaseLeaseSync,
-} from './sessions/lease.js';
+import { acquireLease, releaseLease, releaseLeaseSync } from './sessions/lease.js';
 
 /** Env var carrying this session's lease id into the spawned `claude`. */
 export const LEASE_ENV_VAR = 'AW_LEASE_ID';

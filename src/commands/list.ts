@@ -55,8 +55,7 @@ function toItem(slug: string, fm: BriefFrontmatter): Item {
 
 export default defineCommand({
   name: 'list',
-  description:
-    'List every initiative grouped by state. Replaces the legacy INDEX.md dump.',
+  description: 'List every initiative grouped by state. Replaces the legacy INDEX.md dump.',
   args: argsSchema,
   result: resultSchema,
   cli: {

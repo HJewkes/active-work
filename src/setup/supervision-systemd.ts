@@ -66,11 +66,7 @@ export function renderUnit(opts: UnitOptions): string {
   // ExecStart must use absolute paths. Quote the node binary and entrypoint
   // in case they contain spaces (common on macOS dev paths, less so on Linux,
   // but cheap insurance).
-  const execStart = [
-    quoteIfNeeded(node),
-    quoteIfNeeded(opts.cliEntry),
-    ...args,
-  ].join(' ');
+  const execStart = [quoteIfNeeded(node), quoteIfNeeded(opts.cliEntry), ...args].join(' ');
   return [
     '[Unit]',
     'Description=active-work HTTP daemon (MCP + REST + dashboard)',
@@ -136,12 +132,7 @@ function runOnce(
 export async function isUnitActive(deps: SetupDeps = {}): Promise<boolean> {
   const { spawn, platform } = resolveLocalDeps(deps);
   if (!isLinux(platform)) return false;
-  const result = await runOnce(spawn, 'systemctl', [
-    '--user',
-    'is-active',
-    '--quiet',
-    UNIT_NAME,
-  ]);
+  const result = await runOnce(spawn, 'systemctl', ['--user', 'is-active', '--quiet', UNIT_NAME]);
   if (result.spawnError) return false;
   return result.code === 0;
 }
@@ -188,10 +179,7 @@ export async function stepInstallSupervision(
       await fs.writeFile(unitPath, desired, 'utf8');
     }
 
-    const reload = await runOnce(spawn, 'systemctl', [
-      '--user',
-      'daemon-reload',
-    ]);
+    const reload = await runOnce(spawn, 'systemctl', ['--user', 'daemon-reload']);
     if (reload.spawnError) {
       return {
         ok: true,
@@ -230,12 +218,7 @@ export async function stepInstallSupervision(
     ]);
     const lingerEnabled = !linger.spawnError && linger.code === 0;
 
-    const enable = await runOnce(spawn, 'systemctl', [
-      '--user',
-      'enable',
-      '--now',
-      UNIT_NAME,
-    ]);
+    const enable = await runOnce(spawn, 'systemctl', ['--user', 'enable', '--now', UNIT_NAME]);
     if (enable.spawnError) {
       return {
         ok: false,
@@ -275,9 +258,7 @@ export async function stepInstallSupervision(
  * Disable the user-level unit and remove the file.
  * No-op on non-Linux or when the unit is absent.
  */
-export async function uninstallSupervision(
-  deps: SetupDeps = {},
-): Promise<StepResult> {
+export async function uninstallSupervision(deps: SetupDeps = {}): Promise<StepResult> {
   const { fs, spawn, paths, platform } = resolveLocalDeps(deps);
   if (!isLinux(platform)) {
     return {
@@ -304,12 +285,7 @@ export async function uninstallSupervision(
         message: `No systemd unit at ${unitPath}`,
       };
     }
-    const disable = await runOnce(spawn, 'systemctl', [
-      '--user',
-      'disable',
-      '--now',
-      UNIT_NAME,
-    ]);
+    const disable = await runOnce(spawn, 'systemctl', ['--user', 'disable', '--now', UNIT_NAME]);
     if (disable.spawnError) {
       // systemctl missing — still try to remove the file so re-install is clean.
       await fs.rm(unitPath, { force: true });
@@ -322,10 +298,7 @@ export async function uninstallSupervision(
     }
     // Non-zero exit from `disable` is non-fatal (unit may already be inactive).
     await fs.rm(unitPath, { force: true });
-    const reload = await runOnce(spawn, 'systemctl', [
-      '--user',
-      'daemon-reload',
-    ]);
+    const reload = await runOnce(spawn, 'systemctl', ['--user', 'daemon-reload']);
     if (reload.code !== 0 && !reload.spawnError) {
       return {
         ok: true,

@@ -28,10 +28,12 @@ type SpawnCall = { cmd: string; args: string[] };
  *   - exits 0 by default unless `exitCodes` returns something else
  *   - emits a synthetic ENOENT spawn error when `enoent` matches
  */
-function makeFakeSpawn(opts: {
-  exitCodes?: (call: SpawnCall) => number;
-  enoent?: (call: SpawnCall) => boolean;
-} = {}): {
+function makeFakeSpawn(
+  opts: {
+    exitCodes?: (call: SpawnCall) => number;
+    enoent?: (call: SpawnCall) => boolean;
+  } = {},
+): {
   spawn: typeof nodeSpawn;
   calls: SpawnCall[];
 } {
@@ -116,9 +118,7 @@ describe('renderUnit', () => {
 describe('getUnitPath / getUnitDir', () => {
   it('points at ~/.config/systemd/user', () => {
     expect(getUnitDir('/home/foo')).toBe('/home/foo/.config/systemd/user');
-    expect(getUnitPath('/home/foo')).toBe(
-      `/home/foo/.config/systemd/user/${UNIT_NAME}`,
-    );
+    expect(getUnitPath('/home/foo')).toBe(`/home/foo/.config/systemd/user/${UNIT_NAME}`);
   });
 });
 
