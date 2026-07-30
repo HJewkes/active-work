@@ -134,7 +134,7 @@ function thinkingTokens(message: Json | null, outputTokens: number): number {
  * pass over every transcript. The writer tokenizes this and discards it; it is
  * never stored, which is what keeps `searchable_spans` a pure locator table.
  */
-function searchText(message: Json | null, field: SpanField): string {
+export function searchText(message: Json | null, field: SpanField): string {
   const content = message?.content;
   if (typeof content === 'string') return content.slice(0, SPAN_TEXT_CAP);
 
@@ -241,7 +241,12 @@ export class LineHandler {
     session.cwd = ctx.cwd ?? session.cwd;
     session.cliVersion = str(ctx.line, 'version') ?? session.cliVersion;
     if (!ctx.gitBranch) return;
-    session.gitBranch = ctx.gitBranch;
+    // First non-null wins, matching the writer's
+    // `git_branch = COALESCE(git_branch, excluded.git_branch)`. Taking the last
+    // one here instead made the stored branch depend on where chunk boundaries
+    // fell: a one-pass build kept the file's final branch, an incremental build
+    // kept the first chunk's — a divergence the equivalence eval caught.
+    session.gitBranch ??= ctx.gitBranch;
     this.recordBranch(ctx, ctx.gitBranch);
   }
 
@@ -274,8 +279,14 @@ export class LineHandler {
     const value = str(ctx.line, key);
     if (value === null) return this.fact(ctx, eventType);
     const session = this.acc.session(ctx.sessionId);
+    // `ai_title` is last-wins and `seed_prompt` first-wins, each matching its
+    // COALESCE direction in the writer's upsert. Getting the direction wrong
+    // here makes the stored value depend on where a chunk boundary landed —
+    // a one-pass build keeps the file's last observation, an incremental build
+    // keeps the first. Both fields had that divergence until the equivalence
+    // eval caught it; "seed" is also, correctly, the earliest prompt.
     if (key === 'aiTitle') session.aiTitle = value;
-    else session.seedPrompt = value.slice(0, 240);
+    else session.seedPrompt ??= value.slice(0, 240);
     this.fact(ctx, eventType);
   }
 

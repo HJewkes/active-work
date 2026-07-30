@@ -151,6 +151,19 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS files (
   file_ref TEXT PRIMARY KEY, repo TEXT, path TEXT NOT NULL
 );
+-- A `gh pr merge <n>` sighting, kept as an observation rather than applied
+-- straight to `prs`. The command only yields a bare number, so it can only be
+-- matched against a `pr_ref` that a `pr-link` event has already produced — and
+-- nothing guarantees the link is indexed first. Persisting the sighting lets
+-- `reconcilePrMerges` fold it in at the end of every pass, which makes the
+-- result independent of the order transcripts and chunks happen to arrive in.
+CREATE TABLE IF NOT EXISTS pr_merge_observations (
+  number    INTEGER NOT NULL,
+  repo_hint TEXT,
+  merged_at TEXT NOT NULL,
+  PRIMARY KEY (number, repo_hint, merged_at)
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
   task_ref TEXT PRIMARY KEY, initiative TEXT, title TEXT, status TEXT,
   created_at TEXT, completed_at TEXT

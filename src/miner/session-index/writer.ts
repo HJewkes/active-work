@@ -66,6 +66,11 @@ const UPSERT_TURN = `
           (SELECT COALESCE(MAX(turn_index), -1) + 1 FROM turns WHERE session_id = @sessionId),
           @startedAt, @endedAt, @toolCallCount, @factId)
   ON CONFLICT (prompt_id) DO UPDATE SET
+    -- A resumed session can replay a prompt uuid under a new session id, so
+    -- prompt_id is not globally unique in a real corpus. MIN breaks the tie the
+    -- same way no matter which session is indexed first; "first writer wins"
+    -- made the row depend on transcript visit order.
+    session_id      = MIN(session_id, excluded.session_id),
     ended_at        = MAX(COALESCE(ended_at, excluded.ended_at), COALESCE(excluded.ended_at, ended_at)),
     tool_call_count = tool_call_count + excluded.tool_call_count`;
 
@@ -80,12 +85,17 @@ const ASSET_UPSERTS: Record<string, string> = {
         ON CONFLICT (pr_ref) DO UPDATE SET
           title = COALESCE(title, excluded.title), state = COALESCE(state, excluded.state),
           url = COALESCE(url, excluded.url), merged_at = COALESCE(merged_at, excluded.merged_at)`,
+  // created_at/deleted_at are MIN/MAX rather than first-wins: a branch is
+  // observed from many transcripts, and "whichever write landed first" made the
+  // stored timestamp depend on the order transcripts and chunks arrived in.
   branches: `INSERT INTO branches (branch_ref, repo, name, base, created_at, deleted_at)
         VALUES (@branchRef, @repo, @name, @base, @createdAt, @deletedAt)
         ON CONFLICT (branch_ref) DO UPDATE SET
           base = COALESCE(base, excluded.base),
-          created_at = COALESCE(created_at, excluded.created_at),
-          deleted_at = COALESCE(deleted_at, excluded.deleted_at)`,
+          created_at = MIN(COALESCE(created_at, excluded.created_at),
+                           COALESCE(excluded.created_at, created_at)),
+          deleted_at = MAX(COALESCE(deleted_at, excluded.deleted_at),
+                           COALESCE(excluded.deleted_at, deleted_at))`,
   files: `INSERT INTO files (file_ref, repo, path) VALUES (@fileRef, @repo, @path)
         ON CONFLICT (file_ref) DO NOTHING`,
   tasks: `INSERT INTO tasks (task_ref, initiative, title, status)
@@ -98,10 +108,17 @@ const ASSET_UPSERTS: Record<string, string> = {
         ON CONFLICT (artifact_ref) DO NOTHING`,
 };
 
-/** `gh pr merge <n>` only yields a number, so match on number + repo suffix. */
-const MARK_PR_MERGED = `
-  UPDATE prs SET state = 'merged', merged_at = COALESCE(merged_at, @mergedAt)
-  WHERE number = @number AND (@repoHint IS NULL OR repo LIKE '%/' || @repoHint)`;
+/**
+ * A `gh pr merge <n>` sighting is *recorded*, not applied. The command yields
+ * only a number, so it can only be matched once a `pr-link` event has produced
+ * the `pr_ref` — and nothing orders those two. Applying it eagerly silently
+ * dropped every merge whose link happened to be indexed later.
+ * `rollup.ts:reconcilePrMerges` folds the observations in at the end of a pass.
+ */
+const RECORD_PR_MERGE = `
+  INSERT INTO pr_merge_observations (number, repo_hint, merged_at)
+  VALUES (@number, @repoHint, @mergedAt)
+  ON CONFLICT (number, repo_hint, merged_at) DO NOTHING`;
 
 /**
  * Every table `applyExtractResult` writes, in reverse dependency order. Each is
@@ -119,6 +136,7 @@ const DERIVED_TABLES = [
   'sessions',
   'facts',
   'prs',
+  'pr_merge_observations',
   'branches',
   'files',
   'tasks',
@@ -185,8 +203,8 @@ function applyAssets(db: SessionIndexDb, result: ExtractResult): void {
     const statement = db.prepare(sql);
     for (const row of rows) statement.run(row);
   }
-  const markMerged = db.prepare(MARK_PR_MERGED);
-  for (const merge of result.prMerges) markMerged.run(merge);
+  const recordMerge = db.prepare(RECORD_PR_MERGE);
+  for (const merge of result.prMerges) recordMerge.run(merge);
 }
 
 /**
