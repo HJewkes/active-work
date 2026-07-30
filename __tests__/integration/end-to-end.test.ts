@@ -175,8 +175,10 @@ describe('end-to-end: full lifecycle through the registry', () => {
     expect(opened.prompt).toContain('E2E Test');
     expect(opened.prompt).toContain('Second task');
     expect(opened.prompt).toContain('Tasks (top');
-    // Recently-done window includes the task we just completed.
-    expect(opened.prompt).toContain('First task');
+    // Recently-done is a count plus a lookup pointer, not a task dump.
+    expect(opened.prompt).toContain(
+      '1 task completed — `active-work task list e2e-test --status done --json`',
+    );
 
     const audit = await runCmd<AuditResult>('audit', {}, activeRoot);
     expect(audit.initiatives).toHaveLength(1);
