@@ -184,48 +184,105 @@ async function loadSessionsNewestFirst(initiativeDir: string): Promise<LoadedSes
   return { sessions: [...sessions].sort(compareSessionsNewestFirst), malformed };
 }
 
-async function loadTasks(initiativeDir: string): Promise<Task[]> {
+/** A task file that would not parse. Mirrors `MalformedSession`. */
+export interface MalformedTask {
+  /** Filename including extension; a malformed file may have no usable id. */
+  file: string;
+  reason: string;
+}
+
+export interface LoadedTasks {
+  tasks: Task[];
+  malformed: MalformedTask[];
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Read every task file under `initiativeDir/tasks`.
+ *
+ * A file that would not parse is *not* the same as a task that does not exist:
+ * dropping it silently shrinks the open list, so the next session works a stale
+ * top task and never learns why. Malformed entries travel back to the caller
+ * the way `loadSessionsFromDir` returns `malformed`.
+ */
+async function loadTasks(initiativeDir: string): Promise<LoadedTasks> {
   const tasksDir = path.join(initiativeDir, 'tasks');
   let entries: string[];
   try {
     entries = await fs.readdir(tasksDir);
   } catch {
-    return [];
+    return { tasks: [], malformed: [] };
   }
   const ymlFiles = entries.filter(
     (n) => n.endsWith('.yml') || n.endsWith('.yaml'),
   );
   const tasks: Task[] = [];
+  const malformed: MalformedTask[] = [];
   for (const filename of ymlFiles) {
     const fullPath = path.join(tasksDir, filename);
     try {
       tasks.push(await readYaml(fullPath, TaskSchema));
-    } catch {
-      // Skip malformed task files.
+    } catch (err) {
+      malformed.push({ file: filename, reason: describe(err) });
     }
   }
-  return tasks;
+  return { tasks, malformed };
 }
 
-async function loadArtifacts(initiativeDir: string): Promise<Artifacts> {
+export interface LoadedArtifacts {
+  artifacts: Artifacts;
+  /** Set only when `artifacts.yml` exists but could not be read or parsed. */
+  error?: string;
+}
+
+function isMissingFile(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+}
+
+/**
+ * Read `artifacts.yml`, keeping "no artifacts yet" distinct from "the file is
+ * broken".
+ *
+ * Both used to render as an empty ledger, which is the worst possible outcome:
+ * a corrupted file quietly claims there are no open branches or stashes, and
+ * the session starts by assuming clean ground it does not have.
+ */
+async function loadArtifacts(initiativeDir: string): Promise<LoadedArtifacts> {
   const artifactsPath = path.join(initiativeDir, 'artifacts.yml');
+  const empty: Artifacts = { branches: [], stashes: [], worktrees: [] };
   try {
-    return await readYaml(artifactsPath, ArtifactsSchema);
-  } catch {
-    return { branches: [], stashes: [], worktrees: [] };
+    return { artifacts: await readYaml(artifactsPath, ArtifactsSchema) };
+  } catch (err) {
+    if (isMissingFile(err)) return { artifacts: empty };
+    return { artifacts: empty, error: describe(err) };
   }
 }
 
-function truncateLines(body: string, max: number): string {
+/**
+ * Keep the first `max` non-blank lines of `body`, marking the cut.
+ *
+ * The marker is not decoration: an excerpt that ends mid-thought reads as the
+ * whole thought, so the reader has to be told both that content was dropped and
+ * which file holds the rest. `source` is a real path for exactly that reason.
+ */
+function truncateLines(body: string, max: number, source: string): string {
   const lines = body.split('\n');
   const trimmed: string[] = [];
   let count = 0;
+  let consumed = 0;
   for (const line of lines) {
     if (count >= max) break;
     trimmed.push(line);
+    consumed++;
     if (line.trim().length > 0) count++;
   }
-  return trimmed.join('\n').replace(/\s+$/, '');
+  const dropped = lines.slice(consumed).filter((l) => l.trim().length > 0).length;
+  const kept = trimmed.join('\n').replace(/\s+$/, '');
+  if (dropped === 0) return kept;
+  return `${kept}\n…(+${dropped} lines — see ${source})`;
 }
 
 /**
@@ -363,6 +420,16 @@ function renderNoOpenLoops(newestSession: LoadedSession | undefined): string {
 function malformedNote(malformed: MalformedSession[]): string {
   if (malformed.length === 0) return '';
   return ` (${malformed.length} session file(s) unreadable — run \`active-work doctor\`)`;
+}
+
+/**
+ * A task file that would not parse is missing from the list entirely, so the
+ * heading has to say so — otherwise a shorter list looks like less work.
+ */
+function malformedTaskNote(malformed: MalformedTask[]): string {
+  if (malformed.length === 0) return '';
+  const files = malformed.map((m) => m.file).join(', ');
+  return ` — ${malformed.length} task file(s) unreadable (${files}); run \`active-work doctor\``;
 }
 
 /**
@@ -751,13 +818,15 @@ export async function assembleBootstrap(
     slug,
   );
 
-  const [loaded, tasks, artifacts, notes] = await Promise.all([
+  const [loaded, loadedTasks, loadedArtifacts, notes] = await Promise.all([
     loadSessionsNewestFirst(initiativeDir),
     loadTasks(initiativeDir),
     loadArtifacts(initiativeDir),
     loadNotesFromDir(initiativeDir),
   ]);
   const { sessions, malformed } = loaded;
+  const { tasks, malformed: malformedTasks } = loadedTasks;
+  const { artifacts, error: artifactsError } = loadedArtifacts;
 
   // `mergedPrs` is deliberately unsupplied: derivation must stay offline
   // because bootstrap runs it on every launch.
@@ -773,7 +842,12 @@ export async function assembleBootstrap(
   const parallelBody = renderParallelSessions(
     selectParallelSessions(sessions, narrativeSession),
   );
-  const briefExcerpt = truncateLines(briefBody, BRIEF_BODY_MAX_LINES) || '_(no brief body)_';
+  const briefExcerpt =
+    truncateLines(
+      briefBody,
+      BRIEF_BODY_MAX_LINES,
+      path.join(initiativeDir, 'brief.md'),
+    ) || '_(no brief body)_';
   const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks);
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
     tasks,
@@ -812,8 +886,11 @@ export async function assembleBootstrap(
 
   if (narrativeSession) {
     const sessionExcerpt =
-      truncateLines(narrativeSession.body, SESSION_BODY_MAX_LINES) ||
-      '_(empty session body)_';
+      truncateLines(
+        narrativeSession.body,
+        SESSION_BODY_MAX_LINES,
+        path.join(initiativeDir, 'sessions', `${narrativeSession.sessionFile}.md`),
+      ) || '_(empty session body)_';
     const ended = endedDate(narrativeSession.frontmatter.ended);
     // Label the heading with the track when it's not canonical, so a
     // fallback session (no canonical recorded yet) isn't mistaken for
@@ -830,7 +907,9 @@ export async function assembleBootstrap(
 
   if (parallelBody) sections.push(parallelBody);
 
-  sections.push(`# Tasks (top ${topNTasks} open by priority)\n${tasksBody}`);
+  sections.push(
+    `# Tasks (top ${topNTasks} open by priority)${malformedTaskNote(malformedTasks)}\n${tasksBody}`,
+  );
 
   if (recentlyDoneBody) {
     sections.push(
@@ -847,7 +926,12 @@ export async function assembleBootstrap(
   const notesBody = renderDurableNotes(notes, slug);
   if (notesBody) sections.push(notesBody);
 
-  if (artifactsBody) {
+  if (artifactsError) {
+    const artifactsPath = path.join(initiativeDir, 'artifacts.yml');
+    sections.push(
+      `# Open artifacts\n_${artifactsPath} exists but could not be read (${artifactsError}). Branch and stash context is MISSING from this bootstrap — do not treat the working tree as clean. Run \`active-work doctor\`._`,
+    );
+  } else if (artifactsBody) {
     sections.push(`# Open artifacts\n${artifactsBody}`);
   }
 
