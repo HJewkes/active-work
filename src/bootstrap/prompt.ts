@@ -555,6 +555,36 @@ function renderOpenLoops(
   return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
 }
 
+const WRAP_DIRECTIVE =
+  'Update tasks via `active-work task done` and close the session out via `active-work wrap` when wrapping up — it records the session, files the loops you leave open, and stamps the brief in one step.';
+
+/**
+ * A hanging loop is thread continuity nobody else will pick up, so it outranks
+ * the general backlog — the backlog is still there next session, whereas the
+ * context that makes a loop cheap to close decays.
+ *
+ * The loop-first half is only emitted when the ledger actually has entries:
+ * with zero loops the render above already said "nothing hanging", and telling
+ * a session to triage loops would send it hunting for something that isn't
+ * there.
+ */
+function renderClosingInstruction(openLoops: OpenLoop[]): string {
+  if (openLoops.length === 0) {
+    return `Work the top task unless redirected. ${WRAP_DIRECTIVE}`;
+  }
+  const count = openLoops.length;
+  const noun = count === 1 ? 'loop' : 'loops';
+  const verb = count === 1 ? 'is' : 'are';
+  return (
+    `Start with the open ${noun}: ${count} ${verb} still hanging from prior sessions, ` +
+    `and unfinished threads take precedence over the backlog. Work them first, citing each ` +
+    `one by the \`ref\` printed under "Open loops", and pass every loop you settle to ` +
+    `\`active-work wrap --resolves\` with outcome \`done\` or \`abandoned\` — deciding not to ` +
+    `do a loop still closes it. Once the loops are handled, or if the user redirects, work ` +
+    `the top task by priority. ${WRAP_DIRECTIVE}`
+  );
+}
+
 /**
  * Only abandonments are rendered, and only recent ones. A loop closed `done`
  * needs no explanation — the work happened. A loop closed `abandoned` is a
@@ -1109,7 +1139,7 @@ export async function assembleBootstrap(
   sections.push(
     adhoc
       ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
-      : `Work the top task unless redirected. Update tasks via \`active-work task done\` and close the session out via \`active-work wrap\` when wrapping up — it records the session, files the loops you leave open, and stamps the brief in one step.`,
+      : renderClosingInstruction(openLoops),
   );
 
   const prompt = sections.join('\n\n') + '\n';
