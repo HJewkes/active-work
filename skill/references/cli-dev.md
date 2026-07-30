@@ -27,7 +27,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 ## Adding a new command
 
 1. Create `src/commands/<name>.ts` exporting a `defineCommand({...})` entry. Define:
-   - `name` (e.g. `"task add"`)
+   - `name` (dot-separated, e.g. `"task.add"`)
    - `description`
    - `input` zod schema
    - `output` zod schema
@@ -47,7 +47,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 `src/server/` runs hono on `127.0.0.1:7400` by default (override with `AW_PORT`). It serves:
 
 - `/rpc/<command>` — REST for every registry entry
-- `/ws` — WebSocket live feed (chokidar-backed filesystem events)
+- `/events` — SSE live-reload feed (`hono/streaming`), backed by a hand-rolled recursive `fs.watch` in `src/server/file-watch.ts` (not WebSocket, not chokidar), debounced and broadcast via `EventHub`
 - `/mcp` — MCP-over-HTTP transport
 - `/ui` — bundled dashboard SPA
 

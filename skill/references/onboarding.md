@@ -36,19 +36,15 @@ ls ~/.claude/skills/active-work/
 
 ## 4. Run `active-work setup`
 
-`active-work setup` (Wave 6) is the interactive wizard that initializes data roots, registers the MCP server with Claude Code, and offers to install the daemon launchd plist. **It is not yet implemented.** Until it lands, you can prepare the data root manually:
-
 ```bash
-mkdir -p "${XDG_DATA_HOME:-$HOME/Library/Application Support}/active-work"
+active-work setup
 ```
 
-(On Linux this resolves to `~/.local/share/active-work/`; on macOS to `~/Library/Application Support/active-work/`.)
+This is the interactive wizard: it checks your Node version, creates the active/state/config data roots, writes a config stub, installs the skill and the `/aw-prompt` command (idempotently — safe to re-run), registers the MCP server with Claude Code (`claude mcp add --user @hjewkes/active-work -- active-work mcp serve --stdio`), offers to install daemon supervision (launchd on macOS, systemd with linger on Linux), offers to start the daemon, and offers to walk through discovering existing work.
 
-Register the MCP server with Claude Code manually for now:
+Use `active-work setup --yes` for a non-interactive run (skips prompts, assumes no for daemon start), or `--update` to allow it to overwrite an existing config stub.
 
-```bash
-claude mcp add --user @hjewkes/active-work -- active-work mcp serve --stdio
-```
+If the `claude` CLI isn't on your PATH, the MCP-registration step prints the `~/.claude.json` snippet to add by hand instead of failing.
 
 ## 5. Verify the install
 
@@ -61,7 +57,7 @@ active-work mcp status      # reports daemon state
 
 ## 6. Optional — start the daemon
 
-The daemon hosts MCP-over-HTTP, the REST API, the WebSocket live feed, and the dashboard.
+The daemon hosts MCP-over-HTTP, the REST API, an SSE live-reload feed (`/events`), and the dashboard.
 
 ```bash
 active-work mcp serve --detach
