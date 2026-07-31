@@ -14,6 +14,14 @@ export interface Signature {
   errorClass: string;
   anchorLine: string;
   lineCountBucket: LineCountBucket;
+  /**
+   * True when `anchorLine` came from a recognized failure-shape rule rather
+   * than the positional fallback (last non-blank line, or a `git` blob's first
+   * line). An unanchored signature's clustering key is arbitrary output text,
+   * so `blob-extract.ts` uses this to screen successful command output — see
+   * `hasErrorSignal`.
+   */
+  anchored: boolean;
   /** `${errorClass} ${anchorLine} [${lineCountBucket}]` — the string Drain tokenizes. */
   signatureLine: string;
 }
@@ -53,17 +61,24 @@ function lastNonBlank(lines: string[]): string {
   return '';
 }
 
-function anchorForToolType(toolType: string, lines: string[]): string {
-  if (toolType === 'git') return (lines[0] ?? '').trim();
+interface Anchor {
+  line: string;
+  anchored: boolean;
+}
+
+function anchorForToolType(toolType: string, lines: string[]): Anchor {
+  if (toolType === 'git') return { line: (lines[0] ?? '').trim(), anchored: false };
 
   if (toolType === 'test') {
     const match = firstMatch(lines, TEST_RUNNER_ANCHOR_RULES);
-    if (match) return match;
+    if (match) return { line: match, anchored: true };
   }
 
   // Bash and generic is_error blobs share the same anchor priority.
   const match = firstMatch(lines, BASH_ANCHOR_RULES);
-  return match ?? lastNonBlank(lines);
+  return match === undefined
+    ? { line: lastNonBlank(lines), anchored: false }
+    : { line: match, anchored: true };
 }
 
 const ERROR_CLASS_RULES: [RegExp, (match: RegExpMatchArray) => string][] = [
@@ -89,14 +104,30 @@ export function extractSignature(toolType: string, blobText: string): Signature 
   const lines = blobText.split('\n');
   const nonBlankCount = lines.filter((l) => l.trim().length > 0).length;
 
-  const anchorLine = anchorForToolType(toolType, lines);
+  const { line: anchorLine, anchored } = anchorForToolType(toolType, lines);
   const errorClass = classifyError(anchorLine);
   const lineCountBucket = bucketLineCount(nonBlankCount);
 
   return {
     errorClass,
     anchorLine,
+    anchored,
     lineCountBucket,
     signatureLine: `${errorClass} ${anchorLine} [${lineCountBucket}]`,
   };
+}
+
+/**
+ * Whether a blob carries a recognizable failure shape of its own — i.e. whether
+ * `extractSignature` would anchor on a matched rule instead of falling back to
+ * an arbitrary output line.
+ *
+ * AW-93: the miner exists to recognize *recurring failures* (§AW-28), and a
+ * successful `git log`/`grep`/`cat` has no failure to recognize a repeat of.
+ * Clustering it anyway keys on the literal last line of arbitrary stdout, whose
+ * cardinality is unbounded — every distinct successful command minted its own
+ * permanent singleton cluster, and the template count never flattened.
+ */
+export function hasErrorSignal(toolType: string, blobText: string): boolean {
+  return anchorForToolType(toolType, blobText.split('\n')).anchored;
 }

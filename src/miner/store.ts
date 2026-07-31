@@ -65,6 +65,26 @@ export async function appendOccurrence(
   });
 }
 
+/**
+ * Append many occurrences under a single lock acquisition and a single
+ * `appendFile`. Semantically identical to calling `appendOccurrence` in a
+ * loop, but a corpus pass ingests tens of thousands of blobs and paying a
+ * lock round-trip per blob dominates the whole run.
+ */
+export async function appendOccurrences(
+  occurrences: Occurrence[],
+  root: string = getMinerRoot(),
+): Promise<void> {
+  if (occurrences.length === 0) return;
+  const parsed = occurrences.map((o) => OccurrenceSchema.parse(o));
+  const target = occurrencesPath(root);
+  await fs.mkdir(root, { recursive: true });
+  const body = `${parsed.map((o) => JSON.stringify(o)).join('\n')}\n`;
+  await withFileLock(`${target}.lock`, async () => {
+    await fs.appendFile(target, body, 'utf8');
+  });
+}
+
 /** Stream-read every occurrence, validating each line lazily. */
 export async function* readOccurrences(root: string = getMinerRoot()): AsyncGenerator<Occurrence> {
   let raw: string;
