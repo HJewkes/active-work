@@ -98,15 +98,11 @@ describe('lintZeroLoops', () => {
     expect(await lintZeroLoops('slug', initiativeDir)).toEqual([]);
   });
 
-  it('warns on the fixture initiative for its unmarked empty-ledger session', async () => {
-    // The fixture's one session has an empty ledger and predates this rule,
-    // so it has no `no_loops` marker — this is the rule working as intended,
-    // not a fixture bug (its own narrative says "Next: nothing").
+  it('is silent on the fixture initiative, whose session carries no_loops: true', async () => {
     await withTempActiveRoot(async (root) => {
       const dir = path.join(root, 'sample-initiative');
       const findings = await lintZeroLoops('sample-initiative', dir);
-      expect(findings).toHaveLength(1);
-      expect(findings[0].file).toBe('sessions/2026-05-10-1430-fixture001.md');
+      expect(findings).toEqual([]);
     });
   });
 });
