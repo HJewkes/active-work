@@ -88,6 +88,7 @@ describe('extractBlobs', () => {
         rawText: 'ENOENT: no such file',
         sessionId: 'session-1',
         timestamp: '2026-07-30T00:00:00.000Z',
+        eligible: true,
       },
     ]);
   });
@@ -111,6 +112,31 @@ describe('extractBlobs', () => {
     expect(blobs).toHaveLength(1);
     expect(blobs[0].toolType).toBe('Bash');
     expect(blobs[0].rawText).toBe('built ok\nwarning: deprecated');
+  });
+
+  it('marks an is_error result eligible even with no recognizable failure shape', () => {
+    const line = userLine({
+      message: {
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_1', is_error: true, content: 'no matches' },
+        ],
+      },
+    });
+    expect(extractBlobs(line, new Map())[0].eligible).toBe(true);
+  });
+
+  it('screens successful output with no failure shape, keeping the one that has it', () => {
+    const plain = extractBlobs(
+      userLine({ toolUseResult: { stdout: 'src/a.ts\nsrc/b.ts', stderr: '' } }),
+      new Map([['toolu_1', 'Bash']]),
+    );
+    expect(plain[0].eligible).toBe(false);
+
+    const failing = extractBlobs(
+      userLine({ toolUseResult: { stdout: 'running', stderr: 'TypeError: boom' } }),
+      new Map([['toolu_1', 'Bash']]),
+    );
+    expect(failing[0].eligible).toBe(true);
   });
 
   it('prefers the error text over toolUseResult when the result is an error', () => {

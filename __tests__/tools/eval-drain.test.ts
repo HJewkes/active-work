@@ -8,6 +8,7 @@ import {
   stabilityCurve,
   compareSets,
   clusterDiversity,
+  supportDistribution,
   // @ts-expect-error — importing a plain .mjs (no type declarations) from a test.
 } from '../../tools/eval-drain.mjs';
 
@@ -23,6 +24,38 @@ describe('coverage', () => {
     const result = coverage({ linesRead: 0, malformedLines: 0, blobs: 0, ingested: 0 });
     expect(result.lineParseRate).toBe(1);
     expect(result.blobCoverage).toBe(1);
+  });
+
+  it('reports the eligibility screen separately from coverage', () => {
+    // Coverage stays 100% — every eligible blob clustered — while the screen is
+    // its own visible number, so narrowing cannot hide inside the gate.
+    const result = coverage({
+      linesRead: 100,
+      malformedLines: 0,
+      candidateBlobs: 1000,
+      screened: 900,
+      blobs: 100,
+      ingested: 100,
+    });
+    expect(result.blobCoverage).toBe(1);
+    expect(result.screened).toBe(900);
+    expect(result.eligibilityRate).toBe(0.1);
+  });
+});
+
+describe('supportDistribution', () => {
+  it('splits clusters into singletons and recurring shapes', () => {
+    const result = supportDistribution([
+      { occurrenceCount: 1 },
+      { occurrenceCount: 1 },
+      { occurrenceCount: 7 },
+      { occurrenceCount: 2 },
+    ]);
+    expect(result).toEqual({ templates: 4, singletons: 2, recurring: 2, singletonRate: 0.5 });
+  });
+
+  it('handles an empty store', () => {
+    expect(supportDistribution([]).singletonRate).toBe(0);
   });
 });
 
