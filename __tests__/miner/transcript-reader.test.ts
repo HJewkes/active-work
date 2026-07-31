@@ -121,7 +121,10 @@ describe('runDrainIngest', () => {
   });
 
   it('resumes at the watermark and only ingests appended blobs', async () => {
-    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: first')]);
+    const file = writeTranscript('a.jsonl', [
+      toolUse('t1', 'Bash'),
+      commandResult('t1', 'Error: first'),
+    ]);
     await ingest();
 
     appendLines(file, [toolUse('t2', 'Bash'), commandResult('t2', 'Error: second')]);
@@ -165,7 +168,10 @@ describe('runDrainIngest', () => {
   });
 
   it('rewinds to byte 0 when a transcript shrinks below its watermark', async () => {
-    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: boom')]);
+    const file = writeTranscript('a.jsonl', [
+      toolUse('t1', 'Bash'),
+      commandResult('t1', 'Error: boom'),
+    ]);
     await ingest();
 
     writeFileSync(file, `${JSON.stringify(toolUse('t2', 'Bash'))}\n`, 'utf8');
