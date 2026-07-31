@@ -1,4 +1,5 @@
 import { toolTypeFor } from './route.js';
+import { hasErrorSignal } from './signature.js';
 
 /**
  * Projects one transcript JSONL line into the tool-result *blobs* the Drain
@@ -25,6 +26,14 @@ export interface ExtractedBlob {
   rawText: string;
   sessionId: string;
   timestamp: string;
+  /**
+   * Whether this blob is worth clustering (AW-93). A tool result flagged
+   * `is_error` always is — the flag *is* the failure signal. Successful command
+   * output only is when it carries a recognizable failure shape of its own; see
+   * `hasErrorSignal`. Ineligible candidates are still reported, so narrowing is
+   * a measured number in the eval scorecard rather than a silent drop.
+   */
+  eligible: boolean;
 }
 
 function asObject(value: unknown): Json | null {
@@ -85,8 +94,9 @@ function commandOutput(line: Json): string | null {
 }
 
 /**
- * Every eligible blob on one line: each `is_error` tool result, plus the
- * stdout+stderr of a successful command result.
+ * Every candidate blob on one line: each `is_error` tool result, plus the
+ * stdout+stderr of a successful command result. Each carries an `eligible`
+ * flag; the caller decides what to do with the ineligible ones.
  *
  * A line yields at most one blob per `tool_result` block, and Claude Code
  * emits one result block per user line in practice; the loop is written for
@@ -105,10 +115,18 @@ export function extractBlobs(line: Json, toolNames: Map<string, string>): Extrac
     const toolName = id ? toolNames.get(id) : undefined;
     if (id) toolNames.delete(id);
 
-    const rawText = block.is_error === true ? toolResultText(block.content) : commandOutput(line);
+    const isError = block.is_error === true;
+    const rawText = isError ? toolResultText(block.content) : commandOutput(line);
     if (!rawText || rawText.trim().length === 0) continue;
 
-    found.push({ toolType: toolTypeFor(toolName ?? ''), rawText, sessionId, timestamp });
+    const toolType = toolTypeFor(toolName ?? '');
+    found.push({
+      toolType,
+      rawText,
+      sessionId,
+      timestamp,
+      eligible: isError || hasErrorSignal(toolType, rawText),
+    });
   }
   return found;
 }

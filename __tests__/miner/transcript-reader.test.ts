@@ -79,8 +79,23 @@ describe('runDrainIngest', () => {
     expect(templates[0].occurrenceCount).toBe(2);
   });
 
+  it('screens successful output with no failure shape instead of clustering it', async () => {
+    writeTranscript('a.jsonl', [
+      toolUse('t1', 'Bash'),
+      commandResult('t1', 'commit a1b2c3d\nAuthor: someone'),
+      toolUse('t2', 'Bash'),
+      commandResult('t2', 'Error: boom'),
+    ]);
+
+    const summary = await ingest();
+    expect(summary.candidateBlobs).toBe(2);
+    expect(summary.screened).toBe(1);
+    expect(summary.blobs).toBe(1);
+    expect(await loadTemplates(root)).toHaveLength(1);
+  });
+
   it('writes locators that point at the exact source line', async () => {
-    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'boom')]);
+    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: boom')]);
     await ingest();
 
     const occurrences = [];
@@ -95,7 +110,7 @@ describe('runDrainIngest', () => {
   });
 
   it('reads nothing on a second pass over an unchanged corpus', async () => {
-    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'boom')]);
+    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: boom')]);
     await ingest();
 
     const second = await ingest();
@@ -106,10 +121,10 @@ describe('runDrainIngest', () => {
   });
 
   it('resumes at the watermark and only ingests appended blobs', async () => {
-    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'first')]);
+    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: first')]);
     await ingest();
 
-    appendLines(file, [toolUse('t2', 'Bash'), commandResult('t2', 'second')]);
+    appendLines(file, [toolUse('t2', 'Bash'), commandResult('t2', 'Error: second')]);
     const second = await ingest();
     expect(second.scanned).toBe(1);
     expect(second.blobs).toBe(1);
@@ -123,7 +138,7 @@ describe('runDrainIngest', () => {
     // The chunk cut lands between the tool_use and its result, so the tool name
     // is only recoverable from persisted reader state.
     const first = JSON.stringify(toolUse('t1', 'Bash'));
-    writeTranscript('a.jsonl', [JSON.parse(first), commandResult('t1', 'boom')]);
+    writeTranscript('a.jsonl', [JSON.parse(first), commandResult('t1', 'Error: boom')]);
 
     await ingest({ chunkBytes: 1 });
     expect(await loadTemplates(root)).toHaveLength(0);
@@ -139,7 +154,7 @@ describe('runDrainIngest', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       path.join(dir, 'a.jsonl'),
-      `${JSON.stringify(toolUse('t1', 'Bash'))}\n{ not json\n${JSON.stringify(commandResult('t1', 'boom'))}\n`,
+      `${JSON.stringify(toolUse('t1', 'Bash'))}\n{ not json\n${JSON.stringify(commandResult('t1', 'Error: boom'))}\n`,
       'utf8',
     );
 
@@ -150,7 +165,7 @@ describe('runDrainIngest', () => {
   });
 
   it('rewinds to byte 0 when a transcript shrinks below its watermark', async () => {
-    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'boom')]);
+    const file = writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: boom')]);
     await ingest();
 
     writeFileSync(file, `${JSON.stringify(toolUse('t2', 'Bash'))}\n`, 'utf8');
@@ -160,7 +175,7 @@ describe('runDrainIngest', () => {
   });
 
   it('re-reads every transcript from byte 0 under full', async () => {
-    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'boom')]);
+    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: boom')]);
     await ingest();
 
     const full = await runDrainIngest({ root, corpusRoot: corpus, full: true });
@@ -169,8 +184,8 @@ describe('runDrainIngest', () => {
   });
 
   it('honours limit and keeps transcript indices stable as the corpus grows', async () => {
-    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'a')]);
-    writeTranscript('b.jsonl', [toolUse('t2', 'Bash'), commandResult('t2', 'b')]);
+    writeTranscript('a.jsonl', [toolUse('t1', 'Bash'), commandResult('t1', 'Error: a')]);
+    writeTranscript('b.jsonl', [toolUse('t2', 'Bash'), commandResult('t2', 'Error: b')]);
 
     const first = await ingest({ limit: 1 });
     expect(first.scanned).toBe(1);

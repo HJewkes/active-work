@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractSignature } from '../../src/miner/signature.js';
+import { extractSignature, hasErrorSignal } from '../../src/miner/signature.js';
 
 describe('extractSignature', () => {
   it('picks the first line matching ^\\w*Error for a Bash blob', () => {
@@ -64,5 +64,30 @@ describe('extractSignature', () => {
     // differ here — but errorClass and bucket agree, which is what feeds Drain.
     expect(a.errorClass).toBe(b.errorClass);
     expect(a.lineCountBucket).toBe(b.lineCountBucket);
+  });
+
+  it('marks a rule-matched anchor as anchored and the positional fallback as not', () => {
+    expect(extractSignature('Bash', 'TypeError: boom').anchored).toBe(true);
+    expect(extractSignature('test', '3 passed, 2 failed').anchored).toBe(true);
+    expect(extractSignature('Bash', 'total 48\ndrwxr-xr-x  6 user  staff').anchored).toBe(false);
+    expect(extractSignature('git', 'fatal: not a git repository').anchored).toBe(false);
+  });
+});
+
+describe('hasErrorSignal', () => {
+  it('accepts output carrying a recognized failure shape', () => {
+    expect(hasErrorSignal('Bash', 'ok\nTypeError: boom')).toBe(true);
+    expect(hasErrorSignal('Bash', '  at Object.<anonymous> (index.js:10:5)')).toBe(true);
+    expect(hasErrorSignal('Bash', 'command failed with exit code 2')).toBe(true);
+  });
+
+  it('rejects ordinary successful command output', () => {
+    // The AW-93 case: each of these would otherwise key a permanent cluster on
+    // its own literal last line, which has unbounded cardinality.
+    expect(hasErrorSignal('Bash', 'commit a1b2c3d\nAuthor: someone\n\n    Fix the thing')).toBe(
+      false,
+    );
+    expect(hasErrorSignal('Bash', 'src/index.ts\nsrc/other.ts')).toBe(false);
+    expect(hasErrorSignal('Bash', '')).toBe(false);
   });
 });

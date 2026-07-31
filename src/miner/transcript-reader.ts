@@ -82,7 +82,11 @@ export interface DrainIngestSummary {
   linesRead: number;
   /** Lines that were not parseable JSON — counted, skipped, never fatal. */
   malformedLines: number;
-  /** Eligible blobs found. */
+  /** Candidate blobs found, before the AW-93 error-signal screen. */
+  candidateBlobs: number;
+  /** Candidates dropped by the screen: successful output with no failure shape. */
+  screened: number;
+  /** Eligible blobs found (`candidateBlobs - screened`). */
   blobs: number;
   /** Blobs that clustered successfully (`blobs - ingestErrors`). */
   ingested: number;
@@ -99,6 +103,8 @@ export interface DrainIngestSummary {
 interface PassCounters {
   linesRead: number;
   malformedLines: number;
+  candidateBlobs: number;
+  screened: number;
   blobs: number;
   ingested: number;
   newTemplates: number;
@@ -110,6 +116,8 @@ function emptyCounters(): PassCounters {
   return {
     linesRead: 0,
     malformedLines: 0,
+    candidateBlobs: 0,
+    screened: 0,
     blobs: 0,
     ingested: 0,
     newTemplates: 0,
@@ -201,6 +209,11 @@ async function ingestLine(
   sampleEvery: number | undefined,
 ): Promise<void> {
   for (const blob of extractBlobs(parsed, toolNames)) {
+    counters.candidateBlobs++;
+    if (!blob.eligible) {
+      counters.screened++;
+      continue;
+    }
     counters.blobs++;
     try {
       const result = await ingestor.ingestBlob({ ...blob, locator });

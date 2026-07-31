@@ -11,10 +11,24 @@
  * is reused, so "coverage" means the same thing in all three scorecards.
  *
  * Five checks:
- *   1. Coverage — of the eligible blobs found (tool errors + command
- *      stdout/stderr), what fraction clustered rather than being skipped, plus
- *      the transcript-line parse rate underneath it. Both gate: a miner that
- *      silently drops a tenth of the corpus is worse than one that fails.
+ *   1. Coverage — of the ELIGIBLE blobs found, what fraction clustered rather
+ *      than being skipped, plus the transcript-line parse rate underneath it.
+ *      Both gate: a miner that silently drops a tenth of the corpus is worse
+ *      than one that fails.
+ *
+ *      "Eligible" narrowed in AW-93: a candidate blob is every `is_error` tool
+ *      result plus every successful command's stdout/stderr, but only the ones
+ *      carrying a recognizable failure shape are ingested. The gate still means
+ *      "the miner clusters everything it claims to handle" — it was never a
+ *      claim about how much of the corpus is worth handling. So that the
+ *      narrowing cannot hide behind the ratio, the screened-out count is
+ *      reported alongside it as `eligibilityRate`: a change that quietly
+ *      widened the screen would show up there, not as a coverage regression.
+ *   1b. Support distribution (reported) — how many resulting clusters were seen
+ *      exactly once. A store that is mostly singletons has a clustering key
+ *      with unbounded cardinality; AW-93 cut this from 1936/2408 to a small
+ *      fraction of that, and the figure is kept on the scorecard so it cannot
+ *      silently regress behind a passing stability ratio.
  *   2. Template stability — new-template rate sampled through a single pass and
  *      split by blobs seen. Must *decay*: a rate that stays flat means Drain is
  *      minting a template per blob and clustering nothing. Reported as a curve,
@@ -72,21 +86,50 @@ import { round } from './eval-miner.mjs';
 // ── pure scoring (exported for unit tests) ───────────────────────────────────
 
 /**
- * Coverage of the ingest funnel: lines that parsed, and eligible blobs that
- * clustered. Kept separate because they fail for different reasons — a corrupt
- * transcript loses lines, a mask/signature crash loses blobs.
+ * Coverage of the ingest funnel: lines that parsed, candidates that passed the
+ * eligibility screen, and eligible blobs that clustered. Kept separate because
+ * they fail for different reasons — a corrupt transcript loses lines, a
+ * too-wide screen loses signal, a mask/signature crash loses blobs.
+ *
+ * Only `lineParseRate` and `blobCoverage` gate. `eligibilityRate` is reported
+ * so the AW-93 screen stays visible and auditable: it is a deliberate, measured
+ * narrowing, not a way to make the coverage ratio easier to hit.
  */
 export function coverage(summary) {
   const lines = summary.linesRead;
   const blobs = summary.blobs;
+  const candidates = summary.candidateBlobs ?? blobs;
   return {
     linesRead: lines,
     malformedLines: summary.malformedLines,
     lineParseRate: lines ? round((lines - summary.malformedLines) / lines) : 1,
+    candidateBlobs: candidates,
+    screened: summary.screened ?? 0,
+    eligibilityRate: candidates ? round(blobs / candidates) : 1,
     blobs,
     ingested: summary.ingested,
     skipped: blobs - summary.ingested,
     blobCoverage: blobs ? round(summary.ingested / blobs) : 1,
+  };
+}
+
+/**
+ * Support distribution of the resulting clusters.
+ *
+ * A cluster seen exactly once is not a recognized recurring failure — it is a
+ * shape the miner has no evidence about yet. A store that is mostly singletons
+ * is one whose clustering key has unbounded cardinality, which is what AW-93
+ * fixed; tracking the ratio keeps that from silently regressing even while the
+ * stability gate happens to pass.
+ */
+export function supportDistribution(templates) {
+  const singletons = templates.filter((t) => t.occurrenceCount === 1).length;
+  const recurring = templates.length - singletons;
+  return {
+    templates: templates.length,
+    singletons,
+    recurring,
+    singletonRate: templates.length ? round(singletons / templates.length) : 0,
   };
 }
 
@@ -302,7 +345,7 @@ async function falseMergeCheck(root, sampleSize, perCluster = 25) {
     for (const locator of locators.get(template.templateId) ?? []) {
       const line = await readLocatorLine(paths, locator);
       if (!line) continue;
-      for (const blob of extractBlobs(line, new Map())) {
+      for (const blob of extractBlobs(line, new Map()).filter((b) => b.eligible)) {
         const signature = extractSignature(template.toolType, blob.rawText);
         members.push({
           errorClass: signature.errorClass,
@@ -335,7 +378,10 @@ function parseArgs(argv) {
   const a = {
     corpus: transcriptsRoot(),
     limit: undefined,
-    sampleEvery: 500,
+    // AW-93's eligibility screen cut the ingested stream ~12x, so the old
+    // 500-blob sampling interval left the curve with three points. 100 keeps
+    // the ~20-point resolution the gate was tuned against.
+    sampleEvery: 100,
     freezeLimit: 300,
     chunkBytes: 250_000,
     sample: 40,
@@ -386,6 +432,7 @@ async function evaluate(args) {
 
   const checks = {
     coverage: coverage(full),
+    support: supportDistribution(await loadTemplates(fullRoot)),
     stability: stabilityCurve(full.curve),
     determinism: {
       frozenTranscripts: frozen.transcripts,
@@ -443,6 +490,13 @@ function printScorecard(r) {
   console.log(
     `  ${'coverage (gate)'.padEnd(24)} blobs ${pct(c.blobCoverage)} (${c.ingested}/${c.blobs}, ${c.skipped} skipped) · ` +
       `lines ${pct(c.lineParseRate)} (${c.malformedLines} malformed of ${c.linesRead})`,
+  );
+  console.log(
+    `  ${'eligibility (rpt)'.padEnd(24)} ${pct(c.eligibilityRate)} of ${c.candidateBlobs} candidates carry a failure shape (${c.screened} screened out as successful output)`,
+  );
+  const sup = r.checks.support;
+  console.log(
+    `  ${'support (rpt)'.padEnd(24)} ${sup.singletons}/${sup.templates} clusters are singletons (${pct(sup.singletonRate)}), ${sup.recurring} seen more than once`,
   );
   const s = r.checks.stability;
   console.log(
