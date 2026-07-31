@@ -78,6 +78,12 @@ interface DiscoverResult {
   errors: unknown[];
 }
 
+interface FoldResult {
+  ref: string;
+  into: string;
+  session_file: string;
+}
+
 interface WrapResult {
   path: string;
   filename: string;
@@ -300,6 +306,29 @@ describe('end-to-end: full lifecycle through the registry', () => {
       (h) => h.source === 'claude-session' && h.ref === sessionRef,
     );
     expect(stillThere).toBeUndefined();
+  });
+
+  it('fold does not overwrite an existing session file on a same-minute repeat', async () => {
+    await runCmd('new', { slug: 'fold-collision', title: 'Fold Collision' }, activeRoot);
+
+    const first = await runCmd<FoldResult>(
+      'fold',
+      { ref: '/Users/anon/code/repeat-ref', into: 'fold-collision', note: 'first' },
+      activeRoot,
+    );
+    const second = await runCmd<FoldResult>(
+      'fold',
+      { ref: '/Users/anon/code/repeat-ref', into: 'fold-collision', note: 'second' },
+      activeRoot,
+    );
+
+    expect(second.session_file).not.toBe(first.session_file);
+    const [firstBody, secondBody] = await Promise.all([
+      fs.readFile(first.session_file, 'utf8'),
+      fs.readFile(second.session_file, 'utf8'),
+    ]);
+    expect(firstBody).toContain('first');
+    expect(secondBody).toContain('second');
   });
 
   it('sessions roundtrip: wrap -> list -> filename collision yields -1 suffix', async () => {

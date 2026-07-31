@@ -75,7 +75,7 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
-async function pickAvailableFilename(
+export async function pickAvailableFilename(
   dir: string,
   baseName: string,
 ): Promise<{ filename: string; fullPath: string }> {
