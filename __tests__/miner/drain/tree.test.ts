@@ -71,27 +71,65 @@ describe('DrainTree', () => {
     expect(tree.clusterCount).toBe(4);
   });
 
-  it('evicts the least-recently-used cluster once maxClusters is exceeded', () => {
+  it('evicts once maxClusters is exceeded, breaking support ties by recency', () => {
     const tree = new DrainTree({ maxClusters: 2, simTh: 0.99 });
     tree.insert(['one']);
     tree.insert(['two']);
     tree.insert(['three']);
     expect(tree.clusterCount).toBe(2);
 
-    // 'one' should have been evicted (LRU); re-inserting it creates a new cluster.
+    // All three had support 1, so the oldest ('one') loses the tie.
     const result = tree.insert(['one']);
     expect(result.isNew).toBe(true);
   });
 
-  it('refreshes recency on cluster join, protecting recently-used clusters from eviction', () => {
+  it('keeps a well-supported cluster and evicts a singleton instead', () => {
     const tree = new DrainTree({ maxClusters: 2, simTh: 0.99 });
     tree.insert(['one']);
+    tree.insert(['one']); // support 2 — and now the least-recently-used once 'two' arrives
     tree.insert(['two']);
-    // Touch 'one' again so 'two' becomes the least-recently-used.
-    tree.insert(['one']);
     tree.insert(['three']);
 
-    const result = tree.insert(['one']);
-    expect(result.isNew).toBe(false);
+    // Under LRU, 'one' was the oldest and would have been dropped.
+    expect(tree.insert(['one']).isNew).toBe(false);
+    expect(tree.insert(['two']).isNew).toBe(true);
+  });
+
+  it('never exceeds maxClusters however many distinct shapes arrive', () => {
+    const tree = new DrainTree({ maxClusters: 5, simTh: 0.99 });
+    for (let i = 0; i < 200; i++) {
+      tree.insert([`shape${i}`]);
+      expect(tree.clusterCount).toBeLessThanOrEqual(5);
+    }
+    expect(tree.clusterCount).toBe(5);
+  });
+
+  it('keeps the same clusters at capacity regardless of insertion order', () => {
+    // Same multiset — a:4, b:3, c:2, d:1 — presented two different ways. Under
+    // LRU the grouped order drops 'a' (oldest) and the interleaved order drops
+    // 'd', so the two runs disagree; support-ordered eviction drops the
+    // least-seen shape either way. This is the AW-92 idempotency divergence.
+    const survivors = (lines: string[]): string[] => {
+      const tree = new DrainTree({ maxClusters: 3, simTh: 0.99 });
+      for (const line of lines) tree.insert([line]);
+      return tree
+        .toSnapshot()
+        .clusters.map((c) => c.tokens[0])
+        .sort();
+    };
+
+    const grouped = ['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c', 'c', 'd'];
+    const reversed = ['d', 'c', 'c', 'b', 'b', 'b', 'a', 'a', 'a', 'a'];
+    expect(survivors(grouped)).toEqual(['a', 'b', 'c']);
+    expect(survivors(reversed)).toEqual(survivors(grouped));
+  });
+
+  it('holds the real corpus steady state without evicting (AW-92)', () => {
+    // The busiest partition (Bash) converges on ~2.3k clusters over the
+    // operator's 23k-blob corpus; the old 2000 cap evicted continuously there.
+    const tree = new DrainTree({ simTh: 0.99 });
+    for (let i = 0; i < 2500; i++) tree.insert([`shape${i}`]);
+    expect(tree.atCapacity).toBe(false);
+    expect(tree.clusterCount).toBe(2500);
   });
 });

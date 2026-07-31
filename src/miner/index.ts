@@ -202,7 +202,7 @@ export class MinerIngestor {
     return this.templates.size;
   }
 
-  /** True once any Drain partition is at its LRU cap (see `DrainTree.atCapacity`). */
+  /** True once any Drain partition is at its cluster cap (see `DrainTree.atCapacity`). */
   get evicting(): boolean {
     return this.registry.anyAtCapacity;
   }

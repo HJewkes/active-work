@@ -99,7 +99,7 @@ export function coverage(summary) {
  * transcript size rather than clustering behaviour.
  *
  * The gated `ratio` — second half's marginal rate over the first half's — is
- * computed only over samples taken BEFORE any Drain partition hit its LRU cap.
+ * computed only over samples taken BEFORE any Drain partition hit its cluster cap.
  * Past that point a new cluster evicts an old one, so a re-occurrence of an
  * evicted shape mints a fresh template and the rate rises again by
  * construction. That is a capacity finding, not a clustering-quality one, so it
@@ -456,7 +456,7 @@ function printScorecard(r) {
   }
   if (s.postEviction) {
     console.log(
-      `  ${''.padEnd(24)}   ⚠ Drain LRU cap reached at ${s.evictionAt} blobs; the ${s.postEviction.blobs} blobs after it minted ${s.postEviction.newTemplates} templates (${s.postEviction.rate}/blob) — evicted shapes get re-minted, so template count keeps climbing`,
+      `  ${''.padEnd(24)}   ⚠ Drain cluster cap reached at ${s.evictionAt} blobs; the ${s.postEviction.blobs} blobs after it minted ${s.postEviction.newTemplates} templates (${s.postEviction.rate}/blob) — evicted shapes get re-minted, so template count keeps climbing`,
     );
   }
   const d = r.checks.determinism;

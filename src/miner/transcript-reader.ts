@@ -91,7 +91,7 @@ export interface DrainIngestSummary {
   templates: number;
   /** Growth curve samples; empty unless `sampleEvery` was set. */
   curve: GrowthSample[];
-  /** Any Drain partition is at its LRU cap — see `DrainTree.atCapacity`. */
+  /** Any Drain partition is at its cluster cap — see `DrainTree.atCapacity`. */
   evicting: boolean;
   errors: string[];
 }

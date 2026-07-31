@@ -13,7 +13,17 @@ export interface DrainTreeOptions {
   simTh?: number;
   /** Max distinct literal-token children per internal node before overflow collapses to a wildcard branch. */
   maxChildren?: number;
-  /** LRU cap on total clusters across the tree; oldest-accessed cluster is evicted on overflow. */
+  /**
+   * Cap on total clusters in this (single-tool-type) tree. On overflow the
+   * *least-supported* cluster is evicted — see `evictIfOverCapacity`.
+   *
+   * The default is sized from the real corpus (AW-92): 710 transcripts /
+   * 23.3k blobs converge on ~2.3k clusters in the busiest partition (`Bash`),
+   * so 2000 was below the steady state and the tree evicted continuously over
+   * the last ~8% of the corpus. 5000 leaves ~2x headroom while keeping the
+   * memory bound the cap exists for (a cluster is one token array; 5000 of
+   * them is single-digit MB).
+   */
   maxClusters?: number;
 }
 
@@ -35,7 +45,7 @@ interface PrefixNode {
  */
 export interface DrainTreeSnapshot {
   nextClusterId: number;
-  /** LRU order, oldest first — restoring in order preserves eviction order. */
+  /** Access order, oldest first — restoring in order preserves the eviction tie-break. */
   clusters: DrainCluster[];
 }
 
@@ -58,7 +68,7 @@ export class DrainTree {
   private readonly maxClusters: number;
 
   private readonly lengthRoots = new Map<number, PrefixNode>();
-  /** Recency order for LRU eviction: re-inserted on every access, oldest key evicted first. */
+  /** Access order, oldest first: re-inserted on every access, and the tie-break for eviction. */
   private readonly recency = new Map<number, DrainCluster>();
   private nextClusterId = 1;
 
@@ -66,7 +76,7 @@ export class DrainTree {
     this.depth = options.depth ?? 4;
     this.simTh = options.simTh ?? 0.55;
     this.maxChildren = options.maxChildren ?? 100;
-    this.maxClusters = options.maxClusters ?? 2000;
+    this.maxClusters = options.maxClusters ?? 5000;
   }
 
   get clusterCount(): number {
@@ -74,11 +84,11 @@ export class DrainTree {
   }
 
   /**
-   * True once the LRU cap is reached, i.e. every further new cluster evicts an
-   * older one. Past this point clustering stops being a pure function of the
-   * blob multiset: which cluster is least-recently-used at the moment of
-   * overflow depends on the order blobs arrived in. The eval reports it,
-   * because it bounds what "incremental equals all-at-once" can mean.
+   * True once the capacity cap is reached, i.e. every further new cluster
+   * evicts an existing one. Past this point clustering is no longer a pure
+   * function of the blob multiset — a shape whose cluster was evicted and then
+   * recurs mints a fresh cluster — so the eval reports it as the bound on what
+   * "incremental equals all-at-once" can mean.
    */
   get atCapacity(): boolean {
     return this.recency.size >= this.maxClusters;
@@ -186,15 +196,45 @@ export class DrainTree {
     this.recency.set(cluster.clusterId, cluster);
   }
 
+  /**
+   * The cluster to drop on overflow: the one with the fewest occurrences, ties
+   * broken by least-recently-used.
+   *
+   * Recency alone (what this did before AW-92) evicts by arrival order, which
+   * is the wrong axis twice over. A recurring shape that happens to be idle —
+   * a `tsc` failure seen 200 times, absent for one busy stretch — gets dropped
+   * and then re-minted from scratch on its next occurrence, losing its learned
+   * wildcards and its `clusterId -> templateId` binding, so the template count
+   * climbs instead of settling. And which cluster is idle at the moment of
+   * overflow depends on the order blobs arrived in, so two runs over the same
+   * blob multiset in different orders diverge.
+   *
+   * Support is a property of the data rather than of arrival order, so evicting
+   * by it keeps the recurring patterns Drain exists to recognize and spends the
+   * cap on the one-off long tail (on the real corpus, 1936 of 2408 clusters are
+   * singletons). It does not make eviction order-*independent* — nothing does,
+   * Drain is an online algorithm — but it bounds the churn to shapes seen once.
+   *
+   * Iteration is in LRU order and short-circuits on the first singleton, which
+   * is the common case, so this is O(1) amortized rather than a full scan.
+   */
+  private selectVictim(): DrainCluster | undefined {
+    let victim: DrainCluster | undefined;
+    for (const cluster of this.recency.values()) {
+      if (cluster.size === 1) return cluster;
+      if (!victim || cluster.size < victim.size) victim = cluster;
+    }
+    return victim;
+  }
+
   private evictIfOverCapacity(): void {
     if (this.recency.size <= this.maxClusters) return;
-    const oldestId = this.recency.keys().next().value as number;
-    const oldest = this.recency.get(oldestId);
-    this.recency.delete(oldestId);
-    if (!oldest) return;
+    const victim = this.selectVictim();
+    if (!victim) return;
+    this.recency.delete(victim.clusterId);
 
-    const leaf = this.walkToLeaf(oldest.tokens);
+    const leaf = this.walkToLeaf(victim.tokens);
     if (!leaf.clusters) return;
-    leaf.clusters = leaf.clusters.filter((c) => c.clusterId !== oldest.clusterId);
+    leaf.clusters = leaf.clusters.filter((c) => c.clusterId !== victim.clusterId);
   }
 }
