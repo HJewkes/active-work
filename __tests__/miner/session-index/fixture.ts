@@ -6,8 +6,30 @@
  * hand-written file makes "one line of each event type" auditable at a glance.
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 const SESSION = 'sess-1';
-const CWD = '/repo/demo';
+
+/**
+ * Repo attribution is resolved against the real filesystem (AW-91), so the
+ * fixture's `cwd` has to be a directory that actually looks like a git working
+ * tree. A `.git/config` with an `origin` remote is the whole contract — no
+ * `git init` needed, which keeps the fixture hermetic and fast. The path is
+ * deterministic and reused across runs rather than a fresh `mkdtemp`, so
+ * repeated test runs cannot accumulate temp directories.
+ */
+export const FIXTURE_CWD = path.join(os.tmpdir(), 'aw-session-index-fixture-repo');
+
+mkdirSync(path.join(FIXTURE_CWD, '.git'), { recursive: true });
+writeFileSync(
+  path.join(FIXTURE_CWD, '.git', 'config'),
+  '[remote "origin"]\n\turl = git@github.com:acme/demo.git\n',
+  'utf8',
+);
+
+const CWD = FIXTURE_CWD;
 
 function line(fields: Record<string, unknown>): Record<string, unknown> {
   return { sessionId: SESSION, cwd: CWD, gitBranch: 'feat/x', ...fields };
@@ -77,7 +99,7 @@ export const FIXTURE_LINES: Record<string, unknown>[] = [
   ]),
   assistant('2026-07-01T00:00:12Z', [
     toolUse('t6', 'Bash', {
-      command: 'cd /repo/demo && git checkout -b feat/y && git commit -m x',
+      command: `cd ${CWD} && git checkout -b feat/y && git commit -m x`,
     }),
   ]),
   assistant('2026-07-01T00:00:13Z', [

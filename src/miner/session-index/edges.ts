@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { resolveRepo } from './repo-root.js';
 import { RELATIONS } from '../../schemas/session-index-relations.js';
 import type { EdgeInput } from '../../schemas/session-index.js';
 
@@ -43,15 +44,28 @@ export interface RepoRelativePath {
 }
 
 /**
- * Resolve a touched file against the session's `cwd`. The production index is
- * cross-initiative, so there is no configured repo to resolve against (unlike
- * the AW-22 prototype's `--repo` flag) — `cwd` is the only in-transcript
- * signal. A path outside `cwd` keeps its absolute form with a null repo, which
- * query-time repo filters treat as unattributed rather than mis-attributed.
+ * Resolve a touched file to `(repo, repo-relative path)`.
+ *
+ * The repo comes from the file's own nearest `.git` ancestor, not from
+ * `basename(cwd)` (AW-91): name-guessing collapsed unrelated directories that
+ * happened to share a last segment into one repo. A file with no `.git`
+ * ancestor keeps its absolute form with a null repo, which query-time repo
+ * filters treat as unattributed rather than mis-attributed.
+ *
+ * Paths are relative to the working-tree root, so they line up with
+ * `git ls-files` regardless of which subdirectory the tool call ran in. A
+ * non-absolute path has no resolvable anchor of its own and is left alone.
  */
-export function toRepoRelative(cwd: string | null, filePath: string): RepoRelativePath {
-  if (!cwd || !filePath.startsWith(`${cwd}/`)) return { repo: null, path: filePath };
-  return { repo: path.basename(cwd), path: filePath.slice(cwd.length + 1) };
+export function toRepoRelative(filePath: string): RepoRelativePath {
+  if (!path.isAbsolute(filePath)) return { repo: null, path: filePath };
+  const repo = resolveRepo(path.dirname(filePath));
+  if (!repo) return { repo: null, path: filePath };
+  return { repo: repo.name, path: path.relative(repo.root, filePath) };
+}
+
+/** The repo a tool call ran in, for signals keyed by `cwd` (branches, PRs). */
+export function repoForCwd(cwd: string | null): string | null {
+  return resolveRepo(cwd)?.name ?? null;
 }
 
 export interface EdgeSpec {

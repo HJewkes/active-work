@@ -1,6 +1,12 @@
 import type { ExtractAccumulator } from './accumulator.js';
 import type { RawLine } from './json-lines.js';
-import { IGNORED_PATH, parseGitIntent, parseTaskId, realCommand } from './bash-parse.js';
+import {
+  IGNORED_PATH,
+  commandCwd,
+  parseGitIntent,
+  parseTaskId,
+  realCommand,
+} from './bash-parse.js';
 import type { GitIntent } from './bash-parse.js';
 import {
   agentRef,
@@ -10,6 +16,7 @@ import {
   humanEditedFile,
   prBuiltOnBranch,
   prRef,
+  repoForCwd,
   sessionLinkedPr,
   sessionProducedArtifact,
   sessionRanTask,
@@ -176,7 +183,7 @@ export class LineHandler {
       ts: str(line, 'timestamp') ?? '',
       cwd,
       gitBranch: branch === 'HEAD' ? null : branch,
-      repo: cwd ? cwd.split('/').pop() || null : null,
+      repo: repoForCwd(cwd),
     };
     this.observeSession(ctx);
     this.dispatch(ctx, str(line, 'type') ?? 'unknown');
@@ -250,11 +257,11 @@ export class LineHandler {
     this.recordBranch(ctx, ctx.gitBranch);
   }
 
-  private recordBranch(ctx: LineContext, name: string): string {
-    const ref = branchRef(ctx.repo, name);
+  private recordBranch(ctx: LineContext, name: string, repo = ctx.repo): string {
+    const ref = branchRef(repo, name);
     this.acc.addBranch({
       branchRef: ref,
-      repo: ctx.repo,
+      repo,
       name,
       base: null,
       createdAt: ctx.ts || null,
@@ -362,7 +369,7 @@ export class LineHandler {
     const attachment = asObject(ctx.line.attachment);
     const filename = str(attachment, 'filename');
     if (str(attachment, 'type') !== 'edited_text_file' || !filename) return;
-    const { repo, path: relative } = toRepoRelative(ctx.cwd, filename);
+    const { repo, path: relative } = toRepoRelative(filename);
     if (IGNORED_PATH.test(relative)) return;
     const ref = fileRef(repo, relative);
     this.acc.addFile({ fileRef: ref, repo, path: relative });
@@ -456,7 +463,7 @@ export class LineHandler {
   private handleFileTouch(ctx: LineContext, input: Json | null): void {
     const raw = str(input, 'file_path') ?? str(input, 'notebook_path');
     if (!raw) return;
-    const { repo, path: relative } = toRepoRelative(ctx.cwd, raw);
+    const { repo, path: relative } = toRepoRelative(raw);
     if (IGNORED_PATH.test(relative)) return;
     const ref = fileRef(repo, relative);
     this.acc.addFile({ fileRef: ref, repo, path: relative });
@@ -519,25 +526,27 @@ export class LineHandler {
     const raw = str(input, 'command');
     if (!raw) return;
     const git = parseGitIntent(raw);
-    if (git) this.recordGitIntent(ctx, git);
+    // A git verb is attributed to the directory it runs in, which a `cd …` or
+    // `git -C …` prefix can move away from the session's own cwd.
+    if (git) this.recordGitIntent(ctx, git, repoForCwd(commandCwd(raw, ctx.cwd)));
     this.recordTask(ctx, realCommand(raw));
   }
 
-  private recordGitIntent(ctx: LineContext, git: GitIntent): void {
+  private recordGitIntent(ctx: LineContext, git: GitIntent, repo: string | null): void {
     const session = this.acc.session(ctx.sessionId);
-    if (git.setBranch) this.recordBranch(ctx, git.setBranch);
-    if (git.deletedBranch) this.recordBranchDeletion(ctx, git.deletedBranch);
+    if (git.setBranch) this.recordBranch(ctx, git.setBranch, repo);
+    if (git.deletedBranch) this.recordBranchDeletion(ctx, git.deletedBranch, repo);
     if (git.commit) session.commitDelta += 1;
     if (git.push) session.pushDelta += 1;
     if (git.mergedPr) {
-      this.acc.prMerges.push({ number: git.mergedPr, repoHint: ctx.repo, mergedAt: ctx.ts });
+      this.acc.prMerges.push({ number: git.mergedPr, repoHint: repo, mergedAt: ctx.ts });
     }
   }
 
-  private recordBranchDeletion(ctx: LineContext, name: string): void {
+  private recordBranchDeletion(ctx: LineContext, name: string, repo: string | null): void {
     this.acc.addBranch({
-      branchRef: branchRef(ctx.repo, name),
-      repo: ctx.repo,
+      branchRef: branchRef(repo, name),
+      repo,
       name,
       base: null,
       createdAt: null,

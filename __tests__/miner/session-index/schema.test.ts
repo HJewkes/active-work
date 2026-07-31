@@ -94,6 +94,42 @@ describe('session index migration', () => {
     second.close();
   });
 
+  it('invalidates derived rows and rewinds watermarks when the version moves on', () => {
+    // AW-91: a version bump can mean "the same JSONL now yields differently
+    // shaped refs", so a stale index must be re-derived, not merged into.
+    const first = openSessionIndex(dbPath);
+    first
+      .prepare("INSERT INTO transcripts (path, last_byte_offset) VALUES ('~/a.jsonl', 512)")
+      .run();
+    first
+      .prepare("INSERT INTO files (file_ref, repo, path) VALUES ('file:demo/a.ts', 'demo', 'a.ts')")
+      .run();
+    first.pragma(`user_version = ${SCHEMA_VERSION - 1}`);
+    first.close();
+
+    const second = openSessionIndex(dbPath);
+
+    expect(second.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION);
+    // The transcript row survives — only its watermark rewinds, so the next
+    // refresh re-reads it from byte 0 without a `--full` from the user.
+    expect(second.prepare('SELECT last_byte_offset AS o FROM transcripts').get()).toEqual({ o: 0 });
+    expect(second.prepare('SELECT COUNT(*) AS n FROM files').get()).toEqual({ n: 0 });
+    second.close();
+  });
+
+  it('leaves an up-to-date database alone — there is nothing stale to invalidate', () => {
+    const db = openSessionIndex(dbPath);
+    db.prepare("INSERT INTO transcripts (path, last_byte_offset) VALUES ('~/a.jsonl', 512)").run();
+    db.close();
+
+    const reopened = openSessionIndex(dbPath);
+
+    expect(reopened.prepare('SELECT last_byte_offset AS o FROM transcripts').get()).toEqual({
+      o: 512,
+    });
+    reopened.close();
+  });
+
   it('keeps the edge current-state indices partial on t_expired IS NULL', () => {
     const db = openSessionIndex(dbPath);
 

@@ -9,7 +9,7 @@ import {
 } from '../../../src/miner/session-index/extract.js';
 import { prefixHash } from '../../../src/miner/session-index/prefix-hash.js';
 import type { ExtractResult } from '../../../src/schemas/session-index.js';
-import { FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
+import { FIXTURE_CWD, FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
 
 let dir: string;
 let transcript: string;
@@ -67,7 +67,7 @@ describe('extractTranscript', () => {
       sessionId: 'sess-1',
       aiTitle: 'Demo session',
       seedPrompt: 'seed the demo',
-      cwd: '/repo/demo',
+      cwd: FIXTURE_CWD,
       gitBranch: 'feat/x',
       startedAt: '2026-07-01T00:00:00Z',
       endedAt: '2026-07-01T00:00:19Z',
