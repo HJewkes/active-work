@@ -4,7 +4,15 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -60,19 +68,57 @@ function findFreePort(): Promise<number> {
   });
 }
 
-async function waitForHealth(port: number, timeoutMs: number): Promise<void> {
+interface HealthPayload {
+  ok: boolean;
+  pid: number;
+  port: number;
+}
+
+/**
+ * Poll `/health` until it answers 200 and return the payload.
+ *
+ * The daemon answers 503 until its PID file is on disk, so a 200 is the
+ * signal that the whole startup handoff — port bound *and* PID file filed —
+ * has completed. `pid` is the daemon's own pid, which the caller needs: the
+ * spawned `tsx` wrapper's pid is not the daemon's.
+ */
+async function waitForHealth(port: number, timeoutMs: number): Promise<HealthPayload> {
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown = null;
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`);
-      if (res.ok) return;
+      if (res.ok) return (await res.json()) as HealthPayload;
     } catch (err) {
       lastErr = err;
     }
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`daemon never became healthy on port ${port}: ${String(lastErr)}`);
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Wait for the *daemon* to be gone, not just the `tsx` wrapper that spawned
+ * it. The wrapper can reap out from under a shutdown handler that is still
+ * unlinking the PID file, so asserting on PID-file state right after the
+ * wrapper exits races the daemon's own cleanup.
+ */
+async function waitForDaemonExit(pid: number, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`daemon pid ${pid} still alive after ${timeoutMs}ms`);
 }
 
 async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
@@ -96,9 +142,10 @@ describe('integration: daemon over HTTP', () => {
     const activeRoot = mkdtempSync(path.join(tmpdir(), 'aw-daemon-int-data-'));
 
     const child = spawnDaemon(port, stateRoot, activeRoot);
+    let daemonPid = 0;
 
     try {
-      await waitForHealth(port, 15_000);
+      daemonPid = (await waitForHealth(port, 15_000)).pid;
 
       const healthRes = await fetch(`http://127.0.0.1:${port}/health`);
       expect(healthRes.status).toBe(200);
@@ -148,6 +195,7 @@ describe('integration: daemon over HTTP', () => {
       await waitForExit(child, 10_000).catch(() => {
         child.kill('SIGKILL');
       });
+      if (daemonPid > 0) await waitForDaemonExit(daemonPid, 10_000);
       // The PID file should be cleaned up by the daemon's signal handler.
       // env-paths on Linux: <XDG_STATE_HOME>/active-work/daemon.pid
       // on macOS: ~/Library/Logs/active-work/daemon.pid (using HOME override)
@@ -166,16 +214,21 @@ describe('integration: daemon over HTTP', () => {
     const child = spawnDaemon(port, stateRoot, activeRoot);
 
     try {
-      await waitForHealth(port, 15_000);
+      const health = await waitForHealth(port, 15_000);
       const pidFile = findDaemonPidFile(stateRoot);
       expect(pidFile).not.toBeNull();
+      // A 200 means the daemon filed itself, so the file must already name it.
+      // Asserting that here pins the startup handoff rather than assuming it.
+      expect(readFileSync(pidFile!, 'utf8').trim()).toBe(String(health.pid));
 
       // Stand in for a launchd successor that filed itself before this
-      // instance's SIGTERM handler ran.
-      writeFileSync(pidFile!, String(SUCCESSOR_PID), 'utf8');
+      // instance's SIGTERM handler ran. Written the same way the daemon writes
+      // it — staged and renamed — so the stand-in cannot itself interleave.
+      writeSuccessorPidFile(pidFile!);
 
       child.kill('SIGTERM');
       await waitForExit(child, 10_000);
+      await waitForDaemonExit(health.pid, 10_000);
 
       expect(findDaemonPidFile(stateRoot)).toBe(pidFile);
       expect(readFileSync(pidFile!, 'utf8').trim()).toBe(String(SUCCESSOR_PID));
@@ -186,6 +239,12 @@ describe('integration: daemon over HTTP', () => {
     }
   }, 30_000);
 });
+
+function writeSuccessorPidFile(pidFile: string): void {
+  const tmp = `${pidFile}.successor.tmp`;
+  writeFileSync(tmp, String(SUCCESSOR_PID), 'utf8');
+  renameSync(tmp, pidFile);
+}
 
 function findDaemonPidFile(root: string): string | null {
   if (!existsSync(root)) return null;
