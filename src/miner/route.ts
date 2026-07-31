@@ -1,4 +1,4 @@
-import { DrainTree, type DrainTreeOptions } from './drain/tree.js';
+import { DrainTree, type DrainTreeOptions, type DrainTreeSnapshot } from './drain/tree.js';
 
 /**
  * The Drain-tree partitions (§C1): route by tool name *before* Drain sees a
@@ -36,6 +36,20 @@ export class DrainTreeRegistry {
       this.trees.set(toolType, tree);
     }
     return tree;
+  }
+
+  /** Install a tree rebuilt from a snapshot, replacing any tree for `toolType`. */
+  restore(toolType: string, snapshot: DrainTreeSnapshot): void {
+    this.trees.set(toolType, DrainTree.fromSnapshot(snapshot, this.options));
+  }
+
+  snapshot(): Record<string, DrainTreeSnapshot> {
+    return Object.fromEntries([...this.trees].map(([type, tree]) => [type, tree.toSnapshot()]));
+  }
+
+  /** True when any partition has hit its LRU cap and is evicting clusters. */
+  get anyAtCapacity(): boolean {
+    return [...this.trees.values()].some((tree) => tree.atCapacity);
   }
 
   get partitionedToolTypes(): string[] {

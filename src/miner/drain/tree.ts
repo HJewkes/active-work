@@ -22,6 +22,23 @@ interface PrefixNode {
   clusters?: DrainCluster[];
 }
 
+/**
+ * A tree's complete clustering state: every live cluster in LRU order, plus
+ * the id counter.
+ *
+ * The prefix nodes themselves are not stored because they are derivable —
+ * `walkToLeaf(cluster.tokens)` re-creates the path a cluster belongs on, the
+ * same assumption `evictIfOverCapacity` already relies on to unlink a cluster.
+ * What matters is that the clusters come back with their *generalized* tokens
+ * and their original ids, which is exactly what re-inserting them through
+ * `insert()` cannot guarantee.
+ */
+export interface DrainTreeSnapshot {
+  nextClusterId: number;
+  /** LRU order, oldest first — restoring in order preserves eviction order. */
+  clusters: DrainCluster[];
+}
+
 function newNode(): PrefixNode {
   return { children: new Map() };
 }
@@ -54,6 +71,50 @@ export class DrainTree {
 
   get clusterCount(): number {
     return this.recency.size;
+  }
+
+  /**
+   * True once the LRU cap is reached, i.e. every further new cluster evicts an
+   * older one. Past this point clustering stops being a pure function of the
+   * blob multiset: which cluster is least-recently-used at the moment of
+   * overflow depends on the order blobs arrived in. The eval reports it,
+   * because it bounds what "incremental equals all-at-once" can mean.
+   */
+  get atCapacity(): boolean {
+    return this.recency.size >= this.maxClusters;
+  }
+
+  /** Capture the tree's clustering state for durable storage. */
+  toSnapshot(): DrainTreeSnapshot {
+    return {
+      nextClusterId: this.nextClusterId,
+      clusters: [...this.recency.values()].map((c) => ({ ...c, tokens: [...c.tokens] })),
+    };
+  }
+
+  /**
+   * Rebuild a tree from `toSnapshot()` output, re-linking each cluster into
+   * its leaf without routing it through `insert()`.
+   *
+   * Going through `insert()` — what a warm start did before AW-89 — is lossy
+   * twice over: two persisted templates similar enough to match would collapse
+   * into one cluster, and every restored cluster would get a fresh id, so the
+   * `clusterId -> templateId` map could not survive a restart.
+   */
+  static fromSnapshot(snapshot: DrainTreeSnapshot, options: DrainTreeOptions = {}): DrainTree {
+    const tree = new DrainTree(options);
+    tree.nextClusterId = snapshot.nextClusterId;
+    for (const stored of snapshot.clusters) {
+      const cluster: DrainCluster = {
+        clusterId: stored.clusterId,
+        tokens: [...stored.tokens],
+        size: stored.size,
+      };
+      const leaf = tree.walkToLeaf(cluster.tokens);
+      (leaf.clusters ??= []).push(cluster);
+      tree.touch(cluster);
+    }
+    return tree;
   }
 
   /** Insert a tokenized line, returning the cluster it joined or created. */

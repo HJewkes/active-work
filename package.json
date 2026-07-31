@@ -36,6 +36,8 @@
     "mine:session": "node tools/mine-session-signals.mjs",
     "index:session": "node tools/build-session-index.mjs",
     "mine:files": "node tools/mine-file-history.mjs",
+    "mine:drain": "node tools/mine-drain.mjs",
+    "mine:drain-eval": "node tools/eval-drain.mjs",
     "export:aw-data": "node tools/export-aw-data.mjs",
     "cost:rollup": "node tools/cost-rollup.mjs",
     "eval:miner": "node tools/eval-miner.mjs",
