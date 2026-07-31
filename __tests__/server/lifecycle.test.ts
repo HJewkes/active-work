@@ -41,6 +41,37 @@ describe('writePidFile / readPidFile', () => {
     const out = await readPidFile();
     expect(out).toBeNull();
   });
+
+  it('never exposes a half-written pid file to a concurrent reader (AW-88)', async () => {
+    const meta = { port: 7400, version: '0.1.0', started: 'x' };
+    await writePidFile(1000, meta);
+
+    let stop = false;
+    const observed: (number | null)[] = [];
+    const reader = (async () => {
+      while (!stop) observed.push((await readPidFile())?.pid ?? null);
+    })();
+
+    for (let i = 0; i < 200; i += 1) await writePidFile(i % 2 === 0 ? 1000 : 2000, meta);
+    stop = true;
+    await reader;
+
+    // A truncate-then-write would leave the file momentarily empty, which
+    // `readPidFile` reports as `null` — indistinguishable from "no daemon".
+    expect(observed.length).toBeGreaterThan(0);
+    expect(observed.filter((pid) => pid !== 1000 && pid !== 2000)).toEqual([]);
+  });
+
+  it('does not interleave concurrent writers into a hybrid pid (AW-88)', async () => {
+    const meta = { port: 7400, version: '0.1.0', started: 'x' };
+    // A departing daemon (pid 3273) and its successor (999999) writing at
+    // once used to yield the literal `327399` — the short pid landing on top
+    // of the long one without truncating first.
+    for (let i = 0; i < 50; i += 1) {
+      await Promise.all([writePidFile(3273, meta), writePidFile(999_999, meta)]);
+      expect([3273, 999_999]).toContain((await readPidFile())!.pid);
+    }
+  });
 });
 
 describe('removePidFile', () => {

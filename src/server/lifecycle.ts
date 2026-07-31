@@ -34,10 +34,35 @@ async function ensureStateDir(): Promise<void> {
   await fs.mkdir(getStateRoot(), { recursive: true });
 }
 
+/**
+ * Write `contents` to `target` so no reader can ever observe it half-written.
+ *
+ * `fs.writeFile` opens with `O_TRUNC` and writes as a separate syscall, so a
+ * concurrent reader between the two sees an empty file, and a concurrent
+ * *writer* interleaves byte-for-byte: a departing daemon's `3273` landing on
+ * top of a successor's `999999` yields the literal `327399` (AW-88). Staging
+ * in a sibling temp file and `rename`-ing it into place makes the swap atomic
+ * — a reader sees either the whole old file or the whole new one.
+ */
+let tmpCounter = 0;
+
+async function writeFileAtomic(target: string, contents: string): Promise<void> {
+  const tmp = `${target}.${process.pid}.${(tmpCounter++).toString(36)}.tmp`;
+  try {
+    await fs.writeFile(tmp, contents, 'utf8');
+    await fs.rename(tmp, target);
+  } catch (err) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw err;
+  }
+}
+
 export async function writePidFile(pid: number, meta: DaemonMeta): Promise<void> {
   await ensureStateDir();
-  await fs.writeFile(pidPath(), String(pid), 'utf8');
-  await fs.writeFile(metaPath(), JSON.stringify(meta, null, 2), 'utf8');
+  // Meta first: the PID file is the discovery handle, so anything that finds
+  // it must also find the metadata rather than the `port: 0` fallback.
+  await writeFileAtomic(metaPath(), JSON.stringify(meta, null, 2));
+  await writeFileAtomic(pidPath(), String(pid));
 }
 
 export async function readPidFile(): Promise<PidFileContents | null> {
