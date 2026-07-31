@@ -8,6 +8,7 @@ import { SessionFrontmatterSchema } from '../schemas/session.js';
 import { NotFoundError } from '../errors.js';
 import { nowIso } from '../utils/today.js';
 import { appendTriagedLog } from '../discover/triaged-log.js';
+import { buildSessionStem, pickAvailableFilename } from '../sessions/session-file.js';
 
 /**
  * `active-work fold <ref> --into <slug>` — record that a discover hit has been
@@ -67,8 +68,8 @@ export default defineCommand({
     await fs.mkdir(sessionsDir, { recursive: true });
 
     const startedIso = nowIso();
-    const filename = buildSessionFilename(startedIso, args.ref);
-    const sessionFile = path.join(sessionsDir, filename);
+    const stem = buildSessionStem(startedIso, `folded-${sanitizeRef(args.ref)}`);
+    const { fullPath: sessionFile } = await pickAvailableFilename(sessionsDir, stem);
 
     const body = [
       `Folded hit \`${args.ref}\` into initiative \`${args.into}\`.`,
@@ -95,12 +96,6 @@ export default defineCommand({
     return { ref: args.ref, into: args.into, session_file: sessionFile };
   },
 });
-
-function buildSessionFilename(iso: string, ref: string): string {
-  // iso: 2026-05-12T15:23:45.000Z → 2026-05-12-1523
-  const stamp = iso.slice(0, 16).replace('T', '-').replace(':', '');
-  return `${stamp}-folded-${sanitizeRef(ref)}.md`;
-}
 
 function sanitizeRef(ref: string): string {
   return (
