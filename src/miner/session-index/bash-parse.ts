@@ -4,6 +4,9 @@
  * (`tools/mine-session-signals.mjs`).
  */
 
+import os from 'node:os';
+import path from 'node:path';
+
 /** Build artifacts and vendored trees are never interesting file touches. */
 export const IGNORED_PATH =
   /(^|\/)(node_modules|\.git|dist|build|\.next|coverage|\.turbo|storybook-static)(\/|$)/;
@@ -35,6 +38,25 @@ export function realCommand(raw: string): string {
     s = s.slice(m[0].length).trim();
   }
   return s;
+}
+
+/**
+ * The directory a compound command's git verb actually runs in.
+ *
+ * `cd ~/projects/x && git checkout -b feat/y` is the dominant shape in this
+ * corpus, and the session's own `cwd` is frequently somewhere else entirely —
+ * a state directory, a scratch dir. Attributing the branch to the session's
+ * `cwd` therefore named the wrong repo, or none (AW-91). `git -C <dir>` wins
+ * over a leading `cd` because it is the more specific of the two.
+ */
+export function commandCwd(raw: string, sessionCwd: string | null): string | null {
+  const dashC = raw.match(/\bgit\s+-C\s+(\S+)/)?.[1];
+  const cd = raw.trim().match(/^cd\s+([^&;|]+?)\s*(?:&&|;|$)/)?.[1];
+  const target = (dashC ?? cd)?.trim().replace(/^['"]|['"]$/g, '');
+  if (!target) return sessionCwd;
+  const expanded = target.startsWith('~/') ? path.join(os.homedir(), target.slice(2)) : target;
+  if (path.isAbsolute(expanded)) return expanded;
+  return sessionCwd ? path.resolve(sessionCwd, expanded) : null;
 }
 
 export interface GitIntent {

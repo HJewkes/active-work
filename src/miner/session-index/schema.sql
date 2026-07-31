@@ -148,6 +148,12 @@ CREATE TABLE IF NOT EXISTS branches (
   branch_ref TEXT PRIMARY KEY, repo TEXT, name TEXT, base TEXT,
   created_at TEXT, deleted_at TEXT
 );
+-- `repo` is the nearest `.git` ancestor's name (see repo-root.ts), NULL for a
+-- path that is in no working tree — a state directory, a scratch file. `path`
+-- is relative to that working-tree root, so it lines up with `git ls-files`
+-- regardless of which subdirectory the tool call ran in. A NULL `repo` keeps
+-- the absolute path, which repo filters read as unattributed rather than
+-- mis-attributed.
 CREATE TABLE IF NOT EXISTS files (
   file_ref TEXT PRIMARY KEY, repo TEXT, path TEXT NOT NULL
 );
