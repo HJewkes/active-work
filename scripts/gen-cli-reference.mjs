@@ -10,17 +10,38 @@
  * Requires `pnpm build` to have run so `dist/cli.js` exists.
  */
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..');
 const CLI = resolve(REPO_ROOT, 'dist/cli.js');
 const OUT = resolve(REPO_ROOT, 'docs/cli-reference.md');
+const SRC = resolve(REPO_ROOT, 'src');
 
 if (!existsSync(CLI)) {
   console.error(`error: ${CLI} not found. Run \`pnpm build\` first.`);
+  process.exit(1);
+}
+
+/** Recursively find the most recent mtime among files under `dir`. */
+function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    const mtime = entry.isDirectory() ? newestMtime(path) : statSync(path).mtimeMs;
+    if (mtime > newest) newest = mtime;
+  }
+  return newest;
+}
+
+const distMtime = statSync(CLI).mtimeMs;
+const srcMtime = newestMtime(SRC);
+if (srcMtime > distMtime) {
+  console.error(
+    `error: ${CLI} is older than src/ (dist stale). Run \`pnpm build:cli\` before regenerating docs.`,
+  );
   process.exit(1);
 }
 
