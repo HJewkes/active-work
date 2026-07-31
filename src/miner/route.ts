@@ -47,7 +47,7 @@ export class DrainTreeRegistry {
     return Object.fromEntries([...this.trees].map(([type, tree]) => [type, tree.toSnapshot()]));
   }
 
-  /** True when any partition has hit its LRU cap and is evicting clusters. */
+  /** True when any partition has hit its cluster cap and is evicting clusters. */
   get anyAtCapacity(): boolean {
     return [...this.trees.values()].some((tree) => tree.atCapacity);
   }
