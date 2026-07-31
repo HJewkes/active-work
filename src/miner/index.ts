@@ -2,7 +2,8 @@ import { extractSignature } from './signature.js';
 import { applyMasks } from './masks.js';
 import { DrainTreeRegistry } from './route.js';
 import { templateId as computeTemplateId } from './template-id.js';
-import { appendOccurrence, loadTemplates, saveTemplates } from './store.js';
+import { appendOccurrence, appendOccurrences, loadTemplates, saveTemplates } from './store.js';
+import { loadTreeSnapshots, saveTreeSnapshots, type TreeSnapshotFile } from './tree-store.js';
 import { getMinerRoot } from '../utils/paths.js';
 import type { Locator, Occurrence, Template } from '../schemas/template.js';
 
@@ -19,6 +20,21 @@ export interface IngestBlobResult {
   isNewTemplate: boolean;
 }
 
+export interface MinerIngestorOptions {
+  /**
+   * Hold occurrence appends and `templates.yml` rewrites in memory until
+   * `flush()`. Off by default, so a single-blob caller keeps the durable
+   * write-per-blob semantics AW-28 shipped with.
+   *
+   * A corpus pass ingests tens of thousands of blobs, and rewriting the whole
+   * `templates.yml` per blob is O(blobs x templates) file I/O — minutes of
+   * fsync for a run whose actual clustering work is seconds. The clustering
+   * itself is unaffected: buffering changes only *when* bytes hit disk, never
+   * which template a blob routes to.
+   */
+  buffered?: boolean;
+}
+
 function tokenize(signatureLine: string): string[] {
   return signatureLine.split(/\s+/).filter((t) => t.length > 0);
 }
@@ -28,27 +44,56 @@ function tokenize(signatureLine: string): string[] {
  * extraction -> masking -> Drain clustering -> template-id assignment ->
  * durable writes (`templates.yml` upsert, `occurrences.jsonl` append).
  *
- * `MinerIngestor` seeds its in-memory Drain trees from the persisted
- * `templates.yml` on construction, so a warm start recognizes previously-seen
- * template shapes rather than re-creating them. This is a *partial* rebuild:
- * it reconstructs each template's leaf by re-inserting its current
- * (possibly already-generalized) tokens, not by replaying the original
- * per-occurrence insertion history, so a template whose leading tokens have
- * since been wildcarded may route to a different leaf on restart than it
- * did originally. Full history-faithful rebuild (via a persisted Drain-tree
- * snapshot or per-occurrence replay) is deferred to the transcript-reader/
- * CLI follow-up — this is the "rebuildable cache" gap called out in
- * sources/deepdive-session-mining-build-specs.md §C1.
+ * A warm start restores its Drain trees from `<minerRoot>/drain-trees.json`
+ * (AW-89), so every cluster comes back with the wildcards it had learned and
+ * with its original `clusterId -> templateId` binding. That is what makes a
+ * chunked sequence of ingest passes converge on the same template set as one
+ * all-at-once pass — `tools/eval-drain.mjs` gates on exactly that.
+ *
+ * With no snapshot on disk (a pre-AW-89 store, or one whose rebuildable cache
+ * was deleted) it falls back to seeding from `templates.yml`. That fallback is
+ * the original *partial* rebuild: it re-inserts each template's first-seen
+ * masked signature, so a template whose leading tokens were later wildcarded
+ * can route to a different leaf than it did originally. It is correct in the
+ * sense that nothing is lost — `occurrences.jsonl` remains the source of truth
+ * per §C1 — but it is not fidelity-preserving, so the snapshot is the path a
+ * normal warm start takes.
  */
 export class MinerIngestor {
   private readonly registry = new DrainTreeRegistry();
   private readonly clusterTemplateIds = new Map<string, Map<number, string>>();
   private readonly templates: Map<string, Template>;
   private readonly root: string;
+  private readonly buffered: boolean;
+  private readonly pending: Occurrence[] = [];
 
-  private constructor(templates: Template[], root: string) {
+  private constructor(
+    templates: Template[],
+    root: string,
+    options: MinerIngestorOptions,
+    snapshots: TreeSnapshotFile,
+  ) {
     this.templates = new Map(templates.map((t) => [t.templateId, t]));
     this.root = root;
+    this.buffered = options.buffered ?? false;
+    if (snapshots.trees.length > 0) this.restoreTrees(snapshots);
+    else this.seedFromTemplates(templates);
+  }
+
+  private restoreTrees(snapshots: TreeSnapshotFile): void {
+    for (const tree of snapshots.trees) {
+      this.registry.restore(tree.toolType, {
+        nextClusterId: tree.nextClusterId,
+        clusters: tree.clusters,
+      });
+      for (const [clusterId, id] of tree.templateIds) {
+        this.rememberClusterId(tree.toolType, clusterId, id);
+      }
+    }
+  }
+
+  /** Pre-AW-89 fallback: rebuild leaves from first-seen masked signatures. */
+  private seedFromTemplates(templates: Template[]): void {
     for (const template of templates) {
       const tree = this.registry.getTree(template.toolType);
       const { cluster } = tree.insert(tokenize(template.maskedSignature));
@@ -56,9 +101,33 @@ export class MinerIngestor {
     }
   }
 
-  static async create(root: string = getMinerRoot()): Promise<MinerIngestor> {
-    const templates = await loadTemplates(root);
-    return new MinerIngestor(templates, root);
+  static async create(
+    root: string = getMinerRoot(),
+    options: MinerIngestorOptions = {},
+  ): Promise<MinerIngestor> {
+    const [templates, snapshots] = await Promise.all([
+      loadTemplates(root),
+      loadTreeSnapshots(root),
+    ]);
+    return new MinerIngestor(templates, root, options, snapshots);
+  }
+
+  /** Serialize every live tree plus its cluster→template bindings. */
+  private treeSnapshotFile(): TreeSnapshotFile {
+    const trees = Object.entries(this.registry.snapshot()).map(([toolType, snapshot]) => ({
+      toolType,
+      nextClusterId: snapshot.nextClusterId,
+      clusters: snapshot.clusters,
+      templateIds: [...(this.clusterTemplateIds.get(toolType) ?? new Map())].map(
+        ([clusterId, id]): [number, string] => [clusterId, id],
+      ),
+    }));
+    return { version: 1, trees };
+  }
+
+  private async persistTemplates(): Promise<void> {
+    await saveTemplates([...this.templates.values()], this.root);
+    await saveTreeSnapshots(this.treeSnapshotFile(), this.root);
   }
 
   private rememberClusterId(toolType: string, clusterId: number, id: string): void {
@@ -99,7 +168,8 @@ export class MinerIngestor {
       timestamp: input.timestamp,
       ...(Object.keys(extractedParams).length > 0 ? { extractedParams } : {}),
     };
-    await appendOccurrence(occurrence, this.root);
+    if (this.buffered) this.pending.push(occurrence);
+    else await appendOccurrence(occurrence, this.root);
 
     const updated: Template = existing
       ? { ...existing, occurrenceCount: existing.occurrenceCount + 1 }
@@ -112,8 +182,28 @@ export class MinerIngestor {
           exemplarLocator: input.locator,
         };
     this.templates.set(id, updated);
-    await saveTemplates([...this.templates.values()], this.root);
+    if (!this.buffered) await this.persistTemplates();
 
     return { templateId: id, isNewTemplate };
+  }
+
+  /**
+   * Write everything buffered since the last flush. A no-op in unbuffered
+   * mode, so callers can flush unconditionally.
+   */
+  async flush(): Promise<void> {
+    if (!this.buffered) return;
+    await appendOccurrences(this.pending, this.root);
+    this.pending.length = 0;
+    await this.persistTemplates();
+  }
+
+  get templateCount(): number {
+    return this.templates.size;
+  }
+
+  /** True once any Drain partition is at its LRU cap (see `DrainTree.atCapacity`). */
+  get evicting(): boolean {
+    return this.registry.anyAtCapacity;
   }
 }

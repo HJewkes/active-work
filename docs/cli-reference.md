@@ -49,6 +49,7 @@ Commands:
   mcp                           mcp commands
   migrate [options]             Preview (or apply) the pending v2→v3 open-loops
                                 migration.
+  miner                         miner commands
   new [options] <slug>          Scaffold a new initiative directory.
   note                          note commands
   open [options] [slug]         Bootstrap a Claude session for an initiative.
@@ -441,6 +442,50 @@ Preview (or apply) the pending v2→v3 open-loops migration.
 Options:
   --dry-run   Report what would change; write nothing
   --apply     Actually run the migration
+  -h, --help  display help for command
+```
+
+## active-work miner drain-ingest
+
+```
+Usage: active-work miner drain-ingest [options]
+
+Cluster new tool-result/error blobs from Claude transcripts into the template
+store.
+
+Options:
+  --full           Ignore stored watermarks and re-read every transcript from
+                   byte 0.
+  --limit <value>  Visit at most N transcripts.
+  --verify-hashes  Re-hash each read prefix to detect a rewritten transcript
+                   (slow).
+  -h, --help       display help for command
+```
+
+## active-work miner refresh
+
+```
+Usage: active-work miner refresh [options]
+
+Index new Claude session transcripts into the session-signal index.
+
+Options:
+  --full           Drop every derived row and re-read all transcripts from byte
+                   0.
+  --limit <value>  Visit at most N transcripts.
+  --verify-hashes  Re-hash every transcript to detect source drift (slow;
+                   implied by --full).
+  -h, --help       display help for command
+```
+
+## active-work miner status
+
+```
+Usage: active-work miner status [options]
+
+Report session-signal index size, freshness, and daemon indexing state.
+
+Options:
   -h, --help  display help for command
 ```
 
