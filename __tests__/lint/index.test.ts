@@ -66,14 +66,10 @@ describe('lintSlug', () => {
     });
   });
 
-  it('returns only the pre-existing unmarked-empty-ledger finding on the clean fixture', async () => {
-    // The fixture's one session has an empty ledger with no `no_loops`
-    // marker (it predates the marker) — lintZeroLoops correctly flags it;
-    // every other rule stays silent.
+  it('returns nothing on the clean fixture', async () => {
     await withTempActiveRoot(async (root) => {
       const findings = await lintSlug('sample-initiative', { activeRoot: root });
-      expect(findings).toHaveLength(1);
-      expect(findings[0].file).toBe('sessions/2026-05-10-1430-fixture001.md');
+      expect(findings).toEqual([]);
     });
   });
 
@@ -87,7 +83,7 @@ describe('lintSlug', () => {
 
       const findings = await lintSlug('sample-initiative', { activeRoot: root });
       const files = findings.map((f) => f.file).sort();
-      expect(files).toEqual(['artifacts.yml', 'sessions/2026-05-10-1430-fixture001.md']);
+      expect(files).toEqual(['artifacts.yml']);
     });
   });
 });

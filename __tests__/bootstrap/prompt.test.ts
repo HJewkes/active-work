@@ -867,6 +867,17 @@ describe('assembleBootstrap open loops', () => {
 
   it('says nothing was asserted clear when no session filed a no_loops marker', async () => {
     await withTempActiveRoot(async (activeRoot) => {
+      // The fixture's own session now carries no_loops: true (AW-56), so this
+      // test writes a newer session that omits the marker to exercise the
+      // unasserted-empty-ledger case.
+      await writeSession(activeRoot, {
+        session_id: 'no-marker',
+        started: '2026-05-11T09:00:00Z',
+        ended: '2026-05-11T16:00:00Z',
+        track: 'canonical',
+        body: '- Did some work\n',
+      });
+
       const { prompt, metadata } = await assembleBootstrap({
         activeRoot,
         slug: SAMPLE_SLUG,
