@@ -31,7 +31,9 @@ export const FALLBACK_DEFAULT_CHANNELS: string[] = ['plugin:agent-chat@agent-cha
  * to `{}` rather than throwing — a malformed global config should degrade to
  * defaults, not break every `aw` launch.
  */
-export async function readGlobalConfig(configRoot: string = getConfigRoot()): Promise<GlobalConfig> {
+export async function readGlobalConfig(
+  configRoot: string = getConfigRoot(),
+): Promise<GlobalConfig> {
   let raw: string;
   try {
     raw = await fs.readFile(path.join(configRoot, 'config.json'), 'utf8');
@@ -51,5 +53,7 @@ export async function readGlobalConfig(configRoot: string = getConfigRoot()): Pr
 /** The channel defaults to merge with a brief's own: config.json's `channels` if set, else the fallback. */
 export async function resolveDefaultChannels(configRoot?: string): Promise<string[]> {
   const config = await readGlobalConfig(configRoot);
-  return config.channels && config.channels.length > 0 ? config.channels : FALLBACK_DEFAULT_CHANNELS;
+  return config.channels && config.channels.length > 0
+    ? config.channels
+    : FALLBACK_DEFAULT_CHANNELS;
 }
