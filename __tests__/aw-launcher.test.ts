@@ -246,22 +246,30 @@ describe('withLauncherLease', () => {
 
   // The exit/signal handlers are the last-resort cleanup for a Ctrl-C that
   // kills `aw` before any promise gets a turn. They must not outlive the run.
+  //
+  // SIGHUP is in the set alongside SIGINT/SIGTERM: it is what a closed
+  // terminal/iTerm pane sends the foreground process group, and without a
+  // listener the default disposition kills `aw` before 'exit' can fire,
+  // orphaning the lease (see the SIGHUP comment on CLEANUP_SIGNALS).
   it('installs exit and signal handlers and removes them afterwards', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const before = {
         exit: process.listenerCount('exit'),
         sigint: process.listenerCount('SIGINT'),
         sigterm: process.listenerCount('SIGTERM'),
+        sighup: process.listenerCount('SIGHUP'),
       };
       await withLauncherLease({ activeRoot, slug: SLUG, cwd: '/tmp/c' }, async () => {
         expect(process.listenerCount('exit')).toBe(before.exit + 1);
         expect(process.listenerCount('SIGINT')).toBe(before.sigint + 1);
         expect(process.listenerCount('SIGTERM')).toBe(before.sigterm + 1);
+        expect(process.listenerCount('SIGHUP')).toBe(before.sighup + 1);
         return 0;
       });
       expect(process.listenerCount('exit')).toBe(before.exit);
       expect(process.listenerCount('SIGINT')).toBe(before.sigint);
       expect(process.listenerCount('SIGTERM')).toBe(before.sigterm);
+      expect(process.listenerCount('SIGHUP')).toBe(before.sighup);
     });
   });
 

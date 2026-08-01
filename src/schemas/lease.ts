@@ -38,6 +38,14 @@ export const LeaseSchema = z.object({
   mode: LeaseModeSchema,
   /** Present only for `launcher` leases — the `aw` process to probe. */
   pid: z.number().int().positive().optional(),
+  /**
+   * `pid`'s command name (e.g. `node`) at the moment the lease was written.
+   * Lets liveness checking tell "still the same process" apart from "the OS
+   * recycled this pid onto something unrelated" — `kill(pid, 0)` alone can't.
+   * Best-effort: absent when the lookup failed, in which case liveness falls
+   * back to the pid check alone.
+   */
+  pid_comm: z.string().min(1).optional(),
   started: iso8601,
   /** Human/role hint carried for future use (e.g. an agent-chat name). */
   label: z.string().min(1).optional(),

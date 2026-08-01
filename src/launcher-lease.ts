@@ -40,7 +40,13 @@ export function buildLauncherEnv(
   return { ...base, [LEASE_ENV_VAR]: leaseId };
 }
 
-const CLEANUP_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+// SIGHUP is what a closed terminal/iTerm pane sends the foreground process
+// group. Without a listener here, the default disposition kills `aw` before
+// the event loop gets a turn — 'exit' never fires for that abrupt a death —
+// so the lease is orphaned. Its pid then keeps warning future sessions of a
+// "live" sibling until LAUNCHER_MAX_AGE_MS elapses or the pid gets recycled
+// by an unrelated process (see readLiveLeases in sessions/lease.ts).
+const CLEANUP_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 export interface LauncherLeaseInput {
   activeRoot: string;
