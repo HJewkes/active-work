@@ -57,7 +57,9 @@ export const BriefFrontmatterSchema = z
     // High-water mark for task ids: the largest numeric suffix ever issued
     // for this initiative's task_prefix. Optional so pre-existing brief.md
     // files (written before this field existed) keep validating; task.add
-    // falls back to scanning on-disk task files when it's absent.
+    // falls back to scanning on-disk task files when it's absent. Only
+    // task.delete writes this field (AW-94) — and only when removing the
+    // current highest id — so task.add itself never rewrites brief.md.
     task_seq: TaskSeqSchema.optional(),
   })
   .superRefine((value, ctx) => {
