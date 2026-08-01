@@ -190,10 +190,12 @@ export function isProcessAlive(pid: number): boolean {
 export function getProcessCommand(pid: number): string | null {
   if (!Number.isFinite(pid) || pid <= 0) return null;
   try {
-    return execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], {
-      encoding: 'utf8',
-      timeout: 500,
-    }).trim() || null;
+    return (
+      execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], {
+        encoding: 'utf8',
+        timeout: 500,
+      }).trim() || null
+    );
   } catch {
     return null;
   }

@@ -19,10 +19,7 @@ const NOW = new Date('2026-05-12T16:00:00Z');
 /** Never probe a real pid: liveness is always injected in these tests. */
 const alive = (): boolean => true;
 const dead = (): boolean => false;
-const comm =
-  (name: string | null) =>
-  (): string | null =>
-    name;
+const comm = (name: string | null) => (): string | null => name;
 
 function minutesBefore(now: Date, minutes: number): Date {
   return new Date(now.getTime() - minutes * 60_000);
