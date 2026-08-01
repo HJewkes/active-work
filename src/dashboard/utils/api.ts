@@ -9,7 +9,14 @@
  * paths and never need to think about CORS.
  */
 
-import type { ArtifactsResult, InitiativesResult, JsonEnvelope, TasksResult } from '../types.js';
+import type {
+  ArtifactsResult,
+  InitiativesResult,
+  JsonEnvelope,
+  TaskDoneResult,
+  TaskReorderResult,
+  TasksResult,
+} from '../types.js';
 
 async function rpc<T>(name: string, body: unknown): Promise<T> {
   const res = await fetch(`/rpc/${name}`, {
@@ -44,4 +51,21 @@ export function fetchTasks(): Promise<TasksResult> {
 
 export function fetchArtifacts(): Promise<ArtifactsResult> {
   return rpc<ArtifactsResult>('artifact.list', { all_initiatives: true });
+}
+
+export function markTaskDone(slug: string, id: string): Promise<TaskDoneResult> {
+  return rpc<TaskDoneResult>('task.done', { slug, id });
+}
+
+/** Reverts a mark-done via task.edit, for the undo-toast affordance. */
+export function undoTaskDone(slug: string, id: string): Promise<TaskDoneResult> {
+  return rpc<TaskDoneResult>('task.edit', { slug, id, field: 'status', value: 'open' });
+}
+
+export function reorderTask(
+  slug: string,
+  id: string,
+  newPriority: number,
+): Promise<TaskReorderResult> {
+  return rpc<TaskReorderResult>('task.reorder', { slug, id, new_priority: newPriority });
 }
