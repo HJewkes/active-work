@@ -27,8 +27,10 @@ export const TaskSeqSchema = positiveInt;
 // An MCP push-channel target enabled at `aw`/`open` launch via
 // `claude --dangerously-load-development-channels <target>`. Accepts an
 // explicit `server:<name>` / `plugin:<name>@<marketplace>` target, or a bare
-// server name that is normalized to `server:<name>` by the launcher.
-const channelTarget = z
+// server name that is normalized to `server:<name>` by the launcher. Exported
+// so the global config schema (`utils/global-config.ts`) validates its own
+// `channels` list against the same rule instead of a hand-rolled copy.
+export const channelTarget = z
   .string()
   .min(1)
   .regex(/^(?:(?:server|plugin):.+|[A-Za-z0-9_-]+)$/, {

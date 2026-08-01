@@ -5,6 +5,20 @@
  */
 
 /**
+ * Merge an initiative's brief-declared channels with a caller-supplied set of
+ * defaults (typically the user's global config — see `utils/global-config.ts`).
+ * Defaults come first, de-duplicated by exact target string so a brief that
+ * redundantly lists a default doesn't double it up on the command line.
+ */
+export function mergeChannels(
+  defaultChannels: string[] | undefined,
+  briefChannels: string[] | undefined,
+): string[] {
+  const merged = [...(defaultChannels ?? []), ...(briefChannels ?? [])];
+  return [...new Set(merged)];
+}
+
+/**
  * Build the channel flags for an initiative's MCP push channels.
  *
  * Each frontmatter `channels` entry is a target: an explicit

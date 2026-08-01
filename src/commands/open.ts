@@ -10,6 +10,8 @@ import {
   type BootstrapMetadata,
 } from '../bootstrap/prompt.js';
 import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
+import { mergeChannels } from '../launcher-args.js';
+import { resolveDefaultChannels } from '../utils/global-config.js';
 import { acquireLease } from '../sessions/lease.js';
 import { listInitiativeSlugs, resolveSlug, resolveSlugFromCwd } from './_open-helpers.js';
 
@@ -185,11 +187,12 @@ async function bootstrapInitiative(
   if (detectSiblings && !opts.deferLease) {
     await claimOneshotLease(activeRoot, slug, cwdHint);
   }
+  const defaultChannels = await resolveDefaultChannels();
   return {
     slug,
     prompt,
     cwd_hint: cwdHint,
-    ...(brief.channels && brief.channels.length > 0 ? { channels: brief.channels } : {}),
+    channels: mergeChannels(defaultChannels, brief.channels),
     metadata,
     resolved_from: opts.resolvedFrom,
   };

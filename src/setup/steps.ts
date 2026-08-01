@@ -226,6 +226,10 @@ const CONFIG_STUB = {
     localRepos: [] as string[],
     projectsRoot: '~/Documents/projects',
   },
+  // MCP push channels loaded on every `aw`/`open` launch, for every
+  // initiative — see `utils/global-config.ts`. Edit or clear this list to
+  // customize; an empty/missing array falls back to the agent-chat default.
+  channels: ['plugin:agent-chat@agent-chat-local'] as string[],
 };
 
 export async function stepWriteConfigStub(deps: SetupDeps = {}): Promise<StepResult> {

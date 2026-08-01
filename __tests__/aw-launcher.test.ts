@@ -1,9 +1,45 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildChannelArgs, buildClaudeArgs, parseLauncherFlags } from '../src/launcher-args.js';
+import {
+  buildChannelArgs,
+  buildClaudeArgs,
+  mergeChannels,
+  parseLauncherFlags,
+} from '../src/launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from '../src/launcher-lease.js';
 import { withTempActiveRoot } from './setup/test-helpers.js';
+
+const DEFAULTS = ['plugin:agent-chat@agent-chat-local'];
+
+describe('mergeChannels', () => {
+  it('returns the given defaults when a brief declares no channels', () => {
+    expect(mergeChannels(DEFAULTS, undefined)).toEqual(DEFAULTS);
+    expect(mergeChannels(DEFAULTS, [])).toEqual(DEFAULTS);
+  });
+
+  it('returns brief channels unchanged when no defaults are configured', () => {
+    expect(mergeChannels(undefined, ['plugin:voltras-channel@voltras-local'])).toEqual([
+      'plugin:voltras-channel@voltras-local',
+    ]);
+    expect(mergeChannels([], ['plugin:voltras-channel@voltras-local'])).toEqual([
+      'plugin:voltras-channel@voltras-local',
+    ]);
+  });
+
+  it('appends brief-declared channels after the defaults', () => {
+    expect(mergeChannels(DEFAULTS, ['plugin:voltras-channel@voltras-local'])).toEqual([
+      ...DEFAULTS,
+      'plugin:voltras-channel@voltras-local',
+    ]);
+  });
+
+  // Regression: a brief that redundantly lists a default (e.g. copied from
+  // another initiative) must not double it up on the claude command line.
+  it('de-duplicates a brief channel that repeats a default', () => {
+    expect(mergeChannels(DEFAULTS, DEFAULTS)).toEqual(DEFAULTS);
+  });
+});
 
 describe('buildChannelArgs', () => {
   it('returns no args when channels is undefined or empty', () => {
