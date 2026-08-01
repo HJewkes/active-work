@@ -169,10 +169,20 @@ export function searchText(message: Json | null, field: SpanField): string {
  * per-line `gitBranch`/`cwd` fields carry the same signal without the state.
  */
 export class LineHandler {
-  constructor(private readonly acc: ExtractAccumulator) {}
+  /**
+   * `fallbackSessionId` covers `file-history-snapshot`/`file-history-delta`
+   * lines, which carry no `sessionId` field of their own — every transcript is
+   * one session, and its filename (the caller's basename, minus `.jsonl`) is
+   * that session's id, the same id these lines' own backup paths are keyed
+   * under on disk (`~/.claude/file-history/<sessionId>/...`).
+   */
+  constructor(
+    private readonly acc: ExtractAccumulator,
+    private readonly fallbackSessionId: string | null = null,
+  ) {}
 
   handle(line: Json, loc: RawLine): void {
-    const sessionId = str(line, 'sessionId');
+    const sessionId = str(line, 'sessionId') ?? this.fallbackSessionId;
     if (!sessionId) return;
     const branch = str(line, 'gitBranch');
     const cwd = str(line, 'cwd');
@@ -180,7 +190,10 @@ export class LineHandler {
       line,
       loc,
       sessionId,
-      ts: str(line, 'timestamp') ?? '',
+      // `file-history-snapshot` has no top-level `timestamp`; its own clock is
+      // nested at `snapshot.timestamp`. Other types never have `line.snapshot`,
+      // so this fallback is a no-op for them.
+      ts: str(line, 'timestamp') ?? str(asObject(line.snapshot), 'timestamp') ?? '',
       cwd,
       gitBranch: branch === 'HEAD' ? null : branch,
       repo: repoForCwd(cwd),
@@ -205,6 +218,8 @@ export class LineHandler {
         return this.handlePhase(ctx, 'permission-mode', 'permissionMode');
       case 'attachment':
         return this.handleAttachment(ctx);
+      case 'file-history-snapshot':
+        return this.handleFileHistorySnapshot(ctx);
       case 'system':
         return this.fact(ctx, `system_${str(ctx.line, 'subtype') ?? 'event'}`);
       case 'user':
@@ -389,6 +404,37 @@ export class LineHandler {
         factByteOffset: ctx.loc.byteOffset,
       }),
     );
+  }
+
+  /**
+   * `trackedFileBackups` is full state, not a delta — the same unchanged entry
+   * repeats on every later snapshot line until that file changes again. The
+   * writer's unique index on (session, file, backup_file_name) is what turns
+   * that repetition into a no-op instead of duplicate rows, matching `facts`.
+   * No content is copied here (AW-25): `backupFileName` is a locator into
+   * `~/.claude/file-history/<sessionId>/<backupFileName>`, which this indexer
+   * never reads.
+   */
+  private handleFileHistorySnapshot(ctx: LineContext): void {
+    this.fact(ctx, 'file_history_snapshot');
+    const backups = asObject(asObject(ctx.line.snapshot)?.trackedFileBackups);
+    if (!backups) return;
+    for (const [absolutePath, value] of Object.entries(backups)) {
+      const entry = asObject(value);
+      const backupFileName = str(entry, 'backupFileName');
+      const backupTime = str(entry, 'backupTime');
+      if (!backupFileName || !backupTime) continue;
+      const { path: relative } = toRepoRelative(absolutePath);
+      if (IGNORED_PATH.test(relative)) continue;
+      this.acc.fileCheckpoints.push({
+        sessionId: ctx.sessionId,
+        filePath: relative,
+        backupFileName,
+        version: int(entry, 'version'),
+        backupTime,
+        factByteOffset: ctx.loc.byteOffset,
+      });
+    }
   }
 
   private handleUser(ctx: LineContext): void {

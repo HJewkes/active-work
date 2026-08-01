@@ -9,14 +9,22 @@ import {
 } from '../../../src/miner/session-index/extract.js';
 import { prefixHash } from '../../../src/miner/session-index/prefix-hash.js';
 import type { ExtractResult } from '../../../src/schemas/session-index.js';
-import { FIXTURE_CWD, FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
+import {
+  FIXTURE_CWD,
+  FIXTURE_LINES,
+  SESSION,
+  offsetAfterLine,
+  renderTranscript,
+} from './fixture.js';
 
 let dir: string;
 let transcript: string;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-extract-'));
-  transcript = path.join(dir, 'session.jsonl');
+  // Named after the session id, matching real transcripts — `file-history-*`
+  // lines have no `sessionId` field and fall back to this filename.
+  transcript = path.join(dir, `${SESSION}.jsonl`);
   writeFileSync(transcript, renderTranscript(FIXTURE_LINES), 'utf8');
 });
 
@@ -30,6 +38,7 @@ const STABLE_KINDS = [
   'spans',
   'permissionPhases',
   'humanEdits',
+  'fileCheckpoints',
   'prs',
   'prMerges',
   'branches',
@@ -112,6 +121,15 @@ describe('extractTranscript', () => {
       'artifact:t5',
     ]);
     expect(result.humanEdits).toHaveLength(1);
+    expect(result.fileCheckpoints).toEqual([
+      expect.objectContaining({
+        sessionId: 'sess-1',
+        filePath: 'src/app.ts',
+        backupFileName: 'abc123@v1',
+        version: 1,
+        backupTime: '2026-07-01T00:00:14Z',
+      }),
+    ]);
 
     const relations = result.edges.map((e) => `${e.sourceRef} ${e.relation} ${e.targetRef}`);
     expect(relations).toContain('session:sess-1 touched file:demo/src/app.ts');

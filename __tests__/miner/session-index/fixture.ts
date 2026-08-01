@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const SESSION = 'sess-1';
+export const SESSION = 'sess-1';
 
 /**
  * Repo attribution is resolved against the real filesystem (AW-91), so the
@@ -110,6 +110,33 @@ export const FIXTURE_LINES: Record<string, unknown>[] = [
     timestamp: '2026-07-01T00:00:14Z',
     attachment: { type: 'edited_text_file', filename: `${CWD}/src/app.ts` },
   }),
+  // Deliberately NOT built via `line()`: real `file-history-snapshot` records
+  // carry no top-level `sessionId`/`cwd`/`gitBranch`/`timestamp` at all — only
+  // these four keys. The extractor must fall back to the transcript's own
+  // filename for the session id (see `LineHandler`'s `fallbackSessionId`).
+  {
+    type: 'file-history-snapshot',
+    messageId: 'msg-fh-1',
+    isSnapshotUpdate: false,
+    snapshot: {
+      messageId: 'msg-fh-1',
+      timestamp: '2026-07-01T00:00:14Z',
+      trackedFileBackups: {
+        [`${CWD}/src/app.ts`]: {
+          backupFileName: 'abc123@v1',
+          version: 1,
+          backupTime: '2026-07-01T00:00:14Z',
+          realParentDir: `${CWD}/src`,
+        },
+        [`${CWD}/node_modules/x.js`]: {
+          backupFileName: 'ignored@v1',
+          version: 1,
+          backupTime: '2026-07-01T00:00:14Z',
+          realParentDir: `${CWD}/node_modules`,
+        },
+      },
+    },
+  },
   line({
     type: 'pr-link',
     timestamp: '2026-07-01T00:00:15Z',

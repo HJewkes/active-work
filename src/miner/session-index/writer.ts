@@ -131,6 +131,7 @@ const DERIVED_TABLES = [
   'turns',
   'permission_phases',
   'human_edits',
+  'file_checkpoints',
   'subagents',
   'session_model_usage',
   'sessions',
@@ -252,6 +253,14 @@ function applyLinkedRows(db: SessionIndexDb, transcriptId: number, result: Extra
       ' VALUES (@sessionId, @filePath, @ts, @linesAdded, @linesRemoved, @factId)',
   );
   for (const edit of result.humanEdits) insertHumanEdit.run(withFactId(edit));
+
+  const insertFileCheckpoint = db.prepare(
+    'INSERT INTO file_checkpoints (session_id, file_path, backup_file_name, version,' +
+      ' backup_time, fact_id) VALUES (@sessionId, @filePath, @backupFileName, @version,' +
+      ' @backupTime, @factId)' +
+      ' ON CONFLICT (session_id, file_path, backup_file_name) DO NOTHING',
+  );
+  for (const checkpoint of result.fileCheckpoints) insertFileCheckpoint.run(withFactId(checkpoint));
 
   const upsertSubagent = db.prepare(
     'INSERT INTO subagents (agent_ref, session_id, parent_agent_ref, agent_type, label,' +

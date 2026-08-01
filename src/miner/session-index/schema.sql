@@ -137,6 +137,28 @@ CREATE TABLE IF NOT EXISTS human_edits (
 CREATE INDEX IF NOT EXISTS idx_human_edits_session ON human_edits(session_id);
 CREATE INDEX IF NOT EXISTS idx_human_edits_file ON human_edits(file_path);
 
+-- AW-25: `file-history-snapshot` events carry `trackedFileBackups`, a map of
+-- absolute file path -> a checkpoint of that file's content, keyed by
+-- `backupFileName` and stored (by Claude Code itself, not this indexer) at
+-- `~/.claude/file-history/<session_id>/<backup_file_name>`. No content is
+-- copied here — this table is the locator into that external store, joinable
+-- to `sessions`/derived `files` the same way `human_edits` is. The same
+-- unchanged entry repeats across many snapshot lines as the session
+-- continues, so the unique index makes re-applying an idempotent no-op
+-- instead of a duplicate-row generator, matching the `facts` table's pattern.
+CREATE TABLE IF NOT EXISTS file_checkpoints (
+  checkpoint_id    INTEGER PRIMARY KEY,
+  session_id       TEXT NOT NULL REFERENCES sessions(session_id),
+  file_path        TEXT NOT NULL,
+  backup_file_name TEXT NOT NULL,
+  version          INTEGER NOT NULL,
+  backup_time      TEXT NOT NULL,
+  fact_id          INTEGER REFERENCES facts(fact_id),
+  UNIQUE (session_id, file_path, backup_file_name)
+);
+CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id);
+CREATE INDEX IF NOT EXISTS idx_file_checkpoints_file ON file_checkpoints(file_path);
+
 -- ── Per-asset tables (stable `*_ref` = join key into edges) ─────────────────
 -- Refs: session:<id>, file:<repo>/<path>, pr:<repo>#<n>, branch:<repo>/<name>,
 -- task:AW-23, agent:<toolUseId>, artifact:<uuid>.
