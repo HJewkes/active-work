@@ -14,6 +14,14 @@
  * a warning that can fail the launch is worse than no warning. Every read path
  * degrades to "no siblings".
  *
+ * A `launcher` lease's liveness rests on `kill(pid, 0)`, which only proves
+ * *some* process holds that pid — pids get recycled, sometimes within
+ * minutes. `pid_comm` (see `schemas/lease.ts`) is the belt to that
+ * suspenders: the command name recorded at write time, re-checked at read
+ * time, so a lease surviving its own process (a hard kill, a crash, a closed
+ * terminal) can't be mistaken for a live sibling once its pid lands on
+ * something unrelated.
+ *
  * This module imports nothing from `src/commands/` so the commands can depend
  * on it freely.
  */
@@ -21,7 +29,7 @@ import { promises as fs, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { LeaseSchema, type Lease, type LeaseMode } from '../schemas/lease.js';
-import { isProcessAlive } from '../server/lifecycle.js';
+import { getProcessCommand, isProcessAlive } from '../server/lifecycle.js';
 
 /**
  * How long a `oneshot` lease is assumed to represent a live session.
@@ -63,6 +71,8 @@ export interface AcquireLeaseInput {
   label?: string;
   /** Injectable clock for tests. */
   now?: Date;
+  /** Injectable identity probe for tests; defaults to a real `ps -o comm=`. */
+  getComm?: (pid: number) => string | null;
 }
 
 export interface AcquiredLease {
@@ -72,14 +82,27 @@ export interface AcquiredLease {
 
 /** Write a lease file and hand back its id plus a release handle. */
 export async function acquireLease(input: AcquireLeaseInput): Promise<AcquiredLease> {
-  const { activeRoot, slug, cwd, mode, pid, label, now = new Date() } = input;
+  const {
+    activeRoot,
+    slug,
+    cwd,
+    mode,
+    pid,
+    label,
+    now = new Date(),
+    getComm = getProcessCommand,
+  } = input;
   const leaseId = randomBytes(8).toString('hex');
+  // Best-effort identity snapshot: recorded now, compared against on every
+  // future liveness check so a recycled pid can't read as this session.
+  const pidComm = mode === 'launcher' && pid !== undefined ? getComm(pid) : null;
   const lease: Lease = LeaseSchema.parse({
     lease_id: leaseId,
     slug,
     cwd,
     mode,
     ...(mode === 'launcher' && pid !== undefined ? { pid } : {}),
+    ...(pidComm ? { pid_comm: pidComm } : {}),
     started: now.toISOString(),
     ...(label ? { label } : {}),
   });
@@ -143,18 +166,30 @@ export interface ReadLiveLeasesInput {
   excludeLeaseId?: string;
   /** Injectable liveness probe; defaults to a real `kill(pid, 0)`. */
   isAlive?: (pid: number) => boolean;
+  /** Injectable identity probe; defaults to a real `ps -o comm=`. */
+  getComm?: (pid: number) => string | null;
 }
 
 export type SiblingProbe = (input: ReadLiveLeasesInput) => Promise<LiveSibling[]>;
 
-function isLive(lease: Lease, now: Date, isAlive: (pid: number) => boolean): boolean {
+function isLive(
+  lease: Lease,
+  now: Date,
+  isAlive: (pid: number) => boolean,
+  getComm: (pid: number) => string | null,
+): boolean {
   const ageMs = now.getTime() - new Date(lease.started).getTime();
   if (lease.mode === 'oneshot') return ageMs < ONESHOT_TTL_MS;
   if (lease.pid === undefined) return false;
   // Age check first: a stale lease whose pid has been recycled would otherwise
   // read as live forever.
   if (ageMs >= LAUNCHER_MAX_AGE_MS) return false;
-  return isAlive(lease.pid);
+  if (!isAlive(lease.pid)) return false;
+  // A live pid isn't necessarily *this* process: the OS can recycle a pid
+  // faster than LAUNCHER_MAX_AGE_MS allows for (e.g. within the same boot
+  // session). Recorded identity beats a bare pid check when we have it.
+  if (lease.pid_comm === undefined) return true;
+  return getComm(lease.pid) === lease.pid_comm;
 }
 
 function toSibling(lease: Lease): LiveSibling {
@@ -197,7 +232,14 @@ async function unlinkQuietly(file: string): Promise<void> {
  * Returns `[]` on any unexpected failure. Callers are on the bootstrap path.
  */
 export async function readLiveLeases(input: ReadLiveLeasesInput): Promise<LiveSibling[]> {
-  const { activeRoot, slug, now = new Date(), excludeLeaseId, isAlive = isProcessAlive } = input;
+  const {
+    activeRoot,
+    slug,
+    now = new Date(),
+    excludeLeaseId,
+    isAlive = isProcessAlive,
+    getComm = getProcessCommand,
+  } = input;
   try {
     const dir = leaseDir(activeRoot, slug);
     let entries: string[];
@@ -211,7 +253,7 @@ export async function readLiveLeases(input: ReadLiveLeasesInput): Promise<LiveSi
       if (!name.endsWith('.json')) continue;
       const file = path.join(dir, name);
       const lease = await readOneLease(file);
-      if (!lease || !isLive(lease, now, isAlive)) {
+      if (!lease || !isLive(lease, now, isAlive, getComm)) {
         await unlinkQuietly(file);
         continue;
       }
@@ -239,7 +281,11 @@ export interface LeaseSweepResult {
  */
 export async function sweepAllLeases(
   activeRoot: string,
-  options: { now?: Date; isAlive?: (pid: number) => boolean } = {},
+  options: {
+    now?: Date;
+    isAlive?: (pid: number) => boolean;
+    getComm?: (pid: number) => string | null;
+  } = {},
 ): Promise<LeaseSweepResult> {
   const root = path.join(activeRoot, LEASE_DIR_NAME);
   let slugs: string[];

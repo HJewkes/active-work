@@ -7,6 +7,7 @@
  * without opening an HTTP connection.
  */
 import { promises as fs } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { getStateRoot } from '../utils/paths.js';
 import type { HealthIndexState } from './health.js';
@@ -171,5 +172,29 @@ export function isProcessAlive(pid: number): boolean {
     // EPERM means the process exists but we can't signal it.
     if (code === 'EPERM') return true;
     return false;
+  }
+}
+
+/**
+ * The command name currently running at `pid` (e.g. `node`), or `null` if the
+ * pid has no process or the lookup itself fails.
+ *
+ * `kill(pid, 0)` only proves *some* process holds that pid — the OS reuses
+ * pids, and on a long-lived machine a launcher lease can outlive the process
+ * it named (a hard kill, a crash, a closed terminal on an old Node that
+ * predates the SIGHUP fix). This is the identity check leases pair with the
+ * liveness check: recorded once at lease-write time, re-read at liveness-check
+ * time, and a mismatch means the pid was recycled, not that the session is
+ * still live.
+ */
+export function getProcessCommand(pid: number): string | null {
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  try {
+    return execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], {
+      encoding: 'utf8',
+      timeout: 500,
+    }).trim() || null;
+  } catch {
+    return null;
   }
 }

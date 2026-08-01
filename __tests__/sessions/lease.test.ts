@@ -19,6 +19,10 @@ const NOW = new Date('2026-05-12T16:00:00Z');
 /** Never probe a real pid: liveness is always injected in these tests. */
 const alive = (): boolean => true;
 const dead = (): boolean => false;
+const comm =
+  (name: string | null) =>
+  (): string | null =>
+    name;
 
 function minutesBefore(now: Date, minutes: number): Date {
   return new Date(now.getTime() - minutes * 60_000);
@@ -54,6 +58,7 @@ describe('acquireLease / releaseLease', () => {
         pid: 4321,
         label: 'reviewer',
         now: NOW,
+        getComm: comm('node'),
       });
 
       const file = path.join(leaseDir(activeRoot, SLUG), `${leaseId}.json`);
@@ -64,12 +69,31 @@ describe('acquireLease / releaseLease', () => {
         cwd: '/tmp/checkout',
         mode: 'launcher',
         pid: 4321,
+        pid_comm: 'node',
         started: NOW.toISOString(),
         label: 'reviewer',
       });
 
       await release();
       expect(await leaseFiles(activeRoot, SLUG)).toEqual([]);
+    });
+  });
+
+  // Best-effort: a failed `ps` lookup must not block writing the lease itself.
+  it('omits pid_comm when the identity probe fails', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const { leaseId } = await acquireLease({
+        activeRoot,
+        slug: SLUG,
+        cwd: '/tmp/checkout',
+        mode: 'launcher',
+        pid: 4321,
+        now: NOW,
+        getComm: comm(null),
+      });
+      const file = path.join(leaseDir(activeRoot, SLUG), `${leaseId}.json`);
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>;
+      expect(parsed.pid_comm).toBeUndefined();
     });
   });
 
@@ -140,6 +164,57 @@ describe('readLiveLeases', () => {
       expect(live).toHaveLength(1);
       expect(live[0]).toMatchObject({ lease_id: leaseId, pid: 4321, mode: 'launcher' });
       expect(await leaseFiles(activeRoot, SLUG)).toHaveLength(1);
+    });
+  });
+
+  // Regression: `kill(pid, 0)` alone can't tell "still the same process" from
+  // "the OS handed this pid to something unrelated" — which happens well
+  // inside LAUNCHER_MAX_AGE_MS in practice (e.g. an orphaned lease from a
+  // crashed `aw`, recycled onto an unrelated app within hours). pid_comm is
+  // the identity check that catches it.
+  it('filters a launcher lease whose live pid no longer matches the recorded identity', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await acquireLease({
+        activeRoot,
+        slug: SLUG,
+        cwd: '/tmp/a',
+        mode: 'launcher',
+        pid: 4321,
+        now: minutesBefore(NOW, 10),
+        getComm: comm('node'),
+      });
+      // The pid is alive, but now names an unrelated process.
+      const live = await readLiveLeases({
+        activeRoot,
+        slug: SLUG,
+        now: NOW,
+        isAlive: alive,
+        getComm: comm('Keychain Circle Notification'),
+      });
+      expect(live).toEqual([]);
+      expect(await leaseFiles(activeRoot, SLUG)).toEqual([]);
+    });
+  });
+
+  it('keeps a launcher lease with no recorded identity purely on the pid check', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await acquireLease({
+        activeRoot,
+        slug: SLUG,
+        cwd: '/tmp/a',
+        mode: 'launcher',
+        pid: 4321,
+        now: minutesBefore(NOW, 10),
+        getComm: comm(null),
+      });
+      const live = await readLiveLeases({
+        activeRoot,
+        slug: SLUG,
+        now: NOW,
+        isAlive: alive,
+        getComm: comm('anything'),
+      });
+      expect(live).toHaveLength(1);
     });
   });
 
