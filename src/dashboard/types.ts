@@ -60,6 +60,22 @@ export interface TasksResult {
   tasks: TaskItem[];
 }
 
+/** Result of task.done / task.edit — a single task, no `slug` (caller already knows it). */
+export type TaskDoneResult = Omit<TaskItem, 'slug'>;
+
+export interface TaskReorderShift {
+  id: string;
+  from: number;
+  to: number;
+}
+
+export interface TaskReorderResult {
+  id: string;
+  from: number;
+  to: number;
+  shifted: TaskReorderShift[];
+}
+
 // ---------------------------------------------------------------------------
 // artifact.list (cross-initiative artifacts)
 //
