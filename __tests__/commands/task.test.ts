@@ -73,8 +73,10 @@ describe('task.add', () => {
       const fourth = await taskAdd.run({ slug: SLUG, title: 'Fourth sample task' }, ctx(root));
       expect(fourth.id).toBe('SI-4');
 
+      // task.delete (not task.add) is what persisted the high-water mark
+      // here, since SI-3 was the highest id at the time it was removed (AW-94).
       const { frontmatter } = await readRawFrontmatter(path.join(root, SLUG, 'brief.md'));
-      expect(frontmatter.task_seq).toBe(4);
+      expect(frontmatter.task_seq).toBe(3);
     });
   });
 
@@ -160,8 +162,24 @@ describe('task.add', () => {
       const ids = results.map((t) => t.id).sort();
       expect(ids).toEqual(['SI-3', 'SI-4', 'SI-5', 'SI-6', 'SI-7']);
 
+      // task.add never writes task_seq (AW-94); no delete happened, so the
+      // brief's mark is untouched here.
       const { frontmatter } = await readRawFrontmatter(path.join(root, SLUG, 'brief.md'));
-      expect(frontmatter.task_seq).toBe(7);
+      expect(frontmatter.task_seq).toBeUndefined();
+    });
+  });
+
+  it('never rewrites brief.md across a run of adds with no deletes (AW-94)', async () => {
+    await withTempActiveRoot(async (root) => {
+      const briefPath = path.join(root, SLUG, 'brief.md');
+      const before = await fs.stat(briefPath);
+
+      for (let i = 0; i < 5; i++) {
+        await taskAdd.run({ slug: SLUG, title: `Sequential ${i}` }, ctx(root));
+      }
+
+      const after = await fs.stat(briefPath);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
     });
   });
 });
@@ -425,6 +443,47 @@ describe('task.delete', () => {
       await expect(taskDelete.run({ slug: SLUG, id: 'SI-99' }, ctx(root))).rejects.toBeInstanceOf(
         NotFoundError,
       );
+    });
+  });
+
+  // AW-94: task_seq only needs to move on delete, and only when the deleted
+  // id was the highest on disk — that's the one case where a later task.add's
+  // on-disk scan could otherwise reissue it.
+  it('bumps task_seq when deleting the current highest id', async () => {
+    await withTempActiveRoot(async (root) => {
+      await taskDelete.run({ slug: SLUG, id: 'SI-2' }, ctx(root));
+
+      const { frontmatter } = await readRawFrontmatter(path.join(root, SLUG, 'brief.md'));
+      expect(frontmatter.task_seq).toBe(2);
+
+      const next = await taskAdd.run({ slug: SLUG, title: 'After max delete' }, ctx(root));
+      expect(next.id).toBe('SI-3');
+    });
+  });
+
+  it('does not write brief.md when deleting an id that is not the highest', async () => {
+    await withTempActiveRoot(async (root) => {
+      const briefPath = path.join(root, SLUG, 'brief.md');
+      const before = await fs.stat(briefPath);
+
+      await taskDelete.run({ slug: SLUG, id: 'SI-1' }, ctx(root));
+
+      const after = await fs.stat(briefPath);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+    });
+  });
+
+  it('does not write brief.md when the task is missing', async () => {
+    await withTempActiveRoot(async (root) => {
+      const briefPath = path.join(root, SLUG, 'brief.md');
+      const before = await fs.stat(briefPath);
+
+      await expect(taskDelete.run({ slug: SLUG, id: 'SI-99' }, ctx(root))).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+
+      const after = await fs.stat(briefPath);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
     });
   });
 });

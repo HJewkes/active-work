@@ -5,11 +5,14 @@ import { defineCommand } from '../registry/index.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
 import { getActiveRoot, getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
-import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
-import { BriefFrontmatterSchema, TaskSeqSchema } from '../schemas/brief.js';
-import { readYaml, writeYaml } from '../utils/yaml-io.js';
+import {
+  loadBrief,
+  loadExistingTasks,
+  maxOnDiskTaskNumber,
+  readTaskSeq,
+} from '../utils/task-seq.js';
+import { writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
-import { NotFoundError, ValidationError } from '../errors.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
@@ -24,121 +27,17 @@ const ArgsSchema = z.object({
 
 type Args = z.infer<typeof ArgsSchema>;
 
-const PREFIX_RE = /^[A-Z][A-Z0-9]*$/;
-
-interface Brief {
-  slug: string;
-  path: string;
-  frontmatter: Record<string, unknown>;
-  body: string;
-  prefix: string;
-}
-
-async function loadBrief(slug: string): Promise<Brief> {
-  const briefPath = path.join(getInitiativeDir(slug), 'brief.md');
-  let raw: { frontmatter: Record<string, unknown>; body: string };
-  try {
-    raw = await readRawFrontmatter(briefPath);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new NotFoundError(`Initiative not found: ${slug}`);
-    }
-    throw err;
-  }
-  const prefix = raw.frontmatter.task_prefix;
-  if (typeof prefix !== 'string' || !PREFIX_RE.test(prefix)) {
-    throw new ValidationError(`Brief at ${briefPath} is missing a valid task_prefix`);
-  }
-  return {
-    slug,
-    path: briefPath,
-    frontmatter: raw.frontmatter,
-    body: raw.body,
-    prefix,
-  };
-}
-
-async function listTaskFiles(slug: string): Promise<string[]> {
-  const dir = path.join(getInitiativeDir(slug), 'tasks');
-  try {
-    const entries = await fs.readdir(dir);
-    return entries.filter((e) => e.endsWith('.yml'));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw err;
-  }
-}
-
-async function loadExistingTasks(slug: string): Promise<Task[]> {
-  const files = await listTaskFiles(slug);
-  const dir = path.join(getInitiativeDir(slug), 'tasks');
-  const tasks: Task[] = [];
-  for (const file of files) {
-    const task = await readYaml(path.join(dir, file), TaskSchema);
-    tasks.push(task);
-  }
-  return tasks;
-}
-
-function maxOnDiskTaskNumber(prefix: string, existing: Task[]): number {
-  let max = 0;
-  const re = new RegExp(`^${prefix}-(\\d+)$`);
-  for (const t of existing) {
-    const m = re.exec(t.id);
-    if (m) {
-      const n = Number.parseInt(m[1]!, 10);
-      if (n > max) max = n;
-    }
-  }
-  return max;
-}
-
-// `Infinity` and `NaN` both stringify to `null` through JSON, which would hide
-// the very value the operator has to find in the file.
-function describeValue(value: unknown): string {
-  return typeof value === 'number' ? String(value) : JSON.stringify(value);
-}
-
-function taskSeqRepair(brief: Brief, value: unknown, onDisk: number): string {
-  return (
-    `Invalid task_seq (${describeValue(value)}) in ${brief.path}. ` +
-    'task_seq is the high-water mark for task ids and must be a positive whole ' +
-    'number no larger than Number.MAX_SAFE_INTEGER. Task ids cannot be allocated ' +
-    `until it is repaired: the highest id on disk is ${brief.prefix}-${onDisk}, so run ` +
-    `\`active-work set ${brief.slug} task_seq <n>\` with n at least ${Math.max(onDisk, 1)} ` +
-    '— higher if ids above that were issued and their tasks later deleted.'
-  );
-}
-
-/**
- * ABSENT is a legitimate back-compat path: briefs written before the field
- * existed allocate from the on-disk max. Any other invalid value is corruption,
- * and silently falling back would "repair" it *downward* — below an id that has
- * already been issued — so it is reported instead of guessed at.
- */
-function readTaskSeq(brief: Brief, onDisk: number): number {
-  const raw = brief.frontmatter.task_seq;
-  if (raw === undefined) return 0;
-  const parsed = TaskSeqSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new ValidationError(taskSeqRepair(brief, raw, onDisk));
-  }
-  return parsed.data;
-}
-
-// Ids must never be reissued, even after `task delete` removes the file
-// that used the highest number. Allocate from the persisted `task_seq`
-// high-water mark (falling back to the on-disk max for briefs written
-// before the field existed) and persist the new mark before returning.
-async function allocateTaskNumber(brief: Brief, existing: Task[]): Promise<number> {
+// Ids must never be reissued, even after `task delete` removes the file that
+// used the highest number. `task_seq` is the persisted high-water mark for
+// that case; it only needs to move when a delete removes the current highest
+// id (see task-delete.ts), so `task.add` itself never has to write brief.md
+// (AW-94) — it only reads the mark to guard against a stale on-disk scan.
+function allocateTaskNumber(
+  brief: Awaited<ReturnType<typeof loadBrief>>,
+  existing: Task[],
+): number {
   const onDisk = maxOnDiskTaskNumber(brief.prefix, existing);
-  const next = Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
-  const frontmatter: Record<string, unknown> = {
-    ...brief.frontmatter,
-    task_seq: next,
-  };
-  await writeFrontmatter(brief.path, frontmatter, brief.body, BriefFrontmatterSchema);
-  return next;
+  return Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
 }
 
 function nextPriority(existing: Task[]): number {
@@ -178,7 +77,7 @@ export default defineCommand<Args, Task>({
     return withFileLock(getLockPath(args.slug), async () => {
       const brief = await loadBrief(args.slug);
       const existing = await loadExistingTasks(args.slug);
-      const n = await allocateTaskNumber(brief, existing);
+      const n = allocateTaskNumber(brief, existing);
       const id = `${brief.prefix}-${n}`;
       const priority = args.priority ?? nextPriority(existing);
       const date = today();
