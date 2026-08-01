@@ -83,6 +83,10 @@ import minerDrainIngest from './miner-drain-ingest.js';
 import minerRefresh from './miner-refresh.js';
 import minerStatus from './miner-status.js';
 
+// agent-chat lifecycle hooks (AW-99)
+import hooksAgentChatSpawn from './hooks-agent-chat-spawn.js';
+import hooksAgentChatComplete from './hooks-agent-chat-complete.js';
+
 // Setup / uninstall
 import setup from './setup.js';
 import uninstall from './uninstall.js';
@@ -154,6 +158,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   minerDrainIngest,
   minerRefresh,
   minerStatus,
+  // agent-chat lifecycle hooks (AW-99)
+  hooksAgentChatSpawn,
+  hooksAgentChatComplete,
   // setup / uninstall
   setup,
   uninstall,

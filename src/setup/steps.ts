@@ -116,6 +116,7 @@ const STEP_CONFIG = 'write-config-stub';
 const STEP_SKILL = 'install-skill';
 const STEP_COMMAND = 'install-command';
 const STEP_MCP = 'register-mcp';
+const STEP_AGENT_CHAT_HOOKS = 'register-agent-chat-hooks';
 const STEP_DAEMON = 'start-daemon';
 const STEP_INGEST = 'ingestion';
 
@@ -127,6 +128,7 @@ export const STEP_NAMES = {
   SKILL: STEP_SKILL,
   COMMAND: STEP_COMMAND,
   MCP: STEP_MCP,
+  AGENT_CHAT_HOOKS: STEP_AGENT_CHAT_HOOKS,
   SUPERVISION: STEP_SUPERVISION,
   DAEMON: STEP_DAEMON,
   INGEST: STEP_INGEST,
@@ -463,6 +465,102 @@ export async function stepRegisterMcp(deps: SetupDeps = {}): Promise<StepResult>
   };
 }
 
+/** The two commands this build registers into agent-chat's on_spawn/on_complete hooks (AW-99/AW-100). */
+const AGENT_CHAT_HOOK_COMMANDS: Record<'on_spawn' | 'on_complete', string> = {
+  on_spawn: 'active-work hooks agent-chat-spawn',
+  on_complete: 'active-work hooks agent-chat-complete',
+};
+
+interface AgentChatHooksConfig {
+  on_spawn?: string[];
+  on_complete?: string[];
+}
+
+/**
+ * `~/.agent-chat/hooks.json` (honoring `AGENT_CHAT_HOME`, matching agent-chat's
+ * own `home()` in `src/paths.ts`) — outside this build's control, so an
+ * override or a missing home directory both have to degrade gracefully.
+ */
+function agentChatHooksPath(paths: StepPaths): string {
+  const home = process.env.AGENT_CHAT_HOME ?? nodePath.join(paths.homeDir, '.agent-chat');
+  return nodePath.join(home, 'hooks.json');
+}
+
+/**
+ * Merges this build's on_spawn/on_complete commands into agent-chat's generic
+ * lifecycle hooks (CC-71) — additive only. An existing `hooks.json` keeps
+ * every entry another tool registered; re-running this step is a no-op once
+ * both commands are present, since it checks membership rather than
+ * appending unconditionally. No `~/.agent-chat` directory at all means
+ * agent-chat isn't installed on this machine, which is a normal skip, not an
+ * error — this build must not be what creates agent-chat's home directory.
+ */
+export async function stepRegisterAgentChatHooks(deps: SetupDeps = {}): Promise<StepResult> {
+  const { fs, paths } = resolveDeps(deps);
+  const hooksPath = agentChatHooksPath(paths);
+  const agentChatHome = nodePath.dirname(hooksPath);
+
+  try {
+    await fs.stat(agentChatHome);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {
+        ok: true,
+        name: STEP_AGENT_CHAT_HOOKS,
+        done: false,
+        message: `agent-chat not found at ${agentChatHome} — skipped`,
+      };
+    }
+    return { ok: false, name: STEP_AGENT_CHAT_HOOKS, error: (err as Error).message };
+  }
+
+  try {
+    let config: AgentChatHooksConfig = {};
+    try {
+      const raw = await fs.readFile(hooksPath, 'utf8');
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === 'object' && parsed !== null) config = parsed as AgentChatHooksConfig;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return {
+          ok: false,
+          name: STEP_AGENT_CHAT_HOOKS,
+          error: `${hooksPath} exists but is not valid JSON: ${(err as Error).message}`,
+        };
+      }
+    }
+
+    let changed = false;
+    for (const event of ['on_spawn', 'on_complete'] as const) {
+      const command = AGENT_CHAT_HOOK_COMMANDS[event];
+      const existing = config[event] ?? [];
+      if (!existing.includes(command)) {
+        config[event] = [...existing, command];
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return {
+        ok: true,
+        name: STEP_AGENT_CHAT_HOOKS,
+        done: false,
+        message: `Already registered in ${hooksPath}`,
+      };
+    }
+
+    await fs.writeFile(hooksPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+    return {
+      ok: true,
+      name: STEP_AGENT_CHAT_HOOKS,
+      done: true,
+      message: `Registered on_spawn/on_complete hooks in ${hooksPath}`,
+    };
+  } catch (err) {
+    return { ok: false, name: STEP_AGENT_CHAT_HOOKS, error: (err as Error).message };
+  }
+}
+
 /**
  * Offer to install a user-level supervisor (systemd on Linux, launchd on
  * macOS) that keeps the daemon running across logins. No-op on platforms
@@ -635,6 +733,7 @@ export async function runSetup(deps: SetupDeps = {}): Promise<SetupReport> {
     stepInstallSkill,
     stepInstallCommand,
     stepRegisterMcp,
+    stepRegisterAgentChatHooks,
     stepSupervision,
     stepStartDaemon,
     stepIngestion,
