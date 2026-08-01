@@ -12,6 +12,7 @@ import {
   stepWriteConfigStub,
   stepInstallSkill,
   stepRegisterMcp,
+  stepRegisterAgentChatHooks,
   stepStartDaemon,
   stepIngestion,
   stepSupervision,
@@ -160,6 +161,89 @@ describe('stepWriteConfigStub', () => {
     expect(result.ok).toBe(true);
     const raw = JSON.parse(await fs.readFile(path.join(paths.configRoot, 'config.json'), 'utf8'));
     expect(raw.discovery).toBeDefined();
+  });
+});
+
+describe('stepRegisterAgentChatHooks', () => {
+  let paths: StepPaths;
+  let cleanup: () => void;
+
+  beforeEach(() => {
+    const t = makeTempPaths();
+    paths = t.paths;
+    cleanup = t.cleanup;
+  });
+  afterEach(() => cleanup());
+
+  function hooksPath(): string {
+    return path.join(paths.homeDir, '.agent-chat', 'hooks.json');
+  }
+
+  it('is a no-op when ~/.agent-chat does not exist (agent-chat not installed)', async () => {
+    const result = await stepRegisterAgentChatHooks({ paths });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.done).toBe(false);
+      expect(result.message).toMatch(/not found/);
+    }
+    expect(existsSync(hooksPath())).toBe(false);
+  });
+
+  it('creates hooks.json with both commands when ~/.agent-chat exists but hooks.json does not', async () => {
+    await fs.mkdir(path.join(paths.homeDir, '.agent-chat'), { recursive: true });
+
+    const result = await stepRegisterAgentChatHooks({ paths });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.done).toBe(true);
+
+    const config = JSON.parse(await fs.readFile(hooksPath(), 'utf8'));
+    expect(config.on_spawn).toEqual(['active-work hooks agent-chat-spawn']);
+    expect(config.on_complete).toEqual(['active-work hooks agent-chat-complete']);
+  });
+
+  it("appends to existing arrays without disturbing another tool's entries", async () => {
+    await fs.mkdir(path.join(paths.homeDir, '.agent-chat'), { recursive: true });
+    await fs.writeFile(
+      hooksPath(),
+      JSON.stringify({ on_spawn: ['/usr/local/bin/other-tool-hook.sh'] }),
+      'utf8',
+    );
+
+    const result = await stepRegisterAgentChatHooks({ paths });
+    expect(result.ok).toBe(true);
+
+    const config = JSON.parse(await fs.readFile(hooksPath(), 'utf8'));
+    expect(config.on_spawn).toEqual([
+      '/usr/local/bin/other-tool-hook.sh',
+      'active-work hooks agent-chat-spawn',
+    ]);
+    expect(config.on_complete).toEqual(['active-work hooks agent-chat-complete']);
+  });
+
+  it('is idempotent: running twice does not duplicate entries', async () => {
+    await fs.mkdir(path.join(paths.homeDir, '.agent-chat'), { recursive: true });
+
+    await stepRegisterAgentChatHooks({ paths });
+    const second = await stepRegisterAgentChatHooks({ paths });
+
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.done).toBe(false);
+      expect(second.message).toMatch(/Already registered/);
+    }
+    const config = JSON.parse(await fs.readFile(hooksPath(), 'utf8'));
+    expect(config.on_spawn).toEqual(['active-work hooks agent-chat-spawn']);
+    expect(config.on_complete).toEqual(['active-work hooks agent-chat-complete']);
+  });
+
+  it('fails cleanly on a hooks.json that is not valid JSON, rather than clobbering it', async () => {
+    await fs.mkdir(path.join(paths.homeDir, '.agent-chat'), { recursive: true });
+    await fs.writeFile(hooksPath(), '{ not json', 'utf8');
+
+    const result = await stepRegisterAgentChatHooks({ paths });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not valid JSON/);
+    expect(await fs.readFile(hooksPath(), 'utf8')).toBe('{ not json');
   });
 });
 
