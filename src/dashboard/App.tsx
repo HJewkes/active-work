@@ -70,7 +70,7 @@ export function App(): React.JSX.Element {
               marginTop: 2,
             }}
           >
-            read-only dashboard
+            dashboard
           </div>
           <LiveIndicator status={liveStatus} />
         </div>
