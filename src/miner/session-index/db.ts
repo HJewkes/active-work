@@ -18,8 +18,9 @@ export type SessionIndexDb = Database.Database;
  * 3: AW-91 — `file_ref`/`files.repo` now come from the nearest `.git`
  *    ancestor rather than `basename(cwd)`, so every previously indexed ref is
  *    the wrong shape and must be re-derived.
+ * 4: AW-25 — new `file_checkpoints` table (no reshaping of existing tables).
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { ExtractAccumulator } from './accumulator.js';
 import { readJsonLines } from './json-lines.js';
 import { LineHandler } from './line-handler.js';
@@ -52,7 +53,8 @@ export async function extractTranscript(
 ): Promise<ExtractResult> {
   const { start, restartedFromZero } = await resolveStartOffset(filePath, options);
   const accumulator = new ExtractAccumulator();
-  const handler = new LineHandler(accumulator);
+  const fallbackSessionId = path.basename(filePath, '.jsonl');
+  const handler = new LineHandler(accumulator, fallbackSessionId);
   let lastByteOffset = start;
 
   for await (const line of readJsonLines(filePath, start)) {

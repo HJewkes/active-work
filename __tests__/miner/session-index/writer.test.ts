@@ -8,14 +8,16 @@ import { extractTranscript } from '../../../src/miner/session-index/extract.js';
 import { reconcilePrMerges } from '../../../src/miner/session-index/rollup.js';
 import { ensureTranscript } from '../../../src/miner/session-index/watermark.js';
 import { applyExtractResult, resetIndex } from '../../../src/miner/session-index/writer.js';
-import { FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
+import { FIXTURE_LINES, SESSION, offsetAfterLine, renderTranscript } from './fixture.js';
 
 let dir: string;
 let transcript: string;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-writer-'));
-  transcript = path.join(dir, 'session.jsonl');
+  // Named after the session id, matching real transcripts — `file-history-*`
+  // lines have no `sessionId` field and fall back to this filename.
+  transcript = path.join(dir, `${SESSION}.jsonl`);
   writeFileSync(transcript, renderTranscript(FIXTURE_LINES), 'utf8');
 });
 
@@ -49,6 +51,10 @@ function snapshot(db: SessionIndexDb): Record<string, unknown[]> {
         ' ORDER BY phase_id',
     ),
     humanEdits: query('SELECT session_id, file_path, ts FROM human_edits ORDER BY edit_id'),
+    fileCheckpoints: query(
+      'SELECT session_id, file_path, backup_file_name, version, backup_time FROM file_checkpoints' +
+        ' ORDER BY checkpoint_id',
+    ),
     prs: query('SELECT * FROM prs ORDER BY pr_ref'),
     branches: query('SELECT * FROM branches ORDER BY branch_ref'),
     files: query('SELECT * FROM files ORDER BY file_ref'),

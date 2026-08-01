@@ -93,6 +93,15 @@ export const HumanEditInputSchema = z.object({
   factByteOffset: offset.nullable().default(null),
 });
 
+export const FileCheckpointInputSchema = z.object({
+  sessionId: nonEmpty,
+  filePath: nonEmpty,
+  backupFileName: nonEmpty,
+  version: z.number().int(),
+  backupTime: z.string(),
+  factByteOffset: offset.nullable().default(null),
+});
+
 export const PrInputSchema = z.object({
   prRef: nonEmpty,
   number: z.number().int().nullable().default(null),
@@ -197,6 +206,7 @@ export type SessionInput = z.infer<typeof SessionInputSchema>;
 export type SessionModelUsageInput = z.infer<typeof SessionModelUsageInputSchema>;
 export type PermissionPhaseInput = z.infer<typeof PermissionPhaseInputSchema>;
 export type HumanEditInput = z.infer<typeof HumanEditInputSchema>;
+export type FileCheckpointInput = z.infer<typeof FileCheckpointInputSchema>;
 export type PrInput = z.infer<typeof PrInputSchema>;
 export type PrMergeInput = z.infer<typeof PrMergeInputSchema>;
 export type BranchInput = z.infer<typeof BranchInputSchema>;
@@ -221,6 +231,7 @@ export const ExtractResultSchema = z.object({
   modelUsage: z.array(SessionModelUsageInputSchema),
   permissionPhases: z.array(PermissionPhaseInputSchema),
   humanEdits: z.array(HumanEditInputSchema),
+  fileCheckpoints: z.array(FileCheckpointInputSchema),
   prs: z.array(PrInputSchema),
   prMerges: z.array(PrMergeInputSchema),
   branches: z.array(BranchInputSchema),

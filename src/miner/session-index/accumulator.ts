@@ -4,6 +4,7 @@ import type {
   EdgeInput,
   ExtractResult,
   FactInput,
+  FileCheckpointInput,
   FileInput,
   HumanEditInput,
   PermissionPhaseInput,
@@ -29,6 +30,7 @@ export class ExtractAccumulator {
   readonly facts: FactInput[] = [];
   readonly permissionPhases: PermissionPhaseInput[] = [];
   readonly humanEdits: HumanEditInput[] = [];
+  readonly fileCheckpoints: FileCheckpointInput[] = [];
   readonly spans: SearchableSpanInput[] = [];
   readonly prMerges: PrMergeInput[] = [];
 
@@ -145,6 +147,7 @@ export class ExtractAccumulator {
       modelUsage: [...this.usage.values()],
       permissionPhases: this.permissionPhases,
       humanEdits: this.humanEdits,
+      fileCheckpoints: this.fileCheckpoints,
       prs: [...this.prs.values()],
       prMerges: this.prMerges,
       branches: [...this.branches.values()],
