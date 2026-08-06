@@ -1,8 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
-import { getActiveRoot, expandTilde } from '../utils/paths.js';
-import { defaultWorktreePath, readRegisteredWorktrees } from '../utils/registered-worktrees.js';
+import { getActiveRoot } from '../utils/paths.js';
 import { defineCommand } from '../registry/index.js';
 import {
   assembleBootstrap,
@@ -13,7 +12,12 @@ import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
 import { mergeChannels } from '../launcher-args.js';
 import { resolveDefaultChannels } from '../utils/global-config.js';
 import { acquireLease } from '../sessions/lease.js';
-import { listInitiativeSlugs, resolveSlug, resolveSlugFromCwd } from './_open-helpers.js';
+import {
+  listInitiativeSlugs,
+  resolveSlug,
+  resolveSlugFromCwd,
+  resolveCwdHint,
+} from './_open-helpers.js';
 
 /** Done tasks older than this are auto-archived on bootstrap (AW-8). */
 const ARCHIVE_DONE_AFTER_DAYS = 30;
@@ -127,12 +131,6 @@ async function collectInitiatives(activeRoot: string): Promise<InitiativeSummary
   }
   summaries.sort(compareInitiatives);
   return summaries;
-}
-
-async function resolveCwdHint(activeRoot: string, slug: string): Promise<string> {
-  const registered = await readRegisteredWorktrees(path.join(activeRoot, slug));
-  const preferred = defaultWorktreePath(registered);
-  return preferred === null ? path.join(activeRoot, slug) : expandTilde(preferred);
 }
 
 /**

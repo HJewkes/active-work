@@ -3,7 +3,7 @@ import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { BriefFrontmatterSchema } from '../schemas/brief.js';
 import { expandTilde } from '../utils/paths.js';
-import { readRegisteredWorktrees } from '../utils/registered-worktrees.js';
+import { readRegisteredWorktrees, defaultWorktreePath } from '../utils/registered-worktrees.js';
 import { NotFoundError } from '../errors.js';
 import { readMarkdownWithSchema } from '../bootstrap/prompt.js';
 
@@ -37,6 +37,17 @@ export async function resolveSlug(activeRoot: string, input: string): Promise<st
     throw new NotFoundError(`No initiatives found under ${activeRoot}`);
   }
   throw new NotFoundError(`No initiative matches '${input}'. Known: ${slugs.join(', ')}`);
+}
+
+/**
+ * The directory to launch a Claude session in for a given initiative: its
+ * preferred registered worktree, or the active-root initiative dir itself
+ * when none is registered. Shared by `open` (bootstrap) and `resume`.
+ */
+export async function resolveCwdHint(activeRoot: string, slug: string): Promise<string> {
+  const registered = await readRegisteredWorktrees(path.join(activeRoot, slug));
+  const preferred = defaultWorktreePath(registered);
+  return preferred === null ? path.join(activeRoot, slug) : expandTilde(preferred);
 }
 
 /** True when `child` is `parent` itself or nested beneath it. */
