@@ -15,6 +15,7 @@
 import { spawn } from 'node:child_process';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
+import resumeCommand from './commands/resume.js';
 import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { getActiveRoot } from './utils/paths.js';
@@ -133,6 +134,67 @@ function spawnClaude(
   });
 }
 
+function spawnClaudeResume(sessionId: string, cwd: string): Promise<number> {
+  return new Promise((resolve) => {
+    const child = spawn('claude', ['--resume', sessionId], {
+      cwd,
+      stdio: 'inherit',
+      env: process.env,
+    });
+    child.on('error', (err) => {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === 'ENOENT') {
+        process.stderr.write(color.red('error: `claude` not found on PATH.\n'));
+        resolve(127);
+        return;
+      }
+      process.stderr.write(color.red(`error: failed to launch claude: ${err.message}\n`));
+      resolve(EXIT.GENERIC);
+    });
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        resolve(128 + (signal === 'SIGINT' ? 2 : 1));
+        return;
+      }
+      resolve(code ?? 0);
+    });
+  });
+}
+
+/**
+ * `aw resume <session_id>` — find the directory a session id belongs to
+ * (active-work's own session log, then a direct match under
+ * `~/.claude/projects`) and launch `claude --resume` there, so the caller
+ * doesn't need to already know or remember where the session ran.
+ */
+async function runResume(argv: string[]): Promise<void> {
+  const rest = argv.slice(3);
+  if (rest.length !== 1 || rest[0]!.startsWith('-')) {
+    process.stderr.write(color.red('usage: aw resume <session_id>\n'));
+    process.exit(EXIT.USAGE);
+  }
+  const sessionId = rest[0]!;
+  const ctx: CommandContext = {
+    activeRoot: getActiveRoot(),
+    warnings: [],
+    format: 'json',
+    cwd: process.cwd(),
+  };
+  try {
+    const parsed = resumeCommand.args.parse({ session_id: sessionId });
+    const resolved = (await resumeCommand.run(parsed, ctx)) as { cwd: string; source: string };
+    process.stderr.write(
+      color.dim(`Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}).\n`),
+    );
+    const code = await spawnClaudeResume(sessionId, resolved.cwd);
+    process.exit(code);
+  } catch (err) {
+    const { message, code } = formatError(err);
+    process.stderr.write(color.red(`error: ${message}\n`));
+    process.exit(code);
+  }
+}
+
 function printHelp(): void {
   process.stdout.write(
     [
@@ -147,6 +209,9 @@ function printHelp(): void {
       '                 Frame the session as ad-hoc work on the workstream',
       '                 (awaiting your task), not a handoff continuation.',
       '                 `--ad-hoc` is accepted as an alias.',
+      '  aw resume <session_id>',
+      "                 Find the directory a session id ran in (active-work's",
+      '                 session log, then ~/.claude/projects) and resume it there.',
       '  aw --help      Show this message.',
       '  aw --version   Print version.',
       '',
@@ -165,6 +230,10 @@ export async function main(argv: string[]): Promise<void> {
   if (args.includes('--version') || args.includes('-V')) {
     process.stdout.write('0.1.0\n');
     process.exit(EXIT.OK);
+  }
+  if (args[0] === 'resume') {
+    await runResume(argv);
+    return;
   }
   // `--pick` forces the interactive picker instead of resolving from cwd;
   // `--adhoc` (alias `--ad-hoc`) reframes the prompt as ad-hoc work.
