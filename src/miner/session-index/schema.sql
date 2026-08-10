@@ -201,10 +201,17 @@ CREATE TABLE IF NOT EXISTS tasks (
 -- `session_id` is the DISPATCHING session; `child_session_id` is the transcript
 -- the subagent actually ran in, indexed under its own `agentId`. The two are
 -- different sessions, and conflating them is the bug AW-26 fixed.
+--
+-- `child_session_id` deliberately carries NO foreign key, unlike `session_id`.
+-- It is a *forward* reference: the parent names its child from its own
+-- transcript, which is routinely indexed before the child's file is read — or
+-- when that file has been pruned, never. Enforcing it made the parent fail its
+-- insert and quarantined the whole transcript. `edges` treats its refs the same
+-- way for the same reason.
 CREATE TABLE IF NOT EXISTS subagents (
   agent_ref        TEXT PRIMARY KEY,
   session_id       TEXT REFERENCES sessions(session_id),
-  child_session_id TEXT REFERENCES sessions(session_id),
+  child_session_id TEXT,
   parent_agent_ref TEXT REFERENCES subagents(agent_ref),
   agent_type       TEXT,
   label            TEXT,

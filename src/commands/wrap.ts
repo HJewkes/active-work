@@ -48,6 +48,7 @@ const ArgsSchema = z
     started: z.string().min(1),
     ended: z.string().min(1),
     track: z.enum(['canonical', 'sidecar', 'adhoc']).default('canonical'),
+    parent_session_id: SessionIdSchema.optional(),
     body: z.string().optional(),
     body_file: z.string().optional(),
     next_steps: nextStepsArg.optional(),
@@ -233,6 +234,7 @@ async function writeWrap(
     next_steps: ledger.next_steps,
     resolves: ledger.resolves,
     ...(args.no_loops === true ? { no_loops: true as const } : {}),
+    ...(args.parent_session_id ? { parent_session_id: args.parent_session_id } : {}),
   });
   try {
     const updated = await stampBriefUpdated(briefPath);
@@ -399,6 +401,11 @@ export default defineCommand<Args, Result>({
         long: '--track',
         description:
           "'canonical' (mainline thread) | 'sidecar' (folded/derived) | 'adhoc' (parallel ad-hoc work) (default: canonical)",
+      },
+      parent_session_id: {
+        long: '--parent-session',
+        description:
+          'Session id that spawned this one. Set by the agent-chat spawn hook for peers, whose parentage no transcript records.',
       },
       body: {
         long: '--body',

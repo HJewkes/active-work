@@ -90,6 +90,12 @@ export const SessionFrontmatterSchema = z
     // Written only by `wrap --no-loops`. An empty ledger alone cannot say
     // whether nothing was hanging or nothing was filed; this marker does.
     no_loops: z.literal(true).optional(),
+    // The session that spawned this one (AW-26). Set for agent-chat peers,
+    // whose parentage is known only to the spawning hook — a peer runs as its
+    // own `claude` process, so nothing in its transcript records who asked for
+    // it. Built-in subagents are linked in the miner index instead, where the
+    // relationship *is* derivable from the transcript tree.
+    parent_session_id: SessionIdSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const started = new Date(value.started).getTime();

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { readStdinJson } from '../utils/read-stdin-json.js';
-import { takeSpawnContext } from '../utils/agent-chat-hook-state.js';
+import { takeSpawnContext, type SpawnContext } from '../utils/agent-chat-hook-state.js';
 import { nowIso } from '../utils/today.js';
 
 /**
@@ -54,15 +54,24 @@ export function resetWrapRunner(): void {
   wrapRunner = defaultWrapRunner;
 }
 
-function summaryLine(payload: Record<string, unknown> | null, name: string): string {
+function descriptor(context: SpawnContext): string {
+  const parts = [
+    context.profile ? `profile ${context.profile}` : null,
+    context.briefing ? `briefed on ${context.briefing}` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+function summaryLine(payload: Record<string, unknown> | null, context: SpawnContext): string {
+  const who = `Peer "${context.name}"${descriptor(context)} (spawned via agent-chat)`;
   if (str(payload, 'inferred') === 'true' || payload?.inferred === true) {
-    return `Peer "${name}" (spawned via agent-chat) exit inferred; no exit code available.`;
+    return `${who} exit inferred; no exit code available.`;
   }
   const code = payload?.code;
   const signal = str(payload, 'signal');
   const codePart = typeof code === 'number' ? `code ${code}` : 'no exit code';
   const signalPart = signal ? `, signal ${signal}` : '';
-  return `Peer "${name}" (spawned via agent-chat) exited with ${codePart}${signalPart}.`;
+  return `${who} exited with ${codePart}${signalPart}.`;
 }
 
 /** The on_complete payload handler, separated from stdin-reading so it's unit-testable directly. */
@@ -73,7 +82,7 @@ export async function handleOnComplete(payload: Record<string, unknown> | null):
   const context = await takeSpawnContext(agentId);
   if (!context) return { recorded: false, slug: null };
 
-  const body = summaryLine(payload, context.name);
+  const body = summaryLine(payload, context);
   const { code, stderr } = await wrapRunner([
     'wrap',
     context.slug,
@@ -85,6 +94,7 @@ export async function handleOnComplete(payload: Record<string, unknown> | null):
     nowIso(),
     '--track',
     'adhoc',
+    ...(context.parentSessionId ? ['--parent-session', context.parentSessionId] : []),
     '--body',
     body,
     '--no-loops',
