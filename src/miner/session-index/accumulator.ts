@@ -42,6 +42,7 @@ export class ExtractAccumulator {
   private readonly files = new Map<string, FileInput>();
   private readonly tasks = new Map<string, TaskInput>();
   private readonly subagents = new Map<string, SubagentInput>();
+  private readonly subagentTranscripts = new Map<string, string>();
   private readonly artifacts = new Map<string, ArtifactInput>();
   private readonly edges = new Map<string, EdgeInput>();
 
@@ -122,6 +123,11 @@ export class ExtractAccumulator {
     if (!this.subagents.has(subagent.agentRef)) this.subagents.set(subagent.agentRef, subagent);
   }
 
+  addSubagentTranscript(agentRef: string, childSessionId: string): void {
+    if (!this.subagentTranscripts.has(agentRef))
+      this.subagentTranscripts.set(agentRef, childSessionId);
+  }
+
   addArtifact(artifact: ArtifactInput): void {
     if (!this.artifacts.has(artifact.artifactRef))
       this.artifacts.set(artifact.artifactRef, artifact);
@@ -154,6 +160,10 @@ export class ExtractAccumulator {
       files: [...this.files.values()],
       tasks: [...this.tasks.values()],
       subagents: [...this.subagents.values()],
+      subagentTranscripts: [...this.subagentTranscripts].map(([agentRef, childSessionId]) => ({
+        agentRef,
+        childSessionId,
+      })),
       artifacts: [...this.artifacts.values()],
       edges: [...this.edges.values()],
       spans: this.spans,

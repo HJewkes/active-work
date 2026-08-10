@@ -18,8 +18,23 @@ export const RELATIONS = {
   WORKED: 'worked',
   /** session --ran--> task: an `active-work`/`aw` command naming that task id. */
   RAN: 'ran',
-  /** session --spawned--> subagent: an `Agent` tool_use. */
+  /**
+   * session --spawned--> subagent: an `Agent` tool_use.
+   *
+   * Also session --spawned--> session, emitted from the subagent's own
+   * sidechain transcript. The two targets are not redundant: the `agent:` one
+   * is the dispatch as the parent recorded it, the `session:` one is the child
+   * that actually ran. Only the latter exists for subagents whose dispatch
+   * carried no `toolUseResult.agentId` to bridge them (AW-26).
+   */
   SPAWNED: 'spawned',
+  /**
+   * subagent --transcribed_in--> session: the child transcript a dispatch
+   * produced, bridged by `toolUseResult.agentId`. This is what turns the
+   * `agent:` node from a dangling leaf into a waypoint, giving the full path
+   * `session:parent --spawned--> agent:X --transcribed_in--> session:child`.
+   */
+  TRANSCRIBED_IN: 'transcribed_in',
   /** session --produced--> artifact: an `Artifact` tool_use or `frame-link`. */
   PRODUCED: 'produced',
   /** session --edited_by_human--> file: an `edited_text_file` attachment. */

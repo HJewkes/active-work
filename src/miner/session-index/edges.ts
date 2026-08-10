@@ -104,6 +104,10 @@ export function sessionSpawnedSubagent(spec: Omit<EdgeSpec, 'relation'>): EdgeIn
   return edge({ ...spec, relation: RELATIONS.SPAWNED });
 }
 
+export function subagentTranscribedIn(spec: Omit<EdgeSpec, 'relation'>): EdgeInput {
+  return edge({ ...spec, relation: RELATIONS.TRANSCRIBED_IN });
+}
+
 export function sessionProducedArtifact(spec: Omit<EdgeSpec, 'relation'>): EdgeInput {
   return edge({ ...spec, relation: RELATIONS.PRODUCED });
 }

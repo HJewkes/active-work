@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getMinerRoot } from '../../utils/paths.js';
-import { resetIndex } from './writer.js';
+import { dropDerivedTables, resetIndex } from './writer.js';
 
 export type SessionIndexDb = Database.Database;
 
@@ -20,7 +20,7 @@ export type SessionIndexDb = Database.Database;
  *    the wrong shape and must be re-derived.
  * 4: AW-25 — new `file_checkpoints` table (no reshaping of existing tables).
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real
@@ -57,6 +57,7 @@ export function migrate(db: SessionIndexDb): void {
   const stale = current > 0;
   db.exec('BEGIN');
   try {
+    if (stale) dropDerivedTables(db);
     db.exec(loadSchemaSql());
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');

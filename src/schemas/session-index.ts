@@ -26,9 +26,6 @@ export const FactInputSchema = z.object({
   sessionId: nonEmpty,
   promptId: nonEmpty.nullable().default(null),
   toolUseId: nonEmpty.nullable().default(null),
-  agentId: nonEmpty.nullable().default(null),
-  parentAgentId: nonEmpty.nullable().default(null),
-  workflowRunId: nonEmpty.nullable().default(null),
 });
 
 /**
@@ -156,6 +153,18 @@ export const SubagentInputSchema = z.object({
   factByteOffset: offset.nullable().default(null),
 });
 
+/**
+ * The dispatch->child-transcript bridge, carried separately from
+ * `SubagentInputSchema` because the two are stated on different lines: the
+ * `Agent` tool_use creates the subagent row, its tool_result names the
+ * transcript. Applied as an upsert so neither ordering nor a chunk boundary
+ * between them can lose the link.
+ */
+export const SubagentTranscriptInputSchema = z.object({
+  agentRef: nonEmpty,
+  childSessionId: nonEmpty,
+});
+
 export const ArtifactInputSchema = z.object({
   artifactRef: nonEmpty,
   kind: z.string().nullable().default(null),
@@ -213,6 +222,7 @@ export type BranchInput = z.infer<typeof BranchInputSchema>;
 export type FileInput = z.infer<typeof FileInputSchema>;
 export type TaskInput = z.infer<typeof TaskInputSchema>;
 export type SubagentInput = z.infer<typeof SubagentInputSchema>;
+export type SubagentTranscriptInput = z.infer<typeof SubagentTranscriptInputSchema>;
 export type ArtifactInput = z.infer<typeof ArtifactInputSchema>;
 export type EdgeInput = z.infer<typeof EdgeInputSchema>;
 export type SearchableSpanInput = z.infer<typeof SearchableSpanInputSchema>;
@@ -238,6 +248,7 @@ export const ExtractResultSchema = z.object({
   files: z.array(FileInputSchema),
   tasks: z.array(TaskInputSchema),
   subagents: z.array(SubagentInputSchema),
+  subagentTranscripts: z.array(SubagentTranscriptInputSchema),
   artifacts: z.array(ArtifactInputSchema),
   edges: z.array(EdgeInputSchema),
   spans: z.array(SearchableSpanInputSchema),

@@ -26,9 +26,15 @@ CREATE TABLE IF NOT EXISTS transcripts (
   quarantine_reason TEXT
 );
 
--- ── Facts — raw event log (byte-offset provenance, OTEL ids) ────────────────
+-- ── Facts — raw event log (byte-offset provenance) ─────────────────────────
 -- UNIQUE(transcript_id, byte_offset) is what makes a re-applied extraction
 -- batch a no-op instead of a duplicate-row generator.
+--
+-- This table once carried agent_id/parent_agent_id/workflow_run_id, modelled on
+-- Claude Code's OTEL export schema rather than on a real transcript line. The
+-- validating spike was planned and never run, and the fields do not exist on
+-- any line: 0 of 284,531 rows ever populated one. Removed in AW-26. Subagent
+-- parentage lives in `subagents` + `edges`, where the shipped data actually is.
 CREATE TABLE IF NOT EXISTS facts (
   fact_id         INTEGER PRIMARY KEY,
   transcript_id   INTEGER NOT NULL REFERENCES transcripts(transcript_id),
@@ -40,16 +46,12 @@ CREATE TABLE IF NOT EXISTS facts (
   session_id      TEXT NOT NULL,
   prompt_id       TEXT,
   tool_use_id     TEXT,
-  agent_id        TEXT,
-  parent_agent_id TEXT,
-  workflow_run_id TEXT,
   t_indexed       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE (transcript_id, byte_offset)
 );
 CREATE INDEX IF NOT EXISTS idx_facts_session_ts ON facts(session_id, ts);
 CREATE INDEX IF NOT EXISTS idx_facts_prompt ON facts(prompt_id);
 CREATE INDEX IF NOT EXISTS idx_facts_tool_use ON facts(tool_use_id);
-CREATE INDEX IF NOT EXISTS idx_facts_agent ON facts(agent_id);
 
 -- ── Sessions + per-model token buckets ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS sessions (
@@ -196,9 +198,13 @@ CREATE TABLE IF NOT EXISTS tasks (
   task_ref TEXT PRIMARY KEY, initiative TEXT, title TEXT, status TEXT,
   created_at TEXT, completed_at TEXT
 );
+-- `session_id` is the DISPATCHING session; `child_session_id` is the transcript
+-- the subagent actually ran in, indexed under its own `agentId`. The two are
+-- different sessions, and conflating them is the bug AW-26 fixed.
 CREATE TABLE IF NOT EXISTS subagents (
   agent_ref        TEXT PRIMARY KEY,
   session_id       TEXT REFERENCES sessions(session_id),
+  child_session_id TEXT REFERENCES sessions(session_id),
   parent_agent_ref TEXT REFERENCES subagents(agent_ref),
   agent_type       TEXT,
   label            TEXT,
@@ -207,6 +213,7 @@ CREATE TABLE IF NOT EXISTS subagents (
   fact_id          INTEGER REFERENCES facts(fact_id)
 );
 CREATE INDEX IF NOT EXISTS idx_subagents_session ON subagents(session_id);
+CREATE INDEX IF NOT EXISTS idx_subagents_child ON subagents(child_session_id);
 CREATE TABLE IF NOT EXISTS artifacts (
   artifact_ref TEXT PRIMARY KEY, kind TEXT, title TEXT, url TEXT,
   path TEXT, created_at TEXT
