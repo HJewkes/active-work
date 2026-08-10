@@ -82,3 +82,21 @@ export function openSessionIndex(dbPath: string = defaultSessionIndexPath()): Se
   migrate(db);
   return db;
 }
+
+/**
+ * Open without migrating — for diagnostics, which must be able to *look at* an
+ * index without changing it.
+ *
+ * Opening is not a read: `migrate` runs on every `openSessionIndex`, and a
+ * stale `user_version` makes it clear every derived row and rewind every
+ * watermark. That is intended for the indexer, which rebuilds immediately
+ * afterwards. It is emphatically not intended for `miner status` or
+ * `miner liveness`, where it turns "tell me about the index" into "destroy and
+ * rebuild the index" with no prompt — as it did once, to a real 155 MB corpus,
+ * while this very command was being written.
+ */
+export function openSessionIndexReadOnly(
+  dbPath: string = defaultSessionIndexPath(),
+): SessionIndexDb {
+  return new Database(dbPath, { readonly: true });
+}

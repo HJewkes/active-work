@@ -82,6 +82,7 @@ import mcpLogs from './mcp-logs.js';
 // Session-signal index / Drain miner
 import minerDrainIngest from './miner-drain-ingest.js';
 import minerRefresh from './miner-refresh.js';
+import minerLiveness from './miner-liveness.js';
 import minerStatus from './miner-status.js';
 
 // agent-chat lifecycle hooks (AW-99)
@@ -159,6 +160,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   // session-signal index / drain miner
   minerDrainIngest,
   minerRefresh,
+  minerLiveness,
   minerStatus,
   // agent-chat lifecycle hooks (AW-99)
   hooksAgentChatSpawn,

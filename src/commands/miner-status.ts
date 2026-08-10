@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import {
   defaultSessionIndexPath,
-  openSessionIndex,
+  openSessionIndexReadOnly,
   SCHEMA_VERSION,
   type SessionIndexDb,
 } from '../miner/session-index/db.js';
@@ -103,7 +103,7 @@ export default defineCommand<Args, Result>({
   result: ResultSchema,
   async run() {
     const dbPath = defaultSessionIndexPath();
-    const db = openSessionIndex(dbPath);
+    const db = openSessionIndexReadOnly(dbPath);
     try {
       const statusCount = (status: string): number =>
         (
