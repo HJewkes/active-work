@@ -68,11 +68,32 @@ export class ExtractAccumulator {
     return existing;
   }
 
-  observeSessionTimestamp(sessionId: string, ts: string | null): void {
+  /**
+   * `startType` is the entrypoint on the earliest line that *carries* one,
+   * which is not the same as the earliest line: 413 of 536 top-level sessions
+   * open with a `file-history-snapshot` or summary record that has no
+   * `entrypoint`, so keying it to the session's first line leaves them null
+   * forever. Tracked against its own timestamp for that reason.
+   *
+   * It cannot be resolved by a rule over the values instead — the two sessions
+   * in the corpus reporting both entrypoints run in opposite directions, so
+   * only "earliest wins" is correct (AW-103). This map is per-chunk; the
+   * writer applies the same rule across chunks, comparing on `startedAt`,
+   * which is sound because a chunk holding an earlier entrypoint necessarily
+   * has the earlier `startedAt` too.
+   */
+  private readonly startTypeAt = new Map<string, string>();
+
+  observeSessionTimestamp(sessionId: string, ts: string | null, startType?: string | null): void {
     if (!ts) return;
     const s = this.session(sessionId);
     if (!s.startedAt || ts < s.startedAt) s.startedAt = ts;
     if (!s.endedAt || ts > s.endedAt) s.endedAt = ts;
+    if (!startType) return;
+    const seenAt = this.startTypeAt.get(sessionId);
+    if (seenAt !== undefined && seenAt <= ts) return;
+    this.startTypeAt.set(sessionId, ts);
+    s.startType = startType;
   }
 
   addUsage(delta: SessionModelUsageInput): void {

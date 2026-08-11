@@ -34,12 +34,13 @@ function line(fields: Record<string, unknown>): Record<string, unknown> {
   return { sessionId: SESSION, cwd: CWD, ...fields };
 }
 
-function prompt(uuid: string, ts: string): Record<string, unknown> {
+function prompt(uuid: string, ts: string, entrypoint = 'cli'): Record<string, unknown> {
   return line({
     type: 'user',
     uuid,
     timestamp: ts,
     gitBranch: 'feat/x',
+    entrypoint,
     message: { role: 'user', content: `do ${uuid}` },
   });
 }
@@ -90,7 +91,7 @@ function writeCorpus(): void {
   writeFileSync(
     path.join(root, 'b.jsonl'),
     render([
-      prompt('p1', '2026-07-01T01:00:00Z'),
+      prompt('p1', '2026-07-01T01:00:00Z', 'sdk-cli'),
       prLink('2026-07-01T01:00:01Z'),
       prompt('p2', '2026-07-01T02:00:00Z'),
     ]),
@@ -105,6 +106,10 @@ function query(db: SessionIndexDb) {
       turn_index: number;
     }[],
     branch: db.prepare('SELECT created_at FROM branches').get() as { created_at: string },
+    session: db.prepare('SELECT started_at, start_type FROM sessions').get() as {
+      started_at: string;
+      start_type: string | null;
+    },
     pr: db.prepare('SELECT state, merged_at FROM prs').get() as {
       state: string | null;
       merged_at: string | null;
@@ -142,6 +147,38 @@ describe('order-independent index state', () => {
     expect(branch.created_at).toBe('2026-07-01T01:00:00Z');
   });
 
+  it('takes start_type from the earliest line, not the first transcript read', async () => {
+    writeCorpus();
+
+    const { session } = await refreshAndRead('start-type');
+
+    // b.jsonl is read second but holds the session's first line. Two real
+    // sessions report both entrypoints in opposite directions, so "how it
+    // started" can only mean earliest-timestamp (AW-103).
+    expect(session).toEqual({
+      started_at: '2026-07-01T01:00:00Z',
+      start_type: 'sdk-cli',
+    });
+  });
+
+  it('takes start_type from the earliest line that carries an entrypoint', async () => {
+    // Not simply the earliest line: 413 of 536 real top-level sessions open
+    // with a record that has no `entrypoint` at all, and keying start_type to
+    // the first line left every one of them null against the live corpus.
+    writeFileSync(
+      path.join(root, 'c.jsonl'),
+      render([prLink('2026-07-01T00:00:00Z'), prompt('p9', '2026-07-01T00:30:00Z', 'sdk-cli')]),
+      'utf8',
+    );
+
+    const { session } = await refreshAndRead('late-entrypoint');
+
+    expect(session).toEqual({
+      started_at: '2026-07-01T00:00:00Z',
+      start_type: 'sdk-cli',
+    });
+  });
+
   it('applies a merge sighting indexed before the pr-link that names the PR', async () => {
     writeCorpus();
 
@@ -160,7 +197,7 @@ describe('order-independent index state', () => {
     const projects = path.join(dir, 'projects');
     const heads = {
       'a.jsonl': render([prompt('p3', '2026-07-01T03:00:00Z')]),
-      'b.jsonl': render([prompt('p1', '2026-07-01T01:00:00Z')]),
+      'b.jsonl': render([prompt('p1', '2026-07-01T01:00:00Z', 'sdk-cli')]),
     };
     const full = {
       'a.jsonl': render([
@@ -169,7 +206,7 @@ describe('order-independent index state', () => {
         prompt('p4', '2026-07-01T04:00:00Z'),
       ]),
       'b.jsonl': render([
-        prompt('p1', '2026-07-01T01:00:00Z'),
+        prompt('p1', '2026-07-01T01:00:00Z', 'sdk-cli'),
         prLink('2026-07-01T01:00:01Z'),
         prompt('p2', '2026-07-01T02:00:00Z'),
       ]),
