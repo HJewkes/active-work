@@ -6,7 +6,7 @@ import { defaultSessionIndexPath, openSessionIndex, type SessionIndexDb } from '
 import { discoverTranscripts, transcriptsRoot } from './discover.js';
 import { indexTranscript, type IndexOutcome } from './quarantine.js';
 import { reconcileMissingTranscripts } from './reconcile.js';
-import { reconcilePrMerges, rollupSessions } from './rollup.js';
+import { reconcilePrMerges, reconcileSubagents, rollupSessions } from './rollup.js';
 import { resetIndex } from './writer.js';
 
 /**
@@ -114,6 +114,9 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // transcript from the `pr-link` it refers to, so this cannot be scoped to
     // what this pass touched.
     reconcilePrMerges(db);
+    // After the rollup, which is what makes `sessions.ended_at` current — the
+    // value subagent end times are read from.
+    reconcileSubagents(db);
     // Against `discovered` rather than `visiting`: under `--limit` the
     // unvisited remainder is still known to exist, and condemning it would be
     // the exact misreport this step is here to fix.

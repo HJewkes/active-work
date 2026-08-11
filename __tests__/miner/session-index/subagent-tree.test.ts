@@ -22,6 +22,7 @@ import { FIXTURE_CWD } from './fixture.js';
 const PARENT = 'parent-sess';
 const AGENT_ID = 'a5ae119ee7270e4c7';
 const TOOL_USE_ID = 'toolu_01AAtnMQTRQTijoZAR2F1Bc3';
+const NESTED_TOOL_USE_ID = 'toolu_01NestedDispatch0000000';
 
 let dir: string;
 let root: string;
@@ -94,9 +95,33 @@ function writeParent({ withBridge = true } = {}): void {
  * the whole point of the fixture. Prompt/assistant pairs, because a turn is
  * only counted once something closes it.
  */
-function writeSubagent(turns = 2): void {
+function writeSubagent(turns = 2, { nestedDispatch = false } = {}): void {
   const dirPath = path.join(root, 'demo', PARENT, 'subagents');
   mkdirSync(dirPath, { recursive: true });
+  const nested: Record<string, unknown>[] = nestedDispatch
+    ? [
+        {
+          sessionId: PARENT,
+          cwd: FIXTURE_CWD,
+          agentId: AGENT_ID,
+          isSidechain: true,
+          type: 'assistant',
+          timestamp: '2026-08-01T00:01:30.000Z',
+          message: {
+            role: 'assistant',
+            model: 'claude-opus-5',
+            content: [
+              {
+                type: 'tool_use',
+                id: NESTED_TOOL_USE_ID,
+                name: 'Agent',
+                input: { subagent_type: 'Explore', description: 'Go one level deeper' },
+              },
+            ],
+          },
+        },
+      ]
+    : [];
   const lines = Array.from({ length: turns }, (_, i) => [
     {
       ...prompt(PARENT, `sub-u${i}`, `2026-08-01T00:01:${String(i * 2).padStart(2, '0')}.000Z`),
@@ -117,7 +142,11 @@ function writeSubagent(turns = 2): void {
       },
     },
   ]).flat();
-  writeFileSync(path.join(dirPath, `agent-${AGENT_ID}.jsonl`), render(lines), 'utf8');
+  writeFileSync(
+    path.join(dirPath, `agent-${AGENT_ID}.jsonl`),
+    render([...lines, ...nested]),
+    'utf8',
+  );
 }
 
 const factsFor = (sessionId: string): number =>
@@ -261,5 +290,36 @@ describe('subagent sidechains', () => {
         .prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?')
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ child_session_id: AGENT_ID });
+  });
+
+  it('ends a subagent when its transcript stops, not when the dispatch returns', async () => {
+    // The trap: 628 of 689 real Agent results are `teammate_spawned` or async
+    // and come back the instant the agent launches, so the tool_result's own
+    // timestamp would date a 56-minute subagent to its dispatch. This fixture
+    // reproduces that shape — an `isAsync` result at 00:00:02 for a child that
+    // runs until 00:01:03 (AW-102).
+    writeParent();
+    writeSubagent();
+
+    await runRefresh({ db, root });
+
+    expect(
+      db.prepare('SELECT ended_at FROM subagents WHERE agent_ref = ?').get(`agent:${TOOL_USE_ID}`),
+    ).toEqual({ ended_at: '2026-08-01T00:01:03.000Z' });
+  });
+
+  it('records the parent agent of a dispatch issued inside a subagent', async () => {
+    writeParent();
+    writeSubagent(2, { nestedDispatch: true });
+
+    await runRefresh({ db, root });
+
+    // The nested dispatch's parent is the dispatch whose child transcript it
+    // was issued from — what makes the tree deeper than one level.
+    expect(
+      db
+        .prepare('SELECT parent_agent_ref FROM subagents WHERE agent_ref = ?')
+        .get(`agent:${NESTED_TOOL_USE_ID}`),
+    ).toEqual({ parent_agent_ref: `agent:${TOOL_USE_ID}` });
   });
 });
