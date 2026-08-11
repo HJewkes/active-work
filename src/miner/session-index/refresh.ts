@@ -10,8 +10,10 @@ import {
   reconcilePrCreates,
   reconcilePrMerges,
   reconcileSubagents,
+  reconcileTasks,
   rollupSessions,
 } from './rollup.js';
+import { loadTaskStore } from './task-store.js';
 import { resetIndex } from './writer.js';
 
 /**
@@ -35,6 +37,8 @@ export interface RefreshOptions {
   verifyHashes?: boolean;
   /** Transcript corpus root; overridable for tests. */
   root?: string;
+  /** Active-work root the `tasks` reconcile reads; defaults to `getActiveRoot()`. */
+  taskRoot?: string;
 }
 
 export interface RefreshSummary {
@@ -126,6 +130,10 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // After the rollup, which is what makes `sessions.ended_at` current — the
     // value subagent end times are read from.
     reconcileSubagents(db);
+    // The one reconcile that reads outside the corpus. Re-run every pass rather
+    // than only for touched sessions: a task's title or status changes in the
+    // store without any transcript mentioning it again.
+    reconcileTasks(db, await loadTaskStore(options.taskRoot));
     // Against `discovered` rather than `visiting`: under `--limit` the
     // unvisited remainder is still known to exist, and condemning it would be
     // the exact misreport this step is here to fix.

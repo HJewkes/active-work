@@ -1,4 +1,5 @@
 import type { SessionIndexDb } from './db.js';
+import type { TaskStore } from './task-store.js';
 
 /**
  * Recompute the per-turn aggregates that cannot be derived from a single JSONL
@@ -194,6 +195,44 @@ const RECONCILE_PR_CREATES = `
 /** Apply every complete PR-creation sighting. Returns the rows written. */
 export function reconcilePrCreates(db: SessionIndexDb): number {
   return db.prepare(RECONCILE_PR_CREATES).run().changes;
+}
+
+/**
+ * Fill `tasks` from the active-work store (AW-101).
+ *
+ * Recompute, never accumulate, like every other rollup here: each pass writes
+ * the store's current values over whatever was there, so a task renamed or
+ * closed since the last refresh converges instead of keeping its first
+ * observation. That is the opposite of the COALESCE merges used for
+ * transcript-derived columns, and deliberately so — there the first sighting is
+ * the fact, here the store is.
+ *
+ * Only rows the index already has are touched. A ref the store cannot resolve
+ * keeps its nulls: some name tasks that were deleted, and a few are not tasks
+ * at all, because `parseTaskId` reads any `[A-Z]{1,5}-\d+` token and `ISO-8601`
+ * is one (AW-112).
+ */
+const RECONCILE_TASK = `
+  UPDATE tasks SET
+    initiative = @initiative, title = @title, status = @status,
+    created_at = @createdAt, completed_at = @completedAt
+  WHERE task_ref = @taskRef`;
+
+export function reconcileTasks(db: SessionIndexDb, store: TaskStore): number {
+  const update = db.prepare(RECONCILE_TASK);
+  const refs = db
+    .prepare<[], { task_ref: string }>('SELECT task_ref FROM tasks')
+    .all()
+    .map((row) => row.task_ref);
+  return db.transaction(() => {
+    let changed = 0;
+    for (const taskRef of refs) {
+      const task = store.get(taskRef.slice('task:'.length));
+      if (!task) continue;
+      changed += update.run({ taskRef, ...task }).changes;
+    }
+    return changed;
+  })();
 }
 
 /** Every session in the index — the scope a full rebuild rolls up. */
