@@ -24,6 +24,7 @@ import {
   sessionSpawnedSubagent,
   sessionTouchedFile,
   sessionWorkedBranch,
+  subagentTranscribedIn,
   taskRef,
   toRepoRelative,
 } from './edges.js';
@@ -176,13 +177,24 @@ export class LineHandler {
    * that session's id, the same id these lines' own backup paths are keyed
    * under on disk (`~/.claude/file-history/<sessionId>/...`).
    */
+  /**
+   * `subagentId` marks this transcript as a subagent sidechain. Those files
+   * are the one case where a line's own `sessionId` is *not* its session: it
+   * names the parent that dispatched the subagent. Taking it at face value
+   * would file every subagent's turns, tokens and file touches under the
+   * parent, inflating its metrics with work it did not do. So the subagent
+   * gets its own identity here, and the field it displaced becomes the parent
+   * edge instead — which is precisely the link AW-26 wants.
+   */
   constructor(
     private readonly acc: ExtractAccumulator,
     private readonly fallbackSessionId: string | null = null,
+    private readonly subagentId: string | null = null,
   ) {}
 
   handle(line: Json, loc: RawLine): void {
-    const sessionId = str(line, 'sessionId') ?? this.fallbackSessionId;
+    const ownSessionId = str(line, 'sessionId') ?? this.fallbackSessionId;
+    const sessionId = this.subagentId ?? ownSessionId;
     if (!sessionId) return;
     const branch = str(line, 'gitBranch');
     const cwd = str(line, 'cwd');
@@ -199,7 +211,29 @@ export class LineHandler {
       repo: repoForCwd(cwd),
     };
     this.observeSession(ctx);
+    if (this.subagentId) this.observeSubagentParent(ctx, ownSessionId);
     this.dispatch(ctx, str(line, 'type') ?? 'unknown');
+  }
+
+  /**
+   * Emitted per line rather than once per file, on purpose: the accumulator and
+   * the `edges` unique index both dedupe, and a once-per-file rule would be
+   * cross-line state — exactly what breaks incremental/full equivalence when a
+   * chunk boundary falls after the first line (see the class header).
+   *
+   * `parentSessionId` is the sidechain line's own `sessionId`, which names the
+   * dispatching session, not this one.
+   */
+  private observeSubagentParent(ctx: LineContext, parentSessionId: string | null): void {
+    if (!parentSessionId || parentSessionId === ctx.sessionId) return;
+    this.acc.addEdge(
+      sessionSpawnedSubagent({
+        sourceRef: sessionRef(parentSessionId),
+        targetRef: sessionRef(ctx.sessionId),
+        tValid: ctx.ts,
+        factByteOffset: ctx.loc.byteOffset,
+      }),
+    );
   }
 
   private dispatch(ctx: LineContext, type: string): void {
@@ -240,9 +274,6 @@ export class LineHandler {
       sessionId: ctx.sessionId,
       promptId: eventType === 'user_prompt' ? str(ctx.line, 'uuid') : null,
       toolUseId,
-      agentId: str(ctx.line, 'agentId'),
-      parentAgentId: str(ctx.line, 'parentAgentId'),
-      workflowRunId: str(ctx.line, 'workflowRunId'),
     });
   }
 
@@ -446,6 +477,37 @@ export class LineHandler {
     const errored = blocks(message).some((b) => b.type === 'tool_result' && b.is_error === true);
     this.fact(ctx, errored ? 'tool_result_error' : 'tool_result');
     this.span(ctx, 'tool_result');
+    this.linkDispatchedSubagent(ctx, message);
+  }
+
+  /**
+   * An async `Agent` dispatch answers with `toolUseResult.agentId`, which names
+   * the subagent's transcript (`subagents/agent-<id>.jsonl`) and hence the
+   * session id that transcript is indexed under. That is a different id space
+   * from the `toolu_…` keying the dispatch, and this line is the only place the
+   * two are stated together — so it is the only place they can be bridged.
+   *
+   * Synchronous dispatches carry no `agentId` here; those subagents still reach
+   * their parent via the `spawned` edge written from their own transcript, just
+   * without knowing which dispatch produced them.
+   */
+  private linkDispatchedSubagent(ctx: LineContext, message: Json | null): void {
+    const agentId = str(asObject(ctx.line.toolUseResult), 'agentId');
+    if (!agentId) return;
+    const toolUseId = str(
+      blocks(message).find((b) => b.type === 'tool_result') ?? null,
+      'tool_use_id',
+    );
+    if (!toolUseId) return;
+    this.acc.addEdge(
+      subagentTranscribedIn({
+        sourceRef: agentRef(toolUseId),
+        targetRef: sessionRef(agentId),
+        tValid: ctx.ts,
+        factByteOffset: ctx.loc.byteOffset,
+      }),
+    );
+    this.acc.addSubagentTranscript(agentRef(toolUseId), agentId);
   }
 
   private handleUserPrompt(ctx: LineContext): void {

@@ -12,6 +12,11 @@ export interface ExtractOptions {
   priorPrefixHash?: string | null;
   /** Stop after this offset — used by tests to simulate a partially-grown file. */
   untilByteOffset?: number;
+  /**
+   * `DiscoveredTranscript.subagentId` — set only for subagent sidechains, whose
+   * lines carry their *parent's* `sessionId`. See `LineHandler`.
+   */
+  subagentId?: string | null;
 }
 
 /** A malformed JSON line aborts the transcript so `quarantine.ts` can isolate it. */
@@ -54,7 +59,7 @@ export async function extractTranscript(
   const { start, restartedFromZero } = await resolveStartOffset(filePath, options);
   const accumulator = new ExtractAccumulator();
   const fallbackSessionId = path.basename(filePath, '.jsonl');
-  const handler = new LineHandler(accumulator, fallbackSessionId);
+  const handler = new LineHandler(accumulator, fallbackSessionId, options.subagentId ?? null);
   let lastByteOffset = start;
 
   for await (const line of readJsonLines(filePath, start)) {

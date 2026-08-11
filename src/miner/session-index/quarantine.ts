@@ -25,6 +25,8 @@ export interface IndexOutcome {
 export interface IndexTranscriptInput {
   absolutePath: string;
   displayPath: string;
+  /** See `DiscoveredTranscript.subagentId`; null for ordinary transcripts. */
+  subagentId?: string | null;
 }
 
 export interface IndexTranscriptOptions {
@@ -140,6 +142,7 @@ async function ingestChunks(
       fromByteOffset: state.lastByteOffset,
       priorPrefixHash,
       untilByteOffset: state.lastByteOffset + window,
+      subagentId: input.subagentId,
     });
     const advanced = result.lastByteOffset > result.startByteOffset;
     if (!advanced && !result.restartedFromZero) {

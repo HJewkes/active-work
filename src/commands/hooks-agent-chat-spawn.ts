@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { readStdinJson } from '../utils/read-stdin-json.js';
-import { stashSpawnContext } from '../utils/agent-chat-hook-state.js';
+import { peekSpawnContext, stashSpawnContext } from '../utils/agent-chat-hook-state.js';
 import { nowIso } from '../utils/today.js';
 import { resolveSlugFromCwd } from './_open-helpers.js';
 
@@ -48,11 +48,17 @@ export async function handleOnSpawn(
   const match = await resolveSlugFromCwd(activeRoot, cwd);
   if (!match) return { matched: false, slug: null };
 
+  const parentAgentId = str(payload, 'parent');
+  const parent = parentAgentId ? await peekSpawnContext(parentAgentId) : null;
+
   await stashSpawnContext(agentId, {
     slug: match.slug,
     sessionId,
     name: str(payload, 'name') ?? agentId,
     started: nowIso(),
+    parentSessionId: parent?.sessionId ?? null,
+    profile: str(payload, 'profile'),
+    briefing: str(payload, 'briefing'),
   });
   return { matched: true, slug: match.slug };
 }

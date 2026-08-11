@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getMinerRoot } from '../../utils/paths.js';
-import { resetIndex } from './writer.js';
+import { dropDerivedTables, resetIndex } from './writer.js';
 
 export type SessionIndexDb = Database.Database;
 
@@ -20,7 +20,7 @@ export type SessionIndexDb = Database.Database;
  *    the wrong shape and must be re-derived.
  * 4: AW-25 — new `file_checkpoints` table (no reshaping of existing tables).
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real
@@ -57,6 +57,7 @@ export function migrate(db: SessionIndexDb): void {
   const stale = current > 0;
   db.exec('BEGIN');
   try {
+    if (stale) dropDerivedTables(db);
     db.exec(loadSchemaSql());
     db.pragma(`user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
@@ -80,4 +81,22 @@ export function openSessionIndex(dbPath: string = defaultSessionIndexPath()): Se
   db.pragma('foreign_keys = ON');
   migrate(db);
   return db;
+}
+
+/**
+ * Open without migrating — for diagnostics, which must be able to *look at* an
+ * index without changing it.
+ *
+ * Opening is not a read: `migrate` runs on every `openSessionIndex`, and a
+ * stale `user_version` makes it clear every derived row and rewind every
+ * watermark. That is intended for the indexer, which rebuilds immediately
+ * afterwards. It is emphatically not intended for `miner status` or
+ * `miner liveness`, where it turns "tell me about the index" into "destroy and
+ * rebuild the index" with no prompt — as it did once, to a real 155 MB corpus,
+ * while this very command was being written.
+ */
+export function openSessionIndexReadOnly(
+  dbPath: string = defaultSessionIndexPath(),
+): SessionIndexDb {
+  return new Database(dbPath, { readonly: true });
 }

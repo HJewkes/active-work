@@ -19,9 +19,9 @@ import type { ExtractResult } from '../../schemas/session-index.js';
 
 const INSERT_FACT = `
   INSERT INTO facts (transcript_id, byte_offset, byte_length, event_type, ts, seq, session_id,
-                     prompt_id, tool_use_id, agent_id, parent_agent_id, workflow_run_id)
+                     prompt_id, tool_use_id)
   VALUES (@transcriptId, @byteOffset, @byteLength, @eventType, @ts, @seq, @sessionId,
-          @promptId, @toolUseId, @agentId, @parentAgentId, @workflowRunId)
+          @promptId, @toolUseId)
   ON CONFLICT (transcript_id, byte_offset) DO NOTHING`;
 
 const UPSERT_SESSION = `
@@ -152,6 +152,22 @@ const DERIVED_TABLES = [
  * (`turn_count`, token buckets) would add a second copy of counts that the
  * append-only tables' unique indices silently discard.
  */
+/**
+ * Drop every derived table so `schema.sql` recreates it at the current shape.
+ *
+ * `resetIndex` alone is not enough for a version bump. Every statement in
+ * `schema.sql` is `IF NOT EXISTS`, so against an existing database a bump that
+ * adds or removes a *column* is silently a no-op — the rows get cleared and
+ * re-derived into the old shape. Dropping first is what makes a version bump
+ * mean "this is the new shape" rather than only "there is a new table". Safe
+ * precisely because these tables are fully derivable from the JSONL, which is
+ * the same property `resetIndex` already relies on.
+ */
+export function dropDerivedTables(db: SessionIndexDb): void {
+  for (const table of DERIVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${table}`);
+  db.exec('DROP TABLE IF EXISTS spans_fts');
+}
+
 export function resetIndex(db: SessionIndexDb): void {
   db.transaction(() => {
     for (const table of DERIVED_TABLES) db.prepare(`DELETE FROM ${table}`).run();
@@ -268,6 +284,14 @@ function applyLinkedRows(db: SessionIndexDb, transcriptId: number, result: Extra
       ' @label, @startedAt, @factId) ON CONFLICT (agent_ref) DO NOTHING',
   );
   for (const subagent of result.subagents) upsertSubagent.run(withFactId(subagent));
+
+  // An upsert, not an UPDATE: the dispatch row and this bridge come from two
+  // different lines, so a chunk boundary between them must not lose the link.
+  const linkSubagentTranscript = db.prepare(
+    'INSERT INTO subagents (agent_ref, child_session_id) VALUES (@agentRef, @childSessionId)' +
+      ' ON CONFLICT (agent_ref) DO UPDATE SET child_session_id = excluded.child_session_id',
+  );
+  for (const link of result.subagentTranscripts) linkSubagentTranscript.run(link);
 
   const insertEdge = db.prepare(INSERT_EDGE);
   for (const edge of result.edges) insertEdge.run(withFactId(edge));
