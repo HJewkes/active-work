@@ -134,10 +134,13 @@ describe('extractTranscript', () => {
     const relations = result.edges.map((e) => `${e.sourceRef} ${e.relation} ${e.targetRef}`);
     expect(relations).toContain('session:sess-1 touched file:demo/src/app.ts');
     expect(relations).toContain('session:sess-1 linked pr:acme/demo#42');
-    expect(relations).toContain('pr:acme/demo#42 built_on branch:demo/feat/x');
     expect(relations).toContain('session:sess-1 worked branch:demo/feat/y');
     expect(relations).toContain('session:sess-1 ran task:AW-23');
     expect(relations).toContain('session:sess-1 spawned agent:t3');
+    // A `pr-link` names no branch, so it yields exactly one edge (AW-106).
+    expect(relations.filter((r) => r.includes('pr:acme/demo#42'))).toEqual([
+      'session:sess-1 linked pr:acme/demo#42',
+    ]);
   });
 
   it('records both mode and permission-mode phase candidates', async () => {

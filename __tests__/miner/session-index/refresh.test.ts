@@ -73,6 +73,51 @@ describe('runRefresh', () => {
     expect(all.errors[0]).toMatch(/quarantined: .*b\.jsonl/);
   });
 
+  it('marks a transcript missing once its file is deleted (AW-105)', async () => {
+    writeTranscript('a.jsonl');
+    await runRefresh({ db, root });
+    rmSync(path.join(root, 'demo', 'a.jsonl'));
+
+    const summary = await runRefresh({ db, root });
+
+    expect(summary.reconciledMissing).toBe(1);
+    expect(statusOf('a.jsonl')).toBe('missing');
+  });
+
+  it('keeps what a deleted transcript taught the index', async () => {
+    writeTranscript('a.jsonl');
+    await runRefresh({ db, root });
+    const mined = counts();
+    rmSync(path.join(root, 'demo', 'a.jsonl'));
+
+    await runRefresh({ db, root });
+
+    expect(counts()).toEqual(mined);
+  });
+
+  it('leaves an indexed transcript alone when --limit skips visiting it', async () => {
+    writeTranscript('a.jsonl');
+    writeTranscript('b.jsonl');
+    await runRefresh({ db, root });
+
+    const summary = await runRefresh({ db, root, limit: 1 });
+
+    expect(summary).toMatchObject({ scanned: 1, reconciledMissing: 0 });
+    expect(statusOf('b.jsonl')).toBe('ok');
+  });
+
+  it('restores a transcript to ok when its file comes back', async () => {
+    writeTranscript('a.jsonl');
+    await runRefresh({ db, root });
+    rmSync(path.join(root, 'demo', 'a.jsonl'));
+    await runRefresh({ db, root });
+
+    writeTranscript('a.jsonl');
+    await runRefresh({ db, root });
+
+    expect(statusOf('a.jsonl')).toBe('ok');
+  });
+
   it('a full refresh converges on the same row counts as an incremental one', async () => {
     writeTranscript('a.jsonl');
     await runRefresh({ db, root });
@@ -83,6 +128,13 @@ describe('runRefresh', () => {
     expect(counts()).toEqual(incremental);
   });
 });
+
+function statusOf(name: string): string {
+  const row = db
+    .prepare<[string], { status: string }>('SELECT status FROM transcripts WHERE path LIKE ?')
+    .get(`%${name}`) as { status: string };
+  return row.status;
+}
 
 function counts(): Record<string, number> {
   const scalar = (table: string): number =>
@@ -107,6 +159,7 @@ describe('RefreshScheduler', () => {
     unchanged: 0,
     quarantined: 0,
     missing: 0,
+    reconciledMissing: 0,
     factsAdded: 0,
     sessionsRolledUp: 0,
     errors: [],

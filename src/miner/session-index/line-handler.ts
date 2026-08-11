@@ -14,7 +14,6 @@ import {
   branchRef,
   fileRef,
   humanEditedFile,
-  prBuiltOnBranch,
   prRef,
   repoForCwd,
   sessionLinkedPr,
@@ -362,11 +361,6 @@ export class LineHandler {
     this.acc.addEdge(
       sessionLinkedPr({ sourceRef: sessionRef(ctx.sessionId), targetRef: ref, ...link }),
     );
-    if (ctx.gitBranch) {
-      this.acc.addEdge(
-        prBuiltOnBranch({ sourceRef: ref, targetRef: branchRef(ctx.repo, ctx.gitBranch), ...link }),
-      );
-    }
   }
 
   private handleFrameLink(ctx: LineContext): void {

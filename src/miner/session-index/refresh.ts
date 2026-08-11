@@ -5,6 +5,7 @@ import { getMinerRoot } from '../../utils/paths.js';
 import { defaultSessionIndexPath, openSessionIndex, type SessionIndexDb } from './db.js';
 import { discoverTranscripts, transcriptsRoot } from './discover.js';
 import { indexTranscript, type IndexOutcome } from './quarantine.js';
+import { reconcileMissingTranscripts } from './reconcile.js';
 import { reconcilePrMerges, rollupSessions } from './rollup.js';
 import { resetIndex } from './writer.js';
 
@@ -41,7 +42,10 @@ export interface RefreshSummary {
   indexed: number;
   unchanged: number;
   quarantined: number;
+  /** Visited transcripts that vanished mid-pass, between discovery and stat. */
   missing: number;
+  /** Rows marked `missing` because their file was already gone (AW-105). */
+  reconciledMissing: number;
   factsAdded: number;
   sessionsRolledUp: number;
   errors: string[];
@@ -110,12 +114,17 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // transcript from the `pr-link` it refers to, so this cannot be scoped to
     // what this pass touched.
     reconcilePrMerges(db);
+    // Against `discovered` rather than `visiting`: under `--limit` the
+    // unvisited remainder is still known to exist, and condemning it would be
+    // the exact misreport this step is here to fix.
+    const reconciledMissing = await reconcileMissingTranscripts(db, discovered);
     return summarize(
       startedAt,
       Date.now() - started,
       discovered.length,
       outcomes,
       sessionsRolledUp,
+      reconciledMissing,
     );
   } finally {
     if (owned) db.close();
@@ -128,6 +137,7 @@ function summarize(
   transcripts: number,
   outcomes: IndexOutcome[],
   sessionsRolledUp: number,
+  reconciledMissing: number,
 ): RefreshSummary {
   const counts = { indexed: 0, unchanged: 0, quarantined: 0, missing: 0 };
   let factsAdded = 0;
@@ -143,6 +153,7 @@ function summarize(
     transcripts,
     scanned: outcomes.length,
     ...counts,
+    reconciledMissing,
     factsAdded,
     sessionsRolledUp,
     errors,
