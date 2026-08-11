@@ -141,6 +141,38 @@ export function reconcilePrMerges(db: SessionIndexDb): number {
   return db.prepare(RECONCILE_PR_MERGES).run().changes;
 }
 
+/**
+ * Close out `subagents` from the child transcripts AW-26 made reachable.
+ *
+ * `ended_at` deliberately does NOT come from the dispatch's `tool_result`,
+ * which is the obvious source and the wrong one: 628 of 689 Agent results are
+ * `teammate_spawned` or `isAsync`, so they return the moment the agent is
+ * launched. Taking their line timestamp would have recorded a subagent that
+ * ran 56 minutes as ending at its dispatch. The child session's own last line
+ * is when the work actually stopped.
+ *
+ * `parent_agent_ref` is the dispatch whose child transcript this dispatch was
+ * issued from — the join that makes the tree deeper than one level. 93 Agent
+ * dispatches in the corpus occur inside a subagent transcript.
+ *
+ * Whole-table and run after the session rollup, for the same reason as the PR
+ * merges: a child transcript is routinely indexed in a different pass from the
+ * parent that dispatched it, and `sessions.ended_at` must already be current.
+ */
+const RECONCILE_SUBAGENTS = `
+  UPDATE subagents SET
+    ended_at = COALESCE(
+      (SELECT s.ended_at FROM sessions s WHERE s.session_id = subagents.child_session_id),
+      ended_at),
+    parent_agent_ref = COALESCE(
+      (SELECT p.agent_ref FROM subagents p WHERE p.child_session_id = subagents.session_id),
+      parent_agent_ref)`;
+
+/** Fill subagent end times and nested parentage. Returns the rows updated. */
+export function reconcileSubagents(db: SessionIndexDb): number {
+  return db.prepare(RECONCILE_SUBAGENTS).run().changes;
+}
+
 /** Every session in the index — the scope a full rebuild rolls up. */
 export function allSessionIds(db: SessionIndexDb): string[] {
   return db
