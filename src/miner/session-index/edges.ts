@@ -88,10 +88,6 @@ export function sessionLinkedPr(spec: Omit<EdgeSpec, 'relation'>): EdgeInput {
   return edge({ ...spec, relation: RELATIONS.LINKED });
 }
 
-export function prBuiltOnBranch(spec: Omit<EdgeSpec, 'relation'>): EdgeInput {
-  return edge({ ...spec, relation: RELATIONS.BUILT_ON });
-}
-
 export function sessionWorkedBranch(spec: Omit<EdgeSpec, 'relation'>): EdgeInput {
   return edge({ ...spec, relation: RELATIONS.WORKED });
 }

@@ -75,7 +75,7 @@ describe('liveness report', () => {
       count: 1,
       declared: false,
     });
-    expect(report.relations).toContainEqual({ relation: 'built_on', count: 0, declared: true });
+    expect(report.relations).toContainEqual({ relation: 'linked', count: 0, declared: true });
   });
 
   it('does not report a resolvable session endpoint as dangling', () => {

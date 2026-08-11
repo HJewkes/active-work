@@ -137,13 +137,17 @@ export const FIXTURE_LINES: Record<string, unknown>[] = [
       },
     },
   },
-  line({
+  // Deliberately NOT built through `line()`: a real `pr-link` carries exactly
+  // these six fields. Stamping it with the helper's `cwd`/`gitBranch` is what
+  // made a dead `built_on` writer look tested for months (AW-106).
+  {
+    sessionId: SESSION,
     type: 'pr-link',
     timestamp: '2026-07-01T00:00:15Z',
     prNumber: 42,
     prRepository: 'acme/demo',
     prUrl: 'https://github.com/acme/demo/pull/42',
-  }),
+  },
   assistant('2026-07-01T00:00:16Z', [
     toolUse('t8', 'Bash', { command: 'gh pr merge 42 --squash' }),
   ]),

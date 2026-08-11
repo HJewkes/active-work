@@ -62,7 +62,6 @@ function prLink(ts: string): Record<string, unknown> {
   return line({
     type: 'pr-link',
     timestamp: ts,
-    gitBranch: 'feat/x',
     prNumber: 42,
     prRepository: 'acme/demo',
     prUrl: 'https://github.com/acme/demo/pull/42',

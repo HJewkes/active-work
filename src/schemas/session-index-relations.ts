@@ -12,8 +12,6 @@ export const RELATIONS = {
   TOUCHED: 'touched',
   /** session --linked--> pr: a `pr-link` event naming that PR. */
   LINKED: 'linked',
-  /** pr --built_on--> branch: the branch checked out when the PR was linked. */
-  BUILT_ON: 'built_on',
   /** session --worked--> branch: a git/gh command naming that branch. */
   WORKED: 'worked',
   /** session --ran--> task: an `active-work`/`aw` command naming that task id. */
@@ -40,5 +38,30 @@ export const RELATIONS = {
   /** session --edited_by_human--> file: an `edited_text_file` attachment. */
   EDITED_BY_HUMAN: 'edited_by_human',
 } as const;
+
+/**
+ * `built_on` (pr --built_on--> branch) was removed in AW-106. Recorded here so
+ * it is not reinvented.
+ *
+ * It was written from the `pr-link` handler, guarded on the line's `gitBranch`.
+ * A real `pr-link` line carries exactly six fields — type, sessionId, prNumber,
+ * prUrl, prRepository, timestamp — and none of them is `gitBranch`, `cwd` or
+ * `title`. The guard could never pass: 0 rows across 12,617 edges. The test
+ * that appeared to cover it passed because the fixture's `line()` helper
+ * stamped `gitBranch` onto every line type, so it asserted on a shape Claude
+ * Code never emits.
+ *
+ * The obvious repair — join each `pr-link` to the branch the session was on at
+ * that timestamp — resolves for 98.8% of sightings and is wrong. `pr-link`
+ * fires whenever a PR URL is *mentioned*, not when the PR is created, so the
+ * session's branch is unrelated to the PR's head and frequently in a different
+ * repository: PR #103 (real head `feat/aw26-subagent-tree`) derived as `main`,
+ * and PR #102 (real head `feat/aw-resume`) derived as
+ * `titan-design/feat/aw22-file-history`.
+ *
+ * A correct PR->branch link needs a source that names the branch: the
+ * `gh pr create` invocation, which bash-parse already sees. That is a new
+ * extractor, not a repair of this one.
+ */
 
 export type Relation = (typeof RELATIONS)[keyof typeof RELATIONS];
