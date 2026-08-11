@@ -162,9 +162,9 @@ describe('subagent sidechains', () => {
 
     expect(summary).toMatchObject({ indexed: 1, quarantined: 0, errors: [] });
     expect(
-      db.prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?').get(
-        `agent:${TOOL_USE_ID}`,
-      ),
+      db
+        .prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?')
+        .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ child_session_id: AGENT_ID });
     // The link is recorded even though no such session row exists.
     expect(db.prepare('SELECT 1 FROM sessions WHERE session_id = ?').get(AGENT_ID)).toBeUndefined();
@@ -177,9 +177,10 @@ describe('subagent sidechains', () => {
     const summary = await runRefresh({ db, root });
 
     expect(summary.transcripts).toBe(2);
-    expect(
-      db.prepare('SELECT session_id FROM sessions ORDER BY session_id').all(),
-    ).toEqual([{ session_id: AGENT_ID }, { session_id: PARENT }]);
+    expect(db.prepare('SELECT session_id FROM sessions ORDER BY session_id').all()).toEqual([
+      { session_id: AGENT_ID },
+      { session_id: PARENT },
+    ]);
   });
 
   it('records the parent edge from the subagent’s own transcript', async () => {
@@ -205,7 +206,9 @@ describe('subagent sidechains', () => {
 
     expect(
       db
-        .prepare('SELECT session_id, child_session_id, agent_type FROM subagents WHERE agent_ref = ?')
+        .prepare(
+          'SELECT session_id, child_session_id, agent_type FROM subagents WHERE agent_ref = ?',
+        )
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ session_id: PARENT, child_session_id: AGENT_ID, agent_type: 'Explore' });
   });
