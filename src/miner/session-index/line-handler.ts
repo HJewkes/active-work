@@ -193,7 +193,15 @@ export class LineHandler {
   ) {}
 
   handle(line: Json, loc: RawLine): void {
-    const ownSessionId = str(line, 'sessionId') ?? this.fallbackSessionId;
+    // In a sidechain the fallback is the FILE's basename, `agent-<id>`, while
+    // `subagentId` is the bare `<id>` — so a line carrying no `sessionId` of
+    // its own used to resolve to a spelling of this very session that nothing
+    // else uses, and `observeSubagentParent`'s self-reference guard could not
+    // see it was the same session. That wrote 15 `session:agent-X --spawned-->
+    // session:X` self-loops, every dangling session endpoint in the index
+    // (AW-107). A line with no sessionId inside a sidechain belongs to the
+    // subagent; it cannot be naming a parent.
+    const ownSessionId = str(line, 'sessionId') ?? this.subagentId ?? this.fallbackSessionId;
     const sessionId = this.subagentId ?? ownSessionId;
     if (!sessionId) return;
     const branch = str(line, 'gitBranch');
