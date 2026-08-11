@@ -173,6 +173,29 @@ export function reconcileSubagents(db: SessionIndexDb): number {
   return db.prepare(RECONCILE_SUBAGENTS).run().changes;
 }
 
+/**
+ * Fold complete `gh pr create` sightings into `prs` (AW-104).
+ *
+ * An INSERT rather than an UPDATE: a PR observed being created is a real PR
+ * whether or not a `pr-link` ever mentioned it, and `pr_ref` is built the same
+ * way from both sources, so the two converge on one row instead of racing.
+ * Only halves that found their partner qualify — a title with no number cannot
+ * name a PR, and a number with no title has nothing to add.
+ */
+const RECONCILE_PR_CREATES = `
+  INSERT INTO prs (pr_ref, number, repo, title, url)
+  SELECT 'pr:' || repo || '#' || number, number, repo, title, url
+    FROM pr_create_observations
+   WHERE number IS NOT NULL AND repo IS NOT NULL AND title IS NOT NULL
+  ON CONFLICT (pr_ref) DO UPDATE SET
+    title = COALESCE(prs.title, excluded.title),
+    url = COALESCE(prs.url, excluded.url)`;
+
+/** Apply every complete PR-creation sighting. Returns the rows written. */
+export function reconcilePrCreates(db: SessionIndexDb): number {
+  return db.prepare(RECONCILE_PR_CREATES).run().changes;
+}
+
 /** Every session in the index — the scope a full rebuild rolls up. */
 export function allSessionIds(db: SessionIndexDb): string[] {
   return db

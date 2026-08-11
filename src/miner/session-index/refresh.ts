@@ -6,7 +6,12 @@ import { defaultSessionIndexPath, openSessionIndex, type SessionIndexDb } from '
 import { discoverTranscripts, transcriptsRoot } from './discover.js';
 import { indexTranscript, type IndexOutcome } from './quarantine.js';
 import { reconcileMissingTranscripts } from './reconcile.js';
-import { reconcilePrMerges, reconcileSubagents, rollupSessions } from './rollup.js';
+import {
+  reconcilePrCreates,
+  reconcilePrMerges,
+  reconcileSubagents,
+  rollupSessions,
+} from './rollup.js';
 import { resetIndex } from './writer.js';
 
 /**
@@ -114,6 +119,10 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // transcript from the `pr-link` it refers to, so this cannot be scoped to
     // what this pass touched.
     reconcilePrMerges(db);
+    // Same reasoning: a `gh pr create` command and its result can be split by a
+    // chunk boundary, so the two halves are only guaranteed joinable once every
+    // transcript in the pass has been written.
+    reconcilePrCreates(db);
     // After the rollup, which is what makes `sessions.ended_at` current — the
     // value subagent end times are read from.
     reconcileSubagents(db);

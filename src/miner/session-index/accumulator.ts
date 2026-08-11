@@ -8,6 +8,7 @@ import type {
   FileInput,
   HumanEditInput,
   PermissionPhaseInput,
+  PrCreateInput,
   PrInput,
   PrMergeInput,
   SearchableSpanInput,
@@ -33,6 +34,7 @@ export class ExtractAccumulator {
   readonly fileCheckpoints: FileCheckpointInput[] = [];
   readonly spans: SearchableSpanInput[] = [];
   readonly prMerges: PrMergeInput[] = [];
+  readonly prCreates: PrCreateInput[] = [];
 
   private readonly sessions = new Map<string, SessionInput>();
   private readonly usage = new Map<string, SessionModelUsageInput>();
@@ -177,6 +179,7 @@ export class ExtractAccumulator {
       fileCheckpoints: this.fileCheckpoints,
       prs: [...this.prs.values()],
       prMerges: this.prMerges,
+      prCreates: this.prCreates,
       branches: [...this.branches.values()],
       files: [...this.files.values()],
       tasks: [...this.tasks.values()],

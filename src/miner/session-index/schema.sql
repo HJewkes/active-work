@@ -131,13 +131,27 @@ CREATE TABLE IF NOT EXISTS permission_phases (
 );
 CREATE INDEX IF NOT EXISTS idx_permphases_session ON permission_phases(session_id, t_valid);
 
+-- `lines_added`/`lines_removed` were dropped in AW-104. Recorded here so they
+-- are not reinvented: this table can say THAT a human edited a file, never how
+-- much.
+--
+-- The only source is the `edited_text_file` attachment, which carries exactly
+-- three fields across all 860 in the corpus — `type`, `filename`, `snippet`.
+-- There is no before-state to diff against, and `snippet` is not even a
+-- complete after-state: it is a window around the edit, explicitly truncated in
+-- 434 of 860 cases and starting at a line other than 1 in 181.
+--
+-- The plausible repair — bracket each edit with the `file_checkpoints` backups
+-- either side of it and diff those — resolves 153 of 861 edits and is wrong for
+-- half of them. 78 of those 153 windows also contain a Claude `Edit`/`Write` to
+-- the same file, so the diff bills Claude's changes to the human; the windows
+-- are hours wide (one runs 15:46 -> 19:24). Correctly derivable: 75/861, 8.7%.
+-- A real number needs a source that states the delta, which no line does.
 CREATE TABLE IF NOT EXISTS human_edits (
   edit_id       INTEGER PRIMARY KEY,
   session_id    TEXT REFERENCES sessions(session_id),
   file_path     TEXT NOT NULL,
   ts            TEXT NOT NULL,
-  lines_added   INTEGER,
-  lines_removed INTEGER,
   fact_id       INTEGER REFERENCES facts(fact_id)
 );
 CREATE INDEX IF NOT EXISTS idx_human_edits_session ON human_edits(session_id);
@@ -172,6 +186,17 @@ CREATE TABLE IF NOT EXISTS prs (
   pr_ref TEXT PRIMARY KEY, number INTEGER, repo TEXT, title TEXT, state TEXT,
   url TEXT, merged_at TEXT
 );
+-- `base` is the branch this one FORKED FROM, as stated by the command that
+-- created it — `git checkout -b <name> <start>` or `gh pr create --head <name>
+-- --base <base>`. It is deliberately not "the PR's current base": a stacked PR
+-- gets retargeted when its parent merges, and the transcript never says so.
+-- `fix/aw105-reconcile-missing-transcripts` reads `feat/aw26-subagent-tree`
+-- here while GitHub now reports `main`; git confirms the fork point, so the
+-- stored value is the durable fact and the retarget is the thing not recorded.
+--
+-- Only ever written from a command that names both ends. Inferring it from the
+-- session's branch at the time is the mistake AW-106 documents: 176 of 201
+-- `checkout -b` lines carry `gitBranch: HEAD`, and 182 `cd` into another repo.
 CREATE TABLE IF NOT EXISTS branches (
   branch_ref TEXT PRIMARY KEY, repo TEXT, name TEXT, base TEXT,
   created_at TEXT, deleted_at TEXT
@@ -196,6 +221,20 @@ CREATE TABLE IF NOT EXISTS pr_merge_observations (
   repo_hint TEXT,
   merged_at TEXT NOT NULL,
   PRIMARY KEY (number, repo_hint, merged_at)
+);
+
+-- A `gh pr create` sighting, split across two lines and rejoined here (AW-104).
+-- The command names the title; only the result names the number, in the
+-- structured `toolUseResult.gitOperation.pr`. The tool_use id is the sole thing
+-- both lines carry, so it is the key — and persisting the halves is what makes
+-- the join survive a chunk boundary landing between them, the same reason
+-- `pr_merge_observations` exists. `reconcilePrCreations` folds them into `prs`.
+CREATE TABLE IF NOT EXISTS pr_create_observations (
+  tool_use_id TEXT PRIMARY KEY,
+  title       TEXT,
+  number      INTEGER,
+  repo        TEXT,
+  url         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tasks (

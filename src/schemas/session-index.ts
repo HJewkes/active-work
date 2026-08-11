@@ -85,8 +85,6 @@ export const HumanEditInputSchema = z.object({
   sessionId: nonEmpty,
   filePath: nonEmpty,
   ts: z.string(),
-  linesAdded: z.number().int().nullable().default(null),
-  linesRemoved: z.number().int().nullable().default(null),
   factByteOffset: offset.nullable().default(null),
 });
 
@@ -119,6 +117,19 @@ export const PrMergeInputSchema = z.object({
   number: z.number().int().positive(),
   repoHint: z.string().nullable().default(null),
   mergedAt: z.string(),
+});
+
+/**
+ * Half a `gh pr create` sighting, keyed by the tool_use id the command and its
+ * result share. Every field but that key is nullable because each line supplies
+ * only its own half — the command the title, the result the number and repo.
+ */
+export const PrCreateInputSchema = z.object({
+  toolUseId: nonEmpty,
+  title: z.string().nullable().default(null),
+  number: z.number().int().positive().nullable().default(null),
+  repo: z.string().nullable().default(null),
+  url: z.string().nullable().default(null),
 });
 
 export const BranchInputSchema = z.object({
@@ -218,6 +229,7 @@ export type HumanEditInput = z.infer<typeof HumanEditInputSchema>;
 export type FileCheckpointInput = z.infer<typeof FileCheckpointInputSchema>;
 export type PrInput = z.infer<typeof PrInputSchema>;
 export type PrMergeInput = z.infer<typeof PrMergeInputSchema>;
+export type PrCreateInput = z.infer<typeof PrCreateInputSchema>;
 export type BranchInput = z.infer<typeof BranchInputSchema>;
 export type FileInput = z.infer<typeof FileInputSchema>;
 export type TaskInput = z.infer<typeof TaskInputSchema>;
@@ -244,6 +256,7 @@ export const ExtractResultSchema = z.object({
   fileCheckpoints: z.array(FileCheckpointInputSchema),
   prs: z.array(PrInputSchema),
   prMerges: z.array(PrMergeInputSchema),
+  prCreates: z.array(PrCreateInputSchema),
   branches: z.array(BranchInputSchema),
   files: z.array(FileInputSchema),
   tasks: z.array(TaskInputSchema),
