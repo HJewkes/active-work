@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import os from 'node:os';
 import { RELATIONS } from '../../schemas/session-index-relations.js';
 import type { SessionIndexDb } from './db.js';
+import { toAbsolutePath } from './discover.js';
 
 /**
  * "Which declared structures does nothing ever populate?"
@@ -179,17 +179,17 @@ function refNamespaces(db: SessionIndexDb): RefNamespaceLiveness[] {
 }
 
 /**
- * `transcripts.status` declares a `missing` value that only the indexer sets,
- * and the indexer only visits transcripts discovery still finds — so a deleted
- * file's row keeps saying `ok` forever. Counted here because "the status exists
- * and nothing reaches it" is exactly the class this report is for.
+ * Rows still claiming `ok` whose file is gone. `reconcileMissingTranscripts`
+ * (AW-105) now marks these at the end of every refresh pass, so a healthy index
+ * reports 0 here and a non-zero count means the index is stale rather than that
+ * the status is unreachable — which is what it meant when this check was
+ * written, and why it was written.
  */
 function staleTranscripts(db: SessionIndexDb): number {
   const rows = db.prepare("SELECT path FROM transcripts WHERE status = 'ok'").all() as {
     path: string;
   }[];
-  const home = os.homedir();
-  return rows.filter((row) => !existsSync(row.path.replace(/^~/, home))).length;
+  return rows.filter((row) => !existsSync(toAbsolutePath(row.path))).length;
 }
 
 export function runLiveness(db: SessionIndexDb): LivenessReport {

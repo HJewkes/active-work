@@ -43,6 +43,14 @@ function toDisplayPath(absolutePath: string): string {
 }
 
 /**
+ * Inverse of `toDisplayPath`, for the callers that hold a stored
+ * `transcripts.path` and need to touch the file it names.
+ */
+export function toAbsolutePath(displayPath: string): string {
+  return displayPath.startsWith('~/') ? path.join(os.homedir(), displayPath.slice(2)) : displayPath;
+}
+
+/**
  * Every `agent-<id>.jsonl` under `<project>/<parentSession>/subagents/`, or an
  * empty list when that session has no subagent directory — which is the common
  * case, so a missing directory is not an error.
