@@ -30,6 +30,9 @@ const ResultSchema = z.object({
     z.object({ namespace: z.string(), edges: z.number(), dangling: z.number() }),
   ),
   unmappedNamespaces: z.array(z.string()),
+  expectedEmptyColumns: z.array(
+    z.object({ table: z.string(), column: z.string(), reason: z.string() }),
+  ),
   staleTranscripts: z.number(),
   transcripts: z.number(),
 });
@@ -44,6 +47,14 @@ function report(result: Result): string {
   if (result.emptyColumns.length === 0) bullet(color.green('none — every column has a writer'));
   for (const column of result.emptyColumns) {
     bullet(`${color.yellow('EMPTY')} ${column.table}.${column.column}  (0 of ${column.rows} rows)`);
+  }
+
+  if (result.expectedEmptyColumns.length > 0) {
+    lines.push('');
+    lines.push(color.bold('  Empty on purpose'));
+    for (const column of result.expectedEmptyColumns) {
+      bullet(color.dim(`${column.table}.${column.column} — ${column.reason}`));
+    }
   }
 
   lines.push('');
@@ -93,6 +104,11 @@ export default defineCommand<Args, Result>({
       const liveness = runLiveness(db);
       const result: Result = {
         emptyColumns: liveness.emptyColumns,
+        expectedEmptyColumns: liveness.expectedEmptyColumns.map((column) => ({
+          table: column.table,
+          column: column.column,
+          reason: column.reason,
+        })),
         unusedRelations: liveness.relations
           .filter((relation) => relation.declared && relation.count === 0)
           .map((relation) => relation.relation),

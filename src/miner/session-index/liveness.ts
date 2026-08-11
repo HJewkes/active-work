@@ -44,8 +44,10 @@ export interface RefNamespaceLiveness {
 }
 
 export interface LivenessReport {
-  /** Columns nothing ever writes — the headline finding. */
+  /** Columns nothing writes and nothing explains — the headline finding. */
   emptyColumns: ColumnLiveness[];
+  /** Empty, but declared so in `EXPECTED_EMPTY`; reported, not flagged. */
+  expectedEmptyColumns: (ColumnLiveness & { reason: string })[];
   columns: ColumnLiveness[];
   relations: RelationLiveness[];
   refNamespaces: RefNamespaceLiveness[];
@@ -56,6 +58,24 @@ export interface LivenessReport {
 
 /** Internal bookkeeping tables that have no product meaning. */
 const SKIP_TABLES = /^(sqlite_|spans_fts)/;
+
+/**
+ * Structures that are empty *on purpose*, with the reason.
+ *
+ * This is the difference between a diagnostic people act on and one they learn
+ * to ignore. Some columns are legitimately never written, and reporting them
+ * next to genuine unfinished work trains the reader to skim past both. An entry
+ * here is a claim that emptiness is correct — so it carries its justification,
+ * and `miner liveness` still prints it, just under a heading that says so.
+ */
+export const EXPECTED_EMPTY: Record<string, string> = {
+  'session_model_usage.cost_usd':
+    'optional denormalized cache; dollars come from joining model_pricing at rollup time so price changes apply retroactively',
+  'edges.t_invalid':
+    'NULL means current; the index is rebuilt from scratch, so no edge is ever superseded in place',
+  'edges.t_expired':
+    'NULL means current — idx_edges_current is defined WHERE t_expired IS NULL, so all-NULL is the designed steady state',
+};
 
 /**
  * Where an edge endpoint's `<prefix>:` resolves. Deliberately explicit and
@@ -174,9 +194,15 @@ function staleTranscripts(db: SessionIndexDb): number {
 
 export function runLiveness(db: SessionIndexDb): LivenessReport {
   const columns = tableNames(db).flatMap((table) => scanTable(db, table));
+  // A column in an empty table says nothing, so those are not findings.
+  const empty = columns.filter((column) => column.nonNull === 0 && column.rows > 0);
+  const reasonFor = (column: ColumnLiveness): string | undefined =>
+    EXPECTED_EMPTY[`${column.table}.${column.column}`];
   return {
-    // A column in an empty table says nothing, so those are not findings.
-    emptyColumns: columns.filter((column) => column.nonNull === 0 && column.rows > 0),
+    emptyColumns: empty.filter((column) => reasonFor(column) === undefined),
+    expectedEmptyColumns: empty
+      .filter((column) => reasonFor(column) !== undefined)
+      .map((column) => ({ ...column, reason: reasonFor(column) as string })),
     columns,
     relations: relationLiveness(db),
     refNamespaces: refNamespaces(db),
