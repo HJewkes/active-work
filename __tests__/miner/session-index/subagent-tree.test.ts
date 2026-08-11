@@ -10,7 +10,7 @@
  * regress if someone widened discovery without the identity swap.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -95,6 +95,22 @@ function writeParent({ withBridge = true } = {}): void {
  * the whole point of the fixture. Prompt/assistant pairs, because a turn is
  * only counted once something closes it.
  */
+/**
+ * A sidechain line with NO `sessionId` of its own — the shape that produced
+ * every dangling session endpoint in the index (AW-107). 15 real subagent
+ * transcripts contain one; `file-history-snapshot` is the usual culprit.
+ */
+function appendSessionlessLine(): void {
+  const file = path.join(root, 'demo', PARENT, 'subagents', `agent-${AGENT_ID}.jsonl`);
+  const line = {
+    type: 'file-history-snapshot',
+    messageId: 'msg-x',
+    isSnapshotUpdate: false,
+    snapshot: { messageId: 'msg-x', trackedFileBackups: {}, timestamp: '2026-08-01T00:02:00.000Z' },
+  };
+  writeFileSync(file, readFileSync(file, 'utf8') + JSON.stringify(line) + '\n', 'utf8');
+}
+
 function writeSubagent(turns = 2, { nestedDispatch = false } = {}): void {
   const dirPath = path.join(root, 'demo', PARENT, 'subagents');
   mkdirSync(dirPath, { recursive: true });
@@ -225,6 +241,45 @@ describe('subagent sidechains', () => {
         )
         .all(),
     ).toEqual([{ source_ref: `session:${PARENT}`, target_ref: `session:${AGENT_ID}` }]);
+  });
+
+  // The sidechain's fallback session id is the file's basename, `agent-<id>`,
+  // but the session is keyed on the bare `<id>`. A line with no `sessionId`
+  // resolved to the former and read as a *different* session, so the
+  // self-reference guard let a `session:agent-X --spawned--> session:X` edge
+  // through — 15 in the real corpus, and every dangling session endpoint in it.
+  it('does not spawn-edge a subagent to itself from a line carrying no sessionId', async () => {
+    writeParent({ withBridge: false });
+    writeSubagent();
+    appendSessionlessLine();
+
+    await runRefresh({ db, root });
+
+    expect(
+      db
+        .prepare(
+          "SELECT source_ref, target_ref FROM edges WHERE relation = 'spawned' AND target_ref LIKE 'session:%'",
+        )
+        .all(),
+    ).toEqual([{ source_ref: `session:${PARENT}`, target_ref: `session:${AGENT_ID}` }]);
+  });
+
+  it('leaves no edge endpoint pointing at a session that does not exist', async () => {
+    writeParent();
+    writeSubagent();
+    appendSessionlessLine();
+
+    await runRefresh({ db, root });
+
+    const dangling = db
+      .prepare(
+        `SELECT e.ref FROM (SELECT source_ref AS ref FROM edges UNION ALL SELECT target_ref FROM edges) e
+          WHERE e.ref LIKE 'session:%'
+            AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = substr(e.ref, 9))`,
+      )
+      .all();
+
+    expect(dangling).toEqual([]);
   });
 
   it('bridges the dispatch to the child transcript via toolUseResult.agentId', async () => {

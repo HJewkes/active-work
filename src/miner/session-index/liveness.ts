@@ -94,6 +94,10 @@ const REF_TABLES: Record<string, { table: string; column: string; bare?: boolean
   branch: { table: 'branches', column: 'branch_ref' },
   task: { table: 'tasks', column: 'task_ref' },
   artifact: { table: 'artifacts', column: 'artifact_ref' },
+  // `prs` is keyed by `pr_ref` like every other entity table. It was left
+  // unmapped on the belief that it was keyed by `(number, repo)` — that is
+  // `pr_merge_observations`, a different table (AW-107).
+  pr: { table: 'prs', column: 'pr_ref' },
 };
 
 function tableNames(db: SessionIndexDb): string[] {

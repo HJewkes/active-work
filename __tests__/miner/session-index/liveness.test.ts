@@ -101,10 +101,36 @@ describe('liveness report', () => {
 
   it('flags a ref namespace it cannot resolve rather than passing it silently', () => {
     addSession('s-1');
+    // A namespace with no `REF_TABLES` entry at all. Adding a ref type without
+    // extending that map has to surface as a finding, not pass quietly.
+    addEdge('session:s-1', 'touched', 'commit:acme/demo@abc123');
+
+    const report = runLiveness(db);
+
+    expect(report.refNamespaces).toContainEqual({ namespace: 'commit', edges: 1, dangling: null });
+  });
+
+  // `pr` read as UNMAPPED for its whole life on the belief that `prs` was keyed
+  // by `(number, repo)`. That is `pr_merge_observations`; `prs` has a `pr_ref`
+  // primary key like every other entity table (AW-107).
+  it('resolves a pr endpoint against the prs table', () => {
+    addSession('s-1');
+    db.prepare(
+      "INSERT INTO prs (pr_ref, number, repo) VALUES ('pr:acme/demo#1', 1, 'acme/demo')",
+    ).run();
     addEdge('session:s-1', 'linked', 'pr:acme/demo#1');
 
     const report = runLiveness(db);
 
-    expect(report.refNamespaces).toContainEqual({ namespace: 'pr', edges: 1, dangling: null });
+    expect(report.refNamespaces).toContainEqual({ namespace: 'pr', edges: 1, dangling: 0 });
+  });
+
+  it('reports a pr endpoint with no matching row', () => {
+    addSession('s-1');
+    addEdge('session:s-1', 'linked', 'pr:acme/demo#404');
+
+    const report = runLiveness(db);
+
+    expect(report.refNamespaces).toContainEqual({ namespace: 'pr', edges: 1, dangling: 1 });
   });
 });
