@@ -33,7 +33,16 @@ const UPSERT_SESSION = `
   ON CONFLICT (session_id) DO UPDATE SET
     started_at  = MIN(COALESCE(started_at, excluded.started_at), COALESCE(excluded.started_at, started_at)),
     ended_at    = MAX(COALESCE(ended_at, excluded.ended_at), COALESCE(excluded.ended_at, ended_at)),
-    start_type  = COALESCE(start_type, excluded.start_type),
+    -- Whichever side saw the earlier line wins, so the value cannot depend on
+    -- which chunk was written first. Every RHS here reads the pre-update row,
+    -- so this still sees the old started_at despite the MIN() above (AW-103).
+    start_type  = CASE
+      WHEN excluded.start_type IS NULL THEN start_type
+      WHEN start_type IS NULL THEN excluded.start_type
+      WHEN COALESCE(excluded.started_at, started_at) < COALESCE(started_at, excluded.started_at)
+        THEN excluded.start_type
+      ELSE start_type
+    END,
     cwd         = COALESCE(excluded.cwd, cwd),
     git_branch  = COALESCE(git_branch, excluded.git_branch),
     ai_title    = COALESCE(excluded.ai_title, ai_title),

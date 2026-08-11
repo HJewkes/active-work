@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   transcript_id INTEGER REFERENCES transcripts(transcript_id),
   started_at    TEXT,
   ended_at      TEXT,
+  -- The `entrypoint` on the session's earliest line: `cli` for an interactive
+  -- Claude Code session, `sdk-cli` for an SDK-driven one. Every session in the
+  -- corpus carries it. Two of 536 report both, in opposite directions, so this
+  -- is resolved by earliest timestamp rather than by a rule over the values.
   start_type    TEXT,
   cwd           TEXT,
   git_branch    TEXT,

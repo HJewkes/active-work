@@ -289,7 +289,7 @@ export class LineHandler {
 
   private observeSession(ctx: LineContext): void {
     const session = this.acc.session(ctx.sessionId);
-    this.acc.observeSessionTimestamp(ctx.sessionId, ctx.ts || null);
+    this.acc.observeSessionTimestamp(ctx.sessionId, ctx.ts || null, str(ctx.line, 'entrypoint'));
     session.cwd = ctx.cwd ?? session.cwd;
     session.cliVersion = str(ctx.line, 'version') ?? session.cliVersion;
     if (!ctx.gitBranch) return;
