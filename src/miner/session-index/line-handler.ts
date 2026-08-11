@@ -4,6 +4,7 @@ import {
   IGNORED_PATH,
   commandCwd,
   parseGitIntent,
+  parsePrCreateTitle,
   parseTaskId,
   realCommand,
 } from './bash-parse.js';
@@ -302,13 +303,18 @@ export class LineHandler {
     this.recordBranch(ctx, ctx.gitBranch);
   }
 
-  private recordBranch(ctx: LineContext, name: string, repo = ctx.repo): string {
+  private recordBranch(
+    ctx: LineContext,
+    name: string,
+    repo = ctx.repo,
+    base: string | null = null,
+  ): string {
     const ref = branchRef(repo, name);
     this.acc.addBranch({
       branchRef: ref,
       repo,
       name,
-      base: null,
+      base,
       createdAt: ctx.ts || null,
       deletedAt: null,
     });
@@ -417,8 +423,6 @@ export class LineHandler {
       sessionId: ctx.sessionId,
       filePath: relative,
       ts: ctx.ts,
-      linesAdded: null,
-      linesRemoved: null,
       factByteOffset: ctx.loc.byteOffset,
     });
     this.acc.addEdge(
@@ -472,6 +476,38 @@ export class LineHandler {
     this.fact(ctx, errored ? 'tool_result_error' : 'tool_result');
     this.span(ctx, 'tool_result');
     this.linkDispatchedSubagent(ctx, message);
+    this.recordPrCreateResult(ctx, message);
+  }
+
+  /**
+   * The other half of a `gh pr create` sighting (AW-104).
+   *
+   * `toolUseResult.gitOperation.pr` is structured — `{number, url, action}` —
+   * so the PR number is read rather than scraped out of stdout, and `action`
+   * distinguishes a creation from the `edited`/`commented`/`merged`/`closed`
+   * operations that share the field. The repo comes from `url`, in the same
+   * `owner/name` form `pr-link` reports, so both sources mint one `pr_ref`.
+   */
+  private recordPrCreateResult(ctx: LineContext, message: Json | null): void {
+    const pr = asObject(asObject(ctx.line.toolUseResult)?.gitOperation)?.pr;
+    const created = asObject(pr);
+    if (!created || str(created, 'action') !== 'created') return;
+    const number = int(created, 'number');
+    const repo = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/\d+/.exec(
+      str(created, 'url') ?? '',
+    )?.[1];
+    const toolUseId = str(
+      blocks(message).find((b) => b.type === 'tool_result') ?? null,
+      'tool_use_id',
+    );
+    if (!toolUseId || !repo || number <= 0) return;
+    this.acc.prCreates.push({
+      toolUseId,
+      title: null,
+      number,
+      repo,
+      url: str(created, 'url'),
+    });
   }
 
   /**
@@ -559,7 +595,7 @@ export class LineHandler {
     if (FILE_TOOLS.has(name)) return this.handleFileTouch(ctx, input);
     if (name === 'Agent') return this.handleAgent(ctx, block, input);
     if (name === 'Artifact') return this.handleArtifactTool(ctx, block, input);
-    if (name === 'Bash') return this.handleBash(ctx, input);
+    if (name === 'Bash') return this.handleBash(ctx, block, input);
   }
 
   private handleFileTouch(ctx: LineContext, input: Json | null): void {
@@ -624,19 +660,33 @@ export class LineHandler {
     );
   }
 
-  private handleBash(ctx: LineContext, input: Json | null): void {
+  private handleBash(ctx: LineContext, block: Json, input: Json | null): void {
     const raw = str(input, 'command');
     if (!raw) return;
     const git = parseGitIntent(raw);
     // A git verb is attributed to the directory it runs in, which a `cd …` or
     // `git -C …` prefix can move away from the session's own cwd.
     if (git) this.recordGitIntent(ctx, git, repoForCwd(commandCwd(raw, ctx.cwd)));
+    this.recordPrCreateTitle(block, raw);
     this.recordTask(ctx, realCommand(raw));
+  }
+
+  /**
+   * Half of a `gh pr create` sighting: the command states the title but not the
+   * number, which only exists once GitHub has answered. The tool_use id is the
+   * only thing the two lines share, so it keys the observation that
+   * `reconcilePrCreations` later joins them on.
+   */
+  private recordPrCreateTitle(block: Json, raw: string): void {
+    const title = parsePrCreateTitle(raw);
+    const toolUseId = str(block, 'id');
+    if (!title || !toolUseId) return;
+    this.acc.prCreates.push({ toolUseId, title, number: null, repo: null, url: null });
   }
 
   private recordGitIntent(ctx: LineContext, git: GitIntent, repo: string | null): void {
     const session = this.acc.session(ctx.sessionId);
-    if (git.setBranch) this.recordBranch(ctx, git.setBranch, repo);
+    if (git.setBranch) this.recordBranch(ctx, git.setBranch, repo, git.branchBase);
     if (git.deletedBranch) this.recordBranchDeletion(ctx, git.deletedBranch, repo);
     if (git.commit) session.commitDelta += 1;
     if (git.push) session.pushDelta += 1;

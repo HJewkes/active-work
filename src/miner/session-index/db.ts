@@ -20,7 +20,7 @@ export type SessionIndexDb = Database.Database;
  *    the wrong shape and must be re-derived.
  * 4: AW-25 — new `file_checkpoints` table (no reshaping of existing tables).
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Read from disk rather than inlined as a string so the DDL stays a real

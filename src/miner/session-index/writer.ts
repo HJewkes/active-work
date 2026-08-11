@@ -130,6 +130,20 @@ const RECORD_PR_MERGE = `
   ON CONFLICT (number, repo_hint, merged_at) DO NOTHING`;
 
 /**
+ * The command half and the result half of one `gh pr create` arrive as separate
+ * rows on the same key, in whichever order the chunks are processed — so this
+ * merges field-wise instead of letting either half win outright.
+ */
+const RECORD_PR_CREATE = `
+  INSERT INTO pr_create_observations (tool_use_id, title, number, repo, url)
+  VALUES (@toolUseId, @title, @number, @repo, @url)
+  ON CONFLICT (tool_use_id) DO UPDATE SET
+    title = COALESCE(title, excluded.title),
+    number = COALESCE(number, excluded.number),
+    repo = COALESCE(repo, excluded.repo),
+    url = COALESCE(url, excluded.url)`;
+
+/**
  * Every table `applyExtractResult` writes, in reverse dependency order. Each is
  * fully derivable from the JSONL plus the `transcripts` watermark, which is
  * what makes "drop and re-derive" a safe rebuild strategy.
@@ -147,6 +161,7 @@ const DERIVED_TABLES = [
   'facts',
   'prs',
   'pr_merge_observations',
+  'pr_create_observations',
   'branches',
   'files',
   'tasks',
@@ -231,6 +246,8 @@ function applyAssets(db: SessionIndexDb, result: ExtractResult): void {
   }
   const recordMerge = db.prepare(RECORD_PR_MERGE);
   for (const merge of result.prMerges) recordMerge.run(merge);
+  const recordCreate = db.prepare(RECORD_PR_CREATE);
+  for (const create of result.prCreates) recordCreate.run(create);
 }
 
 /**
@@ -274,8 +291,8 @@ function applyLinkedRows(db: SessionIndexDb, transcriptId: number, result: Extra
   for (const turn of result.turns) upsertTurn.run(withFactId(turn));
 
   const insertHumanEdit = db.prepare(
-    'INSERT INTO human_edits (session_id, file_path, ts, lines_added, lines_removed, fact_id)' +
-      ' VALUES (@sessionId, @filePath, @ts, @linesAdded, @linesRemoved, @factId)',
+    'INSERT INTO human_edits (session_id, file_path, ts, fact_id)' +
+      ' VALUES (@sessionId, @filePath, @ts, @factId)',
   );
   for (const edit of result.humanEdits) insertHumanEdit.run(withFactId(edit));
 
