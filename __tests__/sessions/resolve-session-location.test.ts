@@ -67,10 +67,23 @@ describe('resolveSessionLocation', () => {
       );
       const result = await resolveSessionLocation(activeRoot, 'aaaa-bbbb-cccc');
       expect(result).toEqual({
-        cwd: '/Users/alice/projects/my-initiative',
+        cwd: path.join(activeRoot, 'my-initiative'),
         source: 'active-work',
         slug: 'my-initiative',
       });
+    });
+  });
+
+  it('resumes into the initiative directory even when a default worktree is registered', async () => {
+    // AW-115: registering a worktree states where dispatched agents run; it
+    // must not relocate the operator's own session. Registering one used to
+    // move both, so a session that ran in the initiative dir resumed in a
+    // repo it had never been opened in.
+    await withEmptyActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithSession(activeRoot, 'relay', 'ran-in-notes-dir', '/Users/alice/code');
+      const result = await resolveSessionLocation(activeRoot, 'ran-in-notes-dir');
+      expect(result?.cwd).toBe(path.join(activeRoot, 'relay'));
+      expect(result?.cwd).not.toBe('/Users/alice/code');
     });
   });
 

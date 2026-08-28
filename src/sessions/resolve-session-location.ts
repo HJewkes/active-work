@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { listInitiativeSlugs, resolveCwdHint } from '../commands/_open-helpers.js';
+import { listInitiativeSlugs, resolveLaunchCwd } from '../commands/_open-helpers.js';
 
 export interface ResolvedSessionLocation {
   cwd: string;
@@ -39,7 +39,7 @@ async function findInActiveWork(
       }
       const { data } = matter(raw);
       if (data.session_id === sessionId) {
-        return { slug, cwd: await resolveCwdHint(activeRoot, slug) };
+        return { slug, cwd: resolveLaunchCwd(activeRoot, slug) };
       }
     }
   }
@@ -99,9 +99,10 @@ async function findInClaudeProjects(sessionId: string): Promise<string | null> {
 
 /**
  * Resolve the working directory a session id belongs to: active-work's own
- * session log first (giving the initiative's current registered worktree,
- * which may have moved since the session ran), then a direct filename match
- * under `~/.claude/projects` for sessions active-work never tracked.
+ * session log first (giving the initiative's directory, where `aw` launches
+ * every session), then a direct filename match under `~/.claude/projects` for
+ * sessions active-work never tracked — there the transcript's recorded `cwd`
+ * is the answer, since such a session may have run anywhere.
  */
 export async function resolveSessionLocation(
   activeRoot: string,
