@@ -68,7 +68,7 @@ describe('resume command', () => {
       const result = await resumeCommand.run({ session_id: 'known-session' }, makeCtx(activeRoot));
       expect(result).toEqual({
         session_id: 'known-session',
-        cwd: '/Users/alice/projects/my-initiative',
+        cwd: path.join(activeRoot, 'my-initiative'),
         source: 'active-work',
         slug: 'my-initiative',
       });

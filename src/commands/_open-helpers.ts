@@ -40,9 +40,30 @@ export async function resolveSlug(activeRoot: string, input: string): Promise<st
 }
 
 /**
- * The directory to launch a Claude session in for a given initiative: its
- * preferred registered worktree, or the active-root initiative dir itself
- * when none is registered. Shared by `open` (bootstrap) and `resume`.
+ * The initiative's own directory under the active root — where an interactive
+ * Claude session launches, always, regardless of what worktrees are
+ * registered. Used by the `aw` launcher and `resume`.
+ *
+ * Deliberately not `resolveCwdHint`. Registering a worktree is a statement
+ * about where *dispatched agents* need to run (they must be in a git repo to
+ * commit); it is not a request to move the operator's own sessions out of the
+ * initiative's notes and state. Those two were one value until AW-115, so
+ * `active-work worktree set relay ~/projects/relay` — run to fix relay's
+ * dispatch — silently relocated every subsequent `aw relay` as well.
+ */
+export function resolveLaunchCwd(activeRoot: string, slug: string): string {
+  return path.join(activeRoot, slug);
+}
+
+/**
+ * The initiative's preferred registered worktree, or its active-root directory
+ * when none is registered.
+ *
+ * This is the *dispatch* answer, surfaced as `cwd_hint` on `open`'s JSON
+ * envelope and consumed by out-of-process callers that need a git checkout —
+ * relay's daemon resolves a voice-dispatched item's working directory this way
+ * (`daemon/src/initiative.ts`). The launcher deliberately does not use it; see
+ * `resolveLaunchCwd`.
  */
 export async function resolveCwdHint(activeRoot: string, slug: string): Promise<string> {
   const registered = await readRegisteredWorktrees(path.join(activeRoot, slug));

@@ -5,8 +5,8 @@
  *
  * Usage:
  *   aw [slug]        Launch claude with the bootstrap prompt and the
- *                    initiative's worktree as cwd. Omit the slug to pick
- *                    one interactively.
+ *                    initiative's own directory under the active root as cwd.
+ *                    Omit the slug to pick one interactively.
  *
  * For the management CLI (new, task, focus, session, etc.), use
  * `active-work`. This launcher deliberately rejects sub-command
@@ -16,6 +16,7 @@ import { spawn } from 'node:child_process';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
+import { resolveLaunchCwd } from './commands/_open-helpers.js';
 import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { getActiveRoot } from './utils/paths.js';
@@ -268,13 +269,18 @@ export async function main(argv: string[]): Promise<void> {
     } else {
       opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
     }
+    // Not `opened.cwd_hint`: that is the dispatch answer (a registered
+    // worktree, for agents that must commit). An operator's session belongs in
+    // the initiative's own directory — see resolveLaunchCwd (AW-115).
+    const activeRoot = getActiveRoot();
+    const launchCwd = resolveLaunchCwd(activeRoot, opened.slug);
     const code = await withLauncherLease(
       {
-        activeRoot: getActiveRoot(),
+        activeRoot,
         slug: opened.slug,
-        cwd: opened.cwd_hint,
+        cwd: launchCwd,
       },
-      (leaseId) => spawnClaude(opened.prompt, opened.cwd_hint, opened.channels, leaseId),
+      (leaseId) => spawnClaude(opened.prompt, launchCwd, opened.channels, leaseId),
     );
     process.exit(code);
   } catch (err) {
