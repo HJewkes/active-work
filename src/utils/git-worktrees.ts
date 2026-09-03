@@ -185,7 +185,7 @@ async function readAheadBehind(
 }
 
 /** Whether `worktreePath` still resolves inside a git working tree. */
-async function isPresent(worktreePath: string): Promise<boolean> {
+export async function isWorktreePresent(worktreePath: string): Promise<boolean> {
   const git = getGitRunner();
   try {
     const res = await git('git', ['-C', worktreePath, 'rev-parse', '--is-inside-work-tree']);
@@ -215,7 +215,7 @@ async function readUnpushed(worktreePath: string): Promise<number | null> {
 
 /** Live, non-persisted state of a single worktree. */
 export async function readWorktreeState(worktreePath: string): Promise<WorktreeState> {
-  if (!(await isPresent(worktreePath))) return { ...ABSENT };
+  if (!(await isWorktreePresent(worktreePath))) return { ...ABSENT };
   const [{ dirty, files_changed }, branch, { ahead, behind }, unpushed, has_upstream] =
     await Promise.all([
       readDirty(worktreePath),

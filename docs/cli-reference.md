@@ -39,6 +39,7 @@ Commands:
                                 given rank.
   fold [options] <ref>          Mark a discover hit as folded into an existing
                                 initiative.
+  hooks                         hooks commands
   list                          List every initiative grouped by state. Replaces
                                 the legacy INDEX.md dump.
   loops [options] <slug>        List an initiative's open-loop ledger. Open
@@ -71,6 +72,9 @@ Commands:
                                 it to re-seed context in a running session.
   rename <old_slug> <new_slug>  Rename an initiative slug (moves the directory;
                                 task_prefix unchanged).
+  resume <session_id>           Resolve the working directory a Claude session
+                                id belongs to, so `claude --resume` can be run
+                                from the right place.
   session                       session commands
   sessions [options]            Browse recent Claude sessions discovered under
                                 ~/.claude/projects.
@@ -201,8 +205,8 @@ Options:
 ```
 Usage: active-work artifact prune [options] <slug>
 
-List (default) or remove (--apply) tracked branches that no longer exist
-locally.
+List (default) or remove (--apply) tracked branches and worktrees that no longer
+exist locally.
 
 Arguments:
   slug        slug (string)
@@ -342,6 +346,30 @@ Options:
   -h, --help      display help for command
 ```
 
+## active-work hooks agent-chat-complete
+
+```
+Usage: active-work hooks agent-chat-complete [options]
+
+agent-chat on_complete hook consumer (AW-99): record a spawned peer's run as a
+track:adhoc session via wrap.
+
+Options:
+  -h, --help  display help for command
+```
+
+## active-work hooks agent-chat-spawn
+
+```
+Usage: active-work hooks agent-chat-spawn [options]
+
+agent-chat on_spawn hook consumer (AW-99): stash a spawned peer's context, keyed
+by agentId, for the matching on_complete call.
+
+Options:
+  -h, --help  display help for command
+```
+
 ## active-work list
 
 ```
@@ -460,6 +488,18 @@ Options:
   --verify-hashes  Re-hash each read prefix to detect a rewritten transcript
                    (slow).
   -h, --help       display help for command
+```
+
+## active-work miner liveness
+
+```
+Usage: active-work miner liveness [options]
+
+Report which declared index structures nothing ever populates: empty columns,
+unused edge relations, dangling refs, stale transcripts.
+
+Options:
+  -h, --help  display help for command
 ```
 
 ## active-work miner refresh
@@ -654,6 +694,21 @@ Rename an initiative slug (moves the directory; task_prefix unchanged).
 Arguments:
   old_slug    old_slug (string)
   new_slug    new_slug (string)
+
+Options:
+  -h, --help  display help for command
+```
+
+## active-work resume
+
+```
+Usage: active-work resume [options] <session_id>
+
+Resolve the working directory a Claude session id belongs to, so `claude
+--resume` can be run from the right place.
+
+Arguments:
+  session_id  session_id (string)
 
 Options:
   -h, --help  display help for command
@@ -998,34 +1053,38 @@ branches and stashes the initiative had not written down, stamps the brief's
 updated date, and returns a receipt of what was filed.
 
 Arguments:
-  slug                   slug (string)
+  slug                      slug (string)
 
 Options:
-  --session-id <value>   Claude session identifier
-  --started <value>      ISO 8601 session start timestamp
-  --ended <value>        ISO 8601 session end timestamp
-  --track <value>        'canonical' (mainline thread) | 'sidecar'
-                         (folded/derived) | 'adhoc' (parallel ad-hoc work)
-                         (default: canonical)
-  --body <value>         Raw markdown body (session narrative)
-  --body-file <value>    Path to a file containing the markdown body
-  --next-steps <value>   JSON array of loops this session opens:
-                         [{"id","text","kind":"task|pr|prose","ref"?}]
-  --resolves <value>     JSON array of loops this session closes:
-                         [{"ref":"<session-file-stem>#<id>","outcome":"done|abandoned","note"?}]
-  --no-loops             Assert that this session leaves nothing hanging.
-                         Records no_loops: true so a deliberate empty ledger is
-                         distinguishable from an unfiled one. Mutually exclusive
-                         with --next-steps / --resolves.
-  --notes <value>        JSON array of durable notes to file under
-                         sources/notes/:
-                         [{"kind":"process|gotcha|fyi|decision","title","body","tags"?}]
-  --no-notes             Assert that this session produced no durable knowledge
-                         worth keeping. Mutually exclusive with --notes.
-  --tasks-filed <value>  JSON array of task ids created during this session,
-                         e.g. ["AW-66","AW-67"]. Each must already exist in the
-                         initiative.
-  --no-tasks             Assert that this session filed no tasks. Mutually
-                         exclusive with --tasks-filed.
-  -h, --help             display help for command
+  --session-id <value>      Claude session identifier
+  --started <value>         ISO 8601 session start timestamp
+  --ended <value>           ISO 8601 session end timestamp
+  --track <value>           'canonical' (mainline thread) | 'sidecar'
+                            (folded/derived) | 'adhoc' (parallel ad-hoc work)
+                            (default: canonical)
+  --parent-session <value>  Session id that spawned this one. Set by the
+                            agent-chat spawn hook for peers, whose parentage no
+                            transcript records.
+  --body <value>            Raw markdown body (session narrative)
+  --body-file <value>       Path to a file containing the markdown body
+  --next-steps <value>      JSON array of loops this session opens:
+                            [{"id","text","kind":"task|pr|prose","ref"?}]
+  --resolves <value>        JSON array of loops this session closes:
+                            [{"ref":"<session-file-stem>#<id>","outcome":"done|abandoned","note"?}]
+  --no-loops                Assert that this session leaves nothing hanging.
+                            Records no_loops: true so a deliberate empty ledger
+                            is distinguishable from an unfiled one. Mutually
+                            exclusive with --next-steps / --resolves.
+  --notes <value>           JSON array of durable notes to file under
+                            sources/notes/:
+                            [{"kind":"process|gotcha|fyi|decision","title","body","tags"?}]
+  --no-notes                Assert that this session produced no durable
+                            knowledge worth keeping. Mutually exclusive with
+                            --notes.
+  --tasks-filed <value>     JSON array of task ids created during this session,
+                            e.g. ["AW-66","AW-67"]. Each must already exist in
+                            the initiative.
+  --no-tasks                Assert that this session filed no tasks. Mutually
+                            exclusive with --tasks-filed.
+  -h, --help                display help for command
 ```
