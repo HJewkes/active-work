@@ -1,147 +1,31 @@
 /**
- * Daemon entrypoint.
+ * Daemon entrypoint, composed over `@titan-design/daemon` (AW-a).
  *
- * `runDaemon` binds the hono app to 127.0.0.1:<port>, writes a PID
- * file, and stays running until SIGTERM/SIGINT. It does not call
- * `process.exit` — the caller decides how the process terminates.
+ * The package owns binding the socket, splicing `/mcp`, watching the active
+ * root, the pid file, and signal shutdown. What stays here is the one thing it
+ * has no business knowing: the session-index watcher, which must start only
+ * after `/health` is answerable and be closed — awaited — before the socket
+ * does, because a refresh may be mid-transaction.
  */
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { serve, type ServerType } from '@hono/node-server';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { DaemonAlreadyRunningError, startDaemon } from '@titan-design/daemon';
+import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
-import { getActiveRoot } from '../utils/paths.js';
-import { buildHttpApp } from './http.js';
-import { DAEMON_VERSION } from './health.js';
-import { getLogger } from './logger.js';
-import { createMcpServer } from './mcp.js';
-import { EventHub } from './events.js';
-import { watchTree, type TreeWatcher } from './file-watch.js';
-import { startSessionIndexWatch, type SessionIndexWatcher } from './session-index-watch.js';
-import type { HealthIndexState } from './health.js';
 import type { SchedulerStatus } from '../miner/session-index/scheduler.js';
-import {
-  isProcessAlive,
-  readPidFile,
-  removePidFile,
-  resolveDaemonPort,
-  writePidFile,
-} from './lifecycle.js';
+import { getActiveRoot, getStateRoot } from '../utils/paths.js';
+import { handleDashboard } from './dashboard-routes.js';
+import { DAEMON_VERSION, type HealthIndexState } from './health.js';
+import { resolveDaemonPort } from './lifecycle.js';
+import { getLogger } from './logger.js';
+import { mcpOptions } from './mcp.js';
+import { startSessionIndexWatch, type SessionIndexWatcher } from './session-index-watch.js';
 
 export interface RunDaemonOptions {
   port?: number;
 }
 
-const HOSTNAME = '127.0.0.1';
-
 function resolvePort(options: RunDaemonOptions): number {
-  if (typeof options.port === 'number' && Number.isFinite(options.port)) {
-    return options.port;
-  }
+  if (typeof options.port === 'number' && Number.isFinite(options.port)) return options.port;
   return resolveDaemonPort();
-}
-
-async function assertNotAlreadyRunning(): Promise<void> {
-  const existing = await readPidFile();
-  if (existing && isProcessAlive(existing.pid)) {
-    throw new DaemonError(
-      `Daemon already running (pid ${existing.pid}, port ${existing.meta.port})`,
-    );
-  }
-  if (existing) {
-    // Stale PID file — clean it up so writePidFile lands cleanly. Naming the
-    // dead pid keeps the removal scoped to the file we just inspected.
-    await removePidFile(existing.pid);
-  }
-}
-
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (c: Buffer) => chunks.push(c));
-    req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf8');
-      if (raw.length === 0) {
-        resolve(undefined);
-        return;
-      }
-      try {
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on('error', reject);
-  });
-}
-
-/**
- * Handle a /mcp request by spinning up a fresh MCP server + transport
- * and letting the transport write directly to the Node response. We
- * bypass hono for this route because the transport assumes ownership
- * of the response object.
- */
-async function handleMcpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const server = createMcpServer();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  let body: unknown;
-  if (req.method === 'POST') {
-    try {
-      body = await readJsonBody(req);
-    } catch {
-      res.statusCode = 400;
-      res.end(JSON.stringify({ ok: false, error: 'Invalid JSON body' }));
-      return;
-    }
-  }
-  res.on('close', () => {
-    void transport.close();
-    void server.close();
-  });
-  await server.connect(transport);
-  await transport.handleRequest(req, res, body);
-}
-
-function listenOn(app: ReturnType<typeof buildHttpApp>, port: number): Promise<ServerType> {
-  return new Promise((resolve) => {
-    const server = serve(
-      {
-        fetch: app.fetch,
-        hostname: HOSTNAME,
-        port,
-      },
-      () => resolve(server),
-    );
-    // Replace the request handler: route /mcp to the MCP transport
-    // directly, falling through to hono for everything else.
-    const honoHandler = server.listeners('request')[0] as
-      | ((req: IncomingMessage, res: ServerResponse) => void)
-      | undefined;
-    server.removeAllListeners('request');
-    server.on('request', (req: IncomingMessage, res: ServerResponse) => {
-      const url = req.url ?? '';
-      if (url === '/mcp' || url.startsWith('/mcp?') || url.startsWith('/mcp/')) {
-        void handleMcpRequest(req, res).catch((err) => {
-          if (!res.headersSent) {
-            res.statusCode = 500;
-            res.end(String(err));
-          } else {
-            res.destroy();
-          }
-        });
-        return;
-      }
-      if (honoHandler) honoHandler(req, res);
-    });
-  });
-}
-
-function closeServer(server: ServerType): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
 }
 
 /** Project the scheduler's snapshot onto the shape `/health` publishes. */
@@ -158,45 +42,29 @@ function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexSta
 
 export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   const log = getLogger();
-  await assertNotAlreadyRunning();
-
-  const port = resolvePort(options);
-  const hub = new EventHub();
-  // Declared before the app so `/health` can read the watcher's state through
-  // a closure; the watcher itself only starts once the port is bound.
+  // Read through a closure: the watcher only starts once the port is bound.
   let indexWatch: SessionIndexWatcher | null = null;
-  let ready = false;
-  const app = buildHttpApp({
-    port,
-    hub,
-    ready: () => ready,
-    indexState: () => toHealthIndexState(indexWatch?.status()),
-  });
-  const server = await listenOn(app, port);
-  const started = new Date().toISOString();
 
-  const activeRoot = getActiveRoot();
-  let watcher: TreeWatcher | null = null;
-  try {
-    watcher = watchTree(activeRoot, () => hub.broadcast({ event: 'change', data: 'active-root' }), {
-      onError: (err) => log.warn({ err }, 'file watcher error'),
-    });
-    log.info({ activeRoot }, 'watching active root for live reload');
-  } catch (err) {
-    // Live reload is a nicety; never let a watcher failure abort the daemon.
-    log.warn({ err, activeRoot }, 'live-reload watcher unavailable');
-  }
-
-  await writePidFile(process.pid, {
-    port,
+  const handle = await startDaemon({
+    ...mcpOptions(),
+    stateDir: getStateRoot(),
+    port: resolvePort(options),
+    watchRoot: getActiveRoot(),
     version: DAEMON_VERSION,
-    started,
+    logger: log,
+    health: () => ({ index: toHealthIndexState(indexWatch?.status()) }),
+    mountRoutes: (app: Hono) => {
+      app.get('/ui', (c) => handleDashboard(c));
+      app.get('/ui/*', (c) => handleDashboard(c));
+    },
+  }).catch((err: unknown) => {
+    // The package's error carries the pid and port; active-work's callers
+    // catch DaemonError, so translate rather than leak a second error type.
+    if (err instanceof DaemonAlreadyRunningError) throw new DaemonError(err.message);
+    throw err;
   });
-  // Only now is a `/health` probe answerable: the PID file exists, so anything
-  // that finds the daemon healthy can also find the daemon.
-  ready = true;
+
   indexWatch = startSessionIndexWatch(log);
-  log.info({ pid: process.pid, port, started }, 'daemon started');
 
   await new Promise<void>((resolve) => {
     let shuttingDown = false;
@@ -206,27 +74,16 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
       log.info({ signal }, 'shutting down');
       void (async () => {
         try {
-          watcher?.close();
-        } catch (err) {
-          log.error({ err }, 'error closing file watcher');
-        }
-        try {
-          // Awaited, unlike the sync live-reload close: a refresh may be
-          // mid-transaction and must commit before the process exits.
+          // Awaited before the socket closes: a refresh may be mid-transaction
+          // and must commit before the process exits.
           await indexWatch?.close();
         } catch (err) {
           log.error({ err }, 'error closing session index watcher');
         }
         try {
-          await closeServer(server);
+          await handle.close();
         } catch (err) {
-          log.error({ err }, 'error closing server');
-        }
-        try {
-          // Only ours: a launchd successor may already own the PID file.
-          await removePidFile(process.pid);
-        } catch (err) {
-          log.error({ err }, 'error removing pid file');
+          log.error({ err }, 'error closing daemon');
         }
         log.info('stopped');
         resolve();

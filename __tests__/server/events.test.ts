@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { EventHub } from '../../src/server/events.js';
+import { EventHub } from '@titan-design/daemon';
 
 describe('EventHub', () => {
   it('delivers broadcasts to every subscriber', () => {

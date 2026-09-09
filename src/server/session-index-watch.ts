@@ -12,7 +12,7 @@ import { openSessionIndex, type SessionIndexDb } from '../miner/session-index/db
 import { transcriptsRoot } from '../miner/session-index/discover.js';
 import { runRefresh, withRefreshLock } from '../miner/session-index/refresh.js';
 import { RefreshScheduler, type SchedulerStatus } from '../miner/session-index/scheduler.js';
-import { watchTree, type TreeWatcher } from './file-watch.js';
+import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 
 export interface SessionIndexWatcher {
   status(): SchedulerStatus;

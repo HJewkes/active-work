@@ -121,7 +121,12 @@ describe('integration: daemon live-reload SSE', () => {
         () => writeFileSync(path.join(activeRoot, 'brief.md'), '# edited outside the dashboard\n'),
         5_000,
       );
-      expect(frame).toContain('active-root');
+      // AW-a changed the payload: the daemon package names the watched root
+      // rather than emitting the literal string 'active-root'. The dashboard
+      // only listens for the event name and ignores the data
+      // (src/dashboard/utils/live.ts:32), so what matters is that the change
+      // event fired and that it identifies the tree it came from.
+      expect(frame).toContain(activeRoot);
     } finally {
       child.kill('SIGTERM');
       await new Promise<void>((resolve) => {

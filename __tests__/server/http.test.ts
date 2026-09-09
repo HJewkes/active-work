@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHttpApp } from '../../src/server/http.js';
-import { EventHub } from '../../src/server/events.js';
+import { EventHub } from '@titan-design/daemon';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const TEST_PORT = 17400;
