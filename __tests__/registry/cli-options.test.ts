@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { readCommanderOption } from '../../src/registry/cli-options.js';
+import { readCommanderOption } from '@titan-design/registry';
 
-/** Mirrors `flagToKey` in src/registry: `--tasks-filed` -> `tasks_filed`. */
-const flagToKey = (long: string): string => long.replace(/^--/, '').replace(/-/g, '_');
-
+/**
+ * These cases moved onto `@titan-design/registry`'s implementation in AW-a.
+ * They are kept because `wrap --no-loops` shipped inert once, and the package
+ * claiming to handle commander's negation is not the same as proving it here.
+ */
 const read = (opts: Record<string, unknown>, long: string): unknown =>
-  readCommanderOption(opts, long, flagToKey);
+  readCommanderOption(opts, long);
 
 describe('readCommanderOption', () => {
   describe('negated flags', () => {

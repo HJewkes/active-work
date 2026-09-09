@@ -80,7 +80,7 @@ export function commandToTool(cmd: AnyCommand): McpTool {
 
 /** List every registered command as an MCP tool. */
 export function listTools(): McpTool[] {
-  return Array.from(registry.values()).map(commandToTool);
+  return registry.list().map(commandToTool);
 }
 
 interface ToolCallOutcome {

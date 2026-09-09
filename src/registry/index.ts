@@ -1,22 +1,19 @@
-import type { AnyCommand, CommandRegistry } from './types.js';
+import { createRegistry, type CommandRegistry } from '@titan-design/registry';
+import type { AnyCommand, CommandContext } from './types.js';
 
-export const registry: CommandRegistry = new Map();
+/**
+ * One registry instance for the process. The package models a registry as an
+ * instance rather than a module singleton so a product can own several;
+ * active-work has exactly one, and this module is where that choice lives.
+ */
+export const registry: CommandRegistry<CommandContext> = createRegistry<CommandContext>();
 
 export function register(cmd: AnyCommand): void {
-  if (registry.has(cmd.name)) {
-    throw new Error(`Command already registered: ${cmd.name}`);
-  }
-  registry.set(cmd.name, cmd);
+  registry.register(cmd);
 }
 
-export type {
-  Command,
-  AnyCommand,
-  CommandRegistry,
-  CommandContext,
-  CliMeta,
-  CliOption,
-} from './types.js';
-export type { JsonEnvelope } from './json-envelope.js';
+export type { CommandRegistry } from '@titan-design/registry';
+export type { Command, AnyCommand, CommandContext, CliMeta, CliOption } from './types.js';
 export { defineCommand } from './types.js';
-export { successEnvelope, errorEnvelope } from './json-envelope.js';
+export type { JsonEnvelope } from '@titan-design/registry';
+export { successEnvelope, errorEnvelope } from '@titan-design/registry';
