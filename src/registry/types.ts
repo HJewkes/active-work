@@ -1,9 +1,21 @@
-import type { ZodSchema } from 'zod';
+/**
+ * active-work's binding of `@titan-design/registry` (AW-a).
+ *
+ * The package's `Command` carries a third type parameter for the context, so
+ * every command would otherwise have to spell out `Command<A, R, CommandContext>`.
+ * These aliases bind it once, which is why all 62 command modules import from
+ * here unchanged. The package is the implementation; this file is the product's
+ * dialect of it.
+ */
+import type {
+  AnyCommand as PkgAnyCommand,
+  BaseContext,
+  Command as PkgCommand,
+} from '@titan-design/registry';
+import { defineCommand as pkgDefineCommand } from '@titan-design/registry';
 
-export interface CommandContext {
+export interface CommandContext extends BaseContext {
   activeRoot: string;
-  warnings: string[];
-  format: 'human' | 'json';
   // The user's shell working directory, populated by interactive surfaces
   // (the CLI dispatcher and `aw` launcher). Left undefined by the daemon /
   // MCP server, whose process cwd is not the user's — those callers must pass
@@ -11,32 +23,11 @@ export interface CommandContext {
   cwd?: string;
 }
 
-export interface CliOption {
-  long: string;
-  short?: string;
-  description: string;
-  required?: boolean;
-}
-
-export interface CliMeta {
-  positional?: string[];
-  options?: Record<string, CliOption>;
-  usage?: string;
-}
-
-export interface Command<Args = unknown, Result = unknown> {
-  name: string;
-  description: string;
-  args: ZodSchema<Args>;
-  result: ZodSchema<Result>;
-  cli?: CliMeta;
-  run(args: Args, ctx: CommandContext): Promise<Result>;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyCommand = Command<any, any>;
-export type CommandRegistry = Map<string, AnyCommand>;
+export type Command<Args = unknown, Result = unknown> = PkgCommand<Args, Result, CommandContext>;
+export type AnyCommand = PkgAnyCommand<CommandContext>;
 
 export function defineCommand<Args, Result>(cmd: Command<Args, Result>): Command<Args, Result> {
-  return cmd;
+  return pkgDefineCommand<Args, Result, CommandContext>(cmd);
 }
+
+export type { CliMeta, CliOption } from '@titan-design/registry';

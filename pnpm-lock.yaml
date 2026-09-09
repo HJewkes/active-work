@@ -17,6 +17,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@titan-design/daemon':
+        specifier: ^0.1.0
+        version: 0.1.0(zod@4.4.3)
+      '@titan-design/registry':
+        specifier: ^0.1.0
+        version: 0.1.0(zod@4.4.3)
       better-sqlite3:
         specifier: ^13.0.2
         version: 13.0.2
@@ -658,6 +664,18 @@ packages:
     resolution: {integrity: sha512-hPt/bgL5cE+Qp+/TPHBqptcAgPzgj46mPcg/16zNUmbQk0j+mOEQV/+Lqu8QRtDV3Ek95Q6FeFITpuhl6OTsAA==}
     cpu: [x64]
     os: [win32]
+
+  '@titan-design/daemon@0.1.0':
+    resolution: {integrity: sha512-fk+7uDtUGGUd/aS0FgVp2hq7a6IBdLcvfebWflAHU07np2mAFM700uoMOj1ECQQ7kDEsTGb19dz/eKYHcGTSMg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@titan-design/registry@0.1.0':
+    resolution: {integrity: sha512-nToBr0tzcU1hH36vbFXTNKk07QxctX/nxRpMwzNZUXWaE502JgSrcZrgnkEriTzKOL6NZh2+Bqygh6Z8TkYqZw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
 
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
@@ -2744,6 +2762,21 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.60.3':
     optional: true
+
+  '@titan-design/daemon@0.1.0(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 2.0.2(hono@4.12.18)
+      '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
+      '@titan-design/registry': 0.1.0(zod@4.4.3)
+      hono: 4.12.18
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
+
+  '@titan-design/registry@0.1.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
 
   '@tybys/wasm-util@0.10.2':
     dependencies:

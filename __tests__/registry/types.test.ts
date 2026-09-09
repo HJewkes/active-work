@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { createRegistry } from '@titan-design/registry';
+import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
   defineCommand,
@@ -23,37 +24,48 @@ function makeCommand(name: string): Command<{ value: string }, { echoed: string 
 describe('defineCommand', () => {
   it('returns its argument unchanged (identity)', () => {
     const cmd = makeCommand('test.identity');
-    const result = defineCommand(cmd);
-    expect(result).toBe(cmd);
+    expect(defineCommand(cmd)).toBe(cmd);
+  });
+
+  it('binds the product context, so a command reads activeRoot without a type argument', async () => {
+    const cmd = defineCommand({
+      name: 'test.ctx',
+      description: 'reads the product context',
+      args: z.object({}),
+      result: z.object({ root: z.string() }),
+      async run(_args, ctx) {
+        return { root: ctx.activeRoot };
+      },
+    });
+    const ctx: CommandContext = { activeRoot: '/tmp/root', warnings: [], format: 'json' };
+    expect(await cmd.run({}, ctx)).toEqual({ root: '/tmp/root' });
   });
 });
 
 describe('register', () => {
-  beforeEach(() => {
-    registry.clear();
-  });
-
+  // The process registry is a singleton the command modules have already
+  // populated, so these use names nothing else claims rather than clearing it.
   it('adds a command and is retrievable by name', () => {
-    const cmd = makeCommand('task.add');
+    const cmd = makeCommand('test.register.unique');
     register(cmd);
-    expect(registry.get('task.add')).toBe(cmd);
+    expect(registry.get('test.register.unique')).toBe(cmd);
+    expect(registry.has('test.register.unique')).toBe(true);
   });
 
-  it('throws when registering duplicate name', () => {
-    register(makeCommand('task.add'));
-    expect(() => register(makeCommand('task.add'))).toThrow(
-      /Command already registered: task\.add/,
+  it('throws when registering a duplicate name', () => {
+    register(makeCommand('test.register.duplicate'));
+    expect(() => register(makeCommand('test.register.duplicate'))).toThrow(
+      /Command already registered: test\.register\.duplicate/,
     );
   });
 
-  it('preserves insertion order via registry.values()', () => {
-    const a = makeCommand('a.one');
-    const b = makeCommand('b.two');
-    const c = makeCommand('c.three');
-    register(a);
-    register(b);
-    register(c);
-    const names = Array.from(registry.values()).map((cmd) => cmd.name);
-    expect(names).toEqual(['a.one', 'b.two', 'c.three']);
+  it('lists commands sorted by name, not by insertion order', () => {
+    // Behavior change in AW-a: the module-singleton Map preserved insertion
+    // order; the package sorts, so help output and MCP tool lists are stable
+    // whatever order the command modules happen to import in.
+    const own = createRegistry<CommandContext>();
+    for (const name of ['c.three', 'a.one', 'b.two']) own.register(makeCommand(name));
+    expect(own.list().map((cmd) => cmd.name)).toEqual(['a.one', 'b.two', 'c.three']);
+    expect(own.size).toBe(3);
   });
 });

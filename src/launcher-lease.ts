@@ -3,7 +3,7 @@
  *
  * Kept out of `src/aw.ts` because that module calls `main()` on import and so
  * cannot be pulled into a unit test — the same reason `launcher-args.ts` and
- * `registry/cli-options.ts` exist.
+ * the registry package's own CLI helpers exist.
  *
  * `aw` spawns `claude` with `stdio: 'inherit'` and awaits its exit, so the
  * launcher's own process lifetime brackets the session exactly. That is what

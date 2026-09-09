@@ -111,7 +111,7 @@ export interface ArtifactsResult {
 }
 
 // ---------------------------------------------------------------------------
-// JSON envelope (matches src/registry/json-envelope.ts)
+// JSON envelope (matches @titan-design/registry's JsonEnvelope)
 // ---------------------------------------------------------------------------
 
 export type JsonEnvelope<T> =

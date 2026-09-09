@@ -12,7 +12,7 @@ import {
   type CliMeta,
   type CommandContext,
 } from './registry/index.js';
-import { readCommanderOption } from './registry/cli-options.js';
+import { readCommanderOption } from '@titan-design/registry';
 import { color } from './utils/color.js';
 import { appendUsage } from './utils/usage-log.js';
 
@@ -91,13 +91,6 @@ function ensureGroup(root: Command, parts: string[]): Command {
   return current;
 }
 
-/** Convert a hyphenated CLI flag/positional name to its `args` camelCase / snake_case key. */
-function flagToKey(long: string): string {
-  // `--ship-target` -> `ship_target` to match zod schemas (snake_case
-  // convention in this codebase).
-  return long.replace(/^--/, '').replace(/-/g, '_');
-}
-
 interface InvocationOutput {
   exitCode: number;
   success: boolean;
@@ -166,7 +159,7 @@ function makeAction(
     // Options
     if (meta.options) {
       for (const [key, opt] of Object.entries(meta.options)) {
-        const value = readCommanderOption(optsFromCommander, opt.long, flagToKey);
+        const value = readCommanderOption(optsFromCommander, opt.long);
         if (value !== undefined) {
           const t = unwrapZodType(fieldSchema(cmd.args, key));
           raw[key] = coerce(value, t);
@@ -288,7 +281,7 @@ function buildProgram(): Command {
     );
 
   // Sort commands so help output is stable.
-  const cmds = Array.from(registry.values()).sort((a, b) => a.name.localeCompare(b.name));
+  const cmds = registry.list();
   for (const cmd of cmds) {
     attachCommand(program, cmd);
   }
