@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { watchTree, type TreeWatcher } from '../../src/server/file-watch.js';
+import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 
 const DEBOUNCE = 40;
 /** Internal budgets stay well under this so a slow box fails honestly. */

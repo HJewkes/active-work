@@ -1,9 +1,10 @@
 /**
- * Health endpoint state.
+ * Health state active-work adds on top of `@titan-design/daemon`'s payload.
  *
- * `startedAt` is captured at module load so `/health` can report
- * uptime relative to daemon start without threading it through the
- * route builder.
+ * The package builds `{ok, version, pid, uptime_ms, port}` and merges a
+ * product extension into it; `index` below is that extension. `startedAt` is
+ * captured at module load so uptime is measured from process start rather than
+ * from when the app happened to be built.
  */
 
 // TODO: read version from package.json at build time; hardcoded for v0.
@@ -23,27 +24,4 @@ export interface HealthIndexState {
   lastRunAt: string | null;
   lastDurationMs: number | null;
   consecutiveErrors: number;
-}
-
-export interface HealthPayload {
-  ok: true;
-  version: string;
-  pid: number;
-  uptime_ms: number;
-  port: number;
-  index: HealthIndexState | null;
-}
-
-export function buildHealthPayload(
-  port: number,
-  index: HealthIndexState | null = null,
-): HealthPayload {
-  return {
-    ok: true,
-    version: DAEMON_VERSION,
-    pid: process.pid,
-    uptime_ms: Date.now() - startedAt,
-    port,
-    index,
-  };
 }
