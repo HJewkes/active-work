@@ -173,5 +173,33 @@ export const WORKSPACE_MIGRATIONS: Migration[] = [
   },
 ];
 
-/** The full chain the graph file is migrated to: the package's, then the workspace's. */
-export const MIGRATIONS: Migration[] = [...SESSION_GRAPH_MIGRATIONS, ...WORKSPACE_MIGRATIONS];
+/**
+ * The only table in this database that is not derived. See
+ * `src/session-index/preserve.ts` for what it is for and why it is a table
+ * rather than a flag on the rows it protects.
+ */
+const PRESERVE_DDL = `
+  CREATE TABLE IF NOT EXISTS preserved_row (
+    table_name   TEXT NOT NULL,
+    key_column   TEXT NOT NULL,
+    row_key      TEXT NOT NULL,
+    payload      TEXT NOT NULL,
+    origin       TEXT NOT NULL,
+    mode         TEXT NOT NULL DEFAULT 'insert',
+    preserved_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (table_name, row_key)
+  );
+`;
+
+const PRESERVE_MIGRATION: Migration = {
+  version: nextVersion([...SESSION_GRAPH_MIGRATIONS, ...WORKSPACE_MIGRATIONS]),
+  name: 'preserved rows',
+  up: (db) => db.exec(PRESERVE_DDL),
+};
+
+/** The full chain the graph file is migrated to: the package's, then active-work's. */
+export const MIGRATIONS: Migration[] = [
+  ...SESSION_GRAPH_MIGRATIONS,
+  ...WORKSPACE_MIGRATIONS,
+  PRESERVE_MIGRATION,
+];

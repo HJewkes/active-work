@@ -7,6 +7,7 @@ import { defaultGraphPath, openGraph, type WorkspaceGraph } from './graph.js';
 import { taskResolver } from './tasks.js';
 import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
+import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
@@ -67,6 +68,8 @@ export interface RefreshSummary {
   tasksApplied: number;
   /** The workspace half of the pass (TP-24); null when skipped. */
   workspace: WorkspaceRefreshSummary | null;
+  /** Non-derivable rows put back after the pass (TP-41). */
+  preserved: ReplaySummary;
   errors: string[];
 }
 
@@ -124,6 +127,10 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
 
   try {
     if (options.full) {
+      // Before the reset, never after: a session whose transcripts Claude Code
+      // has pruned cannot be re-derived, and `resetIndex` would take it with
+      // everything else. 33 of them on the live graph as of 2026-09-10.
+      preserveUnreachable(graph, 'transcript pruned before this rebuild (TP-41)');
       // Both halves, because they share the edge and FTS tables: resetting one
       // alone would leave the other's rows behind their own spans and edges.
       resetIndex(graph);
@@ -149,6 +156,11 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
           full: options.full,
         });
 
+    // Last, and unconditionally: idempotent, one statement per preserved row,
+    // and running it every pass means a partial or accidental delete heals
+    // itself rather than waiting for someone to notice it.
+    const preserved = replayPreserved(graph);
+
     return {
       startedAt,
       durationMs: Date.now() - started,
@@ -165,6 +177,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       tasksRequested: summary.tasks.requested,
       tasksApplied: summary.tasks.applied,
       workspace,
+      preserved,
       errors: [
         ...(summary.tasks.failed ? [`tasks: ${summary.tasks.error ?? 'resolver failed'}`] : []),
         ...quarantineErrors(graph),

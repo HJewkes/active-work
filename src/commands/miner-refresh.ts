@@ -54,6 +54,7 @@ const ResultSchema = z.object({
   tasksRequested: z.number(),
   tasksApplied: z.number(),
   workspace: WorkspaceSchema.nullable(),
+  preserved: z.object({ restored: z.number(), merged: z.number(), skipped: z.number() }),
   errors: z.array(z.string()),
 });
 type Result = z.infer<typeof ResultSchema>;
