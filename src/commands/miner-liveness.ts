@@ -1,7 +1,9 @@
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { defaultSessionIndexPath, openSessionIndexReadOnly } from '../miner/session-index/db.js';
-import { runLiveness } from '../miner/session-index/liveness.js';
+import { NotFoundError } from '../errors.js';
+import { defaultGraphPath, openGraphReadOnly } from '../session-index/graph.js';
+import { runLiveness } from '../session-index/liveness.js';
 import { color } from '../utils/color.js';
 
 /**
@@ -99,7 +101,13 @@ export default defineCommand<Args, Result>({
   result: ResultSchema,
   cli: { usage: 'active-work miner liveness' },
   async run(_args, ctx) {
-    const db = openSessionIndexReadOnly(defaultSessionIndexPath());
+    const dbPath = defaultGraphPath();
+    // An empty report would read as "everything is healthy", which is a
+    // different claim from "there is nothing to report on".
+    if (!existsSync(dbPath)) {
+      throw new NotFoundError(`no session index at ${dbPath} — run \`active-work miner refresh\``);
+    }
+    const db = openGraphReadOnly(dbPath);
     try {
       const liveness = runLiveness(db);
       const result: Result = {

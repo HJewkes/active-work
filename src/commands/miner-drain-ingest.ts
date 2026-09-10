@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { runDrainIngest } from '../miner/transcript-reader.js';
+import { runDrainIngest } from '../drain/transcript-reader.js';
 
 /**
  * `active-work miner drain-ingest` — cluster new tool-result and error blobs

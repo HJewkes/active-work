@@ -1,12 +1,8 @@
-import { statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
+import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import {
-  defaultSessionIndexPath,
-  openSessionIndexReadOnly,
-  SCHEMA_VERSION,
-  type SessionIndexDb,
-} from '../miner/session-index/db.js';
+import { defaultGraphPath, openGraphReadOnly, SCHEMA_VERSION } from '../session-index/graph.js';
 import { probeHealth, resolveDaemonPort } from '../server/lifecycle.js';
 
 /**
@@ -61,15 +57,15 @@ const ResultSchema = z.object({
 type Result = z.infer<typeof ResultSchema>;
 
 /**
- * Purges and resets strand rows in the contentless `spans_fts` (it cannot
+ * Purges and resets strand rows in the contentless `search_fts` (it cannot
  * delete a row without its original text). They are invisible to any query
- * that joins `searchable_spans`, so this is a housekeeping signal, not a
+ * that joins `search_span`, so this is a housekeeping signal, not a
  * correctness one — past this ratio the wasted index space is worth a
  * `refresh --full`.
  */
 const ORPHAN_WARN_RATIO = 0.2;
 
-const scalar = (db: SessionIndexDb, sql: string): number =>
+const scalar = (db: Database.Database, sql: string): number =>
   (db.prepare<[], { n: number }>(sql).get() as { n: number } | undefined)?.n ?? 0;
 
 function sizeOf(dbPath: string): number {
@@ -80,12 +76,12 @@ function sizeOf(dbPath: string): number {
   }
 }
 
-function ftsState(db: SessionIndexDb): Result['fts'] {
-  const rows = scalar(db, 'SELECT COUNT(*) AS n FROM spans_fts');
+function ftsState(db: Database.Database): Result['fts'] {
+  const rows = scalar(db, 'SELECT COUNT(*) AS n FROM search_fts');
   const orphanRows = scalar(
     db,
-    `SELECT COUNT(*) AS n FROM spans_fts f
-       LEFT JOIN searchable_spans s ON s.span_id = f.rowid
+    `SELECT COUNT(*) AS n FROM search_fts f
+       LEFT JOIN search_span s ON s.span_id = f.rowid
       WHERE s.span_id IS NULL`,
   );
   return { rows, orphanRows, needsFullRebuild: rows > 0 && orphanRows / rows > ORPHAN_WARN_RATIO };
@@ -96,14 +92,34 @@ async function daemonState(): Promise<Result['daemon']> {
   return health?.index ?? null;
 }
 
+/**
+ * "Nothing indexed yet" is a state, not a failure. A read-only open of a file
+ * that does not exist throws `unable to open database file`, which is what a
+ * user sees on a machine that has never run a refresh — including every machine
+ * for the first pass after the graph moved to its own path.
+ */
+async function emptyStatus(dbPath: string): Promise<Result> {
+  return {
+    dbPath,
+    schemaVersion: SCHEMA_VERSION,
+    sizeBytes: 0,
+    counts: { transcripts: 0, sessions: 0, facts: 0, turns: 0, edges: 0, spans: 0 },
+    transcripts: { ok: 0, quarantined: 0, missing: 0 },
+    watermark: { lastIndexedAt: null, behindBytes: 0 },
+    fts: { rows: 0, orphanRows: 0, needsFullRebuild: false },
+    daemon: await daemonState(),
+  };
+}
+
 export default defineCommand<Args, Result>({
   name: 'miner.status',
   description: 'Report session-signal index size, freshness, and daemon indexing state.',
   args: ArgsSchema,
   result: ResultSchema,
   async run() {
-    const dbPath = defaultSessionIndexPath();
-    const db = openSessionIndexReadOnly(dbPath);
+    const dbPath = defaultGraphPath();
+    if (!existsSync(dbPath)) return emptyStatus(dbPath);
+    const db = openGraphReadOnly(dbPath);
     try {
       const statusCount = (status: string): number =>
         (
@@ -111,7 +127,7 @@ export default defineCommand<Args, Result>({
             .prepare<
               [string],
               { n: number }
-            >('SELECT COUNT(*) AS n FROM transcripts WHERE status = ?')
+            >('SELECT COUNT(*) AS n FROM transcript WHERE status = ?')
             .get(status) as { n: number }
         ).n;
       return {
@@ -119,12 +135,12 @@ export default defineCommand<Args, Result>({
         schemaVersion: SCHEMA_VERSION,
         sizeBytes: sizeOf(dbPath),
         counts: {
-          transcripts: scalar(db, 'SELECT COUNT(*) AS n FROM transcripts'),
-          sessions: scalar(db, 'SELECT COUNT(*) AS n FROM sessions'),
-          facts: scalar(db, 'SELECT COUNT(*) AS n FROM facts'),
-          turns: scalar(db, 'SELECT COUNT(*) AS n FROM turns'),
-          edges: scalar(db, 'SELECT COUNT(*) AS n FROM edges'),
-          spans: scalar(db, 'SELECT COUNT(*) AS n FROM searchable_spans'),
+          transcripts: scalar(db, 'SELECT COUNT(*) AS n FROM transcript'),
+          sessions: scalar(db, 'SELECT COUNT(*) AS n FROM session'),
+          facts: scalar(db, 'SELECT COUNT(*) AS n FROM fact'),
+          turns: scalar(db, 'SELECT COUNT(*) AS n FROM turn'),
+          edges: scalar(db, 'SELECT COUNT(*) AS n FROM edge'),
+          spans: scalar(db, 'SELECT COUNT(*) AS n FROM search_span'),
         },
         transcripts: {
           ok: statusCount('ok'),
@@ -137,12 +153,12 @@ export default defineCommand<Args, Result>({
               .prepare<
                 [],
                 { at: string | null }
-              >('SELECT MAX(last_indexed_at) AS at FROM transcripts')
+              >('SELECT MAX(last_indexed_at) AS at FROM transcript')
               .get()?.at ?? null,
           behindBytes: scalar(
             db,
-            `SELECT COALESCE(SUM(MAX(file_size - last_byte_offset, 0)), 0) AS n
-               FROM transcripts WHERE file_size IS NOT NULL`,
+            `SELECT COALESCE(SUM(MAX(file_size - last_offset, 0)), 0) AS n
+               FROM transcript WHERE file_size IS NOT NULL`,
           ),
         },
         fts: ftsState(db),

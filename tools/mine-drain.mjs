@@ -23,7 +23,7 @@ register();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel) => new URL(`file://${path.join(here, '..', 'src', rel)}`).href;
 
-const { runDrainIngest } = await import(src('miner/transcript-reader.ts'));
+const { runDrainIngest } = await import(src('drain/transcript-reader.ts'));
 
 function parseArgs(argv) {
   const args = { json: false };

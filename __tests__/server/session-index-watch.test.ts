@@ -24,8 +24,8 @@ afterEach(() => {
 
 describe('startSessionIndexWatch', () => {
   it('returns null and logs rather than throwing when the index cannot be opened', async () => {
-    const db = await import('../../src/miner/session-index/db.js');
-    vi.spyOn(db, 'openSessionIndex').mockImplementation(() => {
+    const graph = await import('../../src/session-index/graph.js');
+    vi.spyOn(graph, 'openGraph').mockImplementation(() => {
       throw new Error('better-sqlite3 ABI mismatch');
     });
 

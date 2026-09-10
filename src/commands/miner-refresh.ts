@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { runRefresh, withRefreshLock } from '../miner/session-index/refresh.js';
+import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
 
 /**
  * `active-work miner refresh` — bring the session-signal index up to date with
@@ -26,11 +26,15 @@ const ResultSchema = z.object({
   transcripts: z.number(),
   scanned: z.number(),
   indexed: z.number(),
+  rewound: z.number(),
   unchanged: z.number(),
   quarantined: z.number(),
   missing: z.number(),
+  reconciledMissing: z.number(),
   factsAdded: z.number(),
-  sessionsRolledUp: z.number(),
+  turnsRolledUp: z.number(),
+  tasksRequested: z.number(),
+  tasksApplied: z.number(),
   errors: z.array(z.string()),
 });
 type Result = z.infer<typeof ResultSchema>;
