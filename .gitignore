@@ -12,6 +12,9 @@ package-lock.json
 *.bak
 *.tmp.*
 
+# Generated CLI reference (TP-34) — written at release, shipped in the package
+docs/cli-reference.md
+
 # Generated miner output (tools/)
 tools/out/
 /data/

@@ -73,5 +73,13 @@ jobs:
             XDG_STATE_HOME="$sandbox_home/.local/state" \
             pnpm test
 
+      # The reference is generated at release, not committed (TP-34), so nothing
+      # else would exercise the generator until a tag is pushed. Run it here so a
+      # command that breaks it fails the PR that introduced it.
+      - name: Generate CLI reference (generator smoke check)
+        run: |
+          node scripts/gen-cli-reference.mjs
+          test -s docs/cli-reference.md || { echo "cli-reference.md missing or empty"; exit 1; }
+
       - name: Build
         run: pnpm build

@@ -106,7 +106,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full breakdown — la
 
 ## Commands
 
-The most-used surface, grouped by purpose. Run `active-work <command> --help` for flags or see the full list in [`docs/cli-reference.md`](docs/cli-reference.md).
+The most-used surface, grouped by purpose. Run `active-work <command> --help` for flags, or `active-work help --markdown` for the whole list. That same list ships as `docs/cli-reference.md` inside the published package; it is generated at release rather than committed, so it is not browsable in this repo.
 
 | Group | Command | Purpose |
 |---|---|---|
@@ -167,7 +167,7 @@ pnpm build              # tsup CLI bundle + vite dashboard bundle
 
 Node 22+, pnpm. The build produces `dist/cli.js` (single ESM bundle) and `dist/dashboard/index.html` (single-file React app).
 
-To regenerate the auto-generated CLI reference after adding or changing a command:
+The CLI reference is generated, gitignored, and written during release. Adding a command needs no doc commit. To read it locally:
 
 ```bash
 pnpm build                                 # ensure dist/cli.js is current

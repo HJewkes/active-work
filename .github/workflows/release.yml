@@ -83,6 +83,16 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # docs/cli-reference.md is generated, not committed (TP-34): a 1,090-line
+      # artifact that every command-adding PR regenerated was the repo's largest
+      # merge-conflict surface. It is listed in package.json "files", so the
+      # guard below is what stops a silent generator failure from shipping a
+      # package missing a documented file.
+      - name: Generate CLI reference
+        run: |
+          node scripts/gen-cli-reference.mjs
+          test -s docs/cli-reference.md || { echo "cli-reference.md missing or empty"; exit 1; }
+
       - name: Verify tag matches package.json version
         run: |
           TAG_VERSION=${GITHUB_REF#refs/tags/v}

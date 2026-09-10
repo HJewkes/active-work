@@ -21,7 +21,8 @@
     "dist",
     "skill",
     "claude-commands",
-    "scripts"
+    "scripts",
+    "docs/cli-reference.md"
   ],
   "engines": {
     "node": ">=22"
