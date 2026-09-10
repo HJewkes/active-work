@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
-import { RELATIONS } from '../../schemas/session-index-relations.js';
-import type { SessionIndexDb } from './db.js';
-import { toAbsolutePath } from './discover.js';
+import type Database from 'better-sqlite3';
+import { RELATIONS, toAbsolutePath } from '@titan-design/session-read';
 
 /**
  * "Which declared structures does nothing ever populate?"
@@ -15,11 +14,16 @@ import { toAbsolutePath } from './discover.js';
  *
  * So this answers the question mechanically, and derives what to check from
  * the schema itself (`PRAGMA table_info`) and from the relation vocabulary
- * declared in code. A hand-maintained checklist would rot exactly the way the
- * thing it is checking rotted.
+ * `@titan-design/session-read` declares. A hand-maintained checklist would rot
+ * exactly the way the thing it is checking rotted — which is also why this
+ * stayed in active-work when the graph moved into a package: it must read
+ * whatever the schema currently is, including tables a later package version
+ * adds without telling anyone.
  *
  * Read-only and cheap: one table scan per table, no transcript is opened.
  */
+
+type Db = Database.Database;
 
 export interface ColumnLiveness {
   table: string;
@@ -56,8 +60,8 @@ export interface LivenessReport {
   transcripts: number;
 }
 
-/** Internal bookkeeping tables that have no product meaning. */
-const SKIP_TABLES = /^(sqlite_|spans_fts)/;
+/** Bookkeeping tables that have no product meaning, and the contentless FTS index. */
+const SKIP_TABLES = /^(sqlite_|_migration$|search_fts)/;
 
 /**
  * Structures that are empty *on purpose*, with the reason.
@@ -69,12 +73,11 @@ const SKIP_TABLES = /^(sqlite_|spans_fts)/;
  * and `miner liveness` still prints it, just under a heading that says so.
  */
 export const EXPECTED_EMPTY: Record<string, string> = {
-  'session_model_usage.cost_usd':
-    'optional denormalized cache; dollars come from joining model_pricing at rollup time so price changes apply retroactively',
-  'edges.t_invalid':
+  'edge.t_invalid':
     'NULL means current; the index is rebuilt from scratch, so no edge is ever superseded in place',
-  'edges.t_expired':
-    'NULL means current — idx_edges_current is defined WHERE t_expired IS NULL, so all-NULL is the designed steady state',
+  'edge.t_expired':
+    'NULL means current — idx_edge_current is defined WHERE t_expired IS NULL, so all-NULL is the designed steady state',
+  'edge.attrs': 'kit column; the session graph writes no per-edge attributes',
 };
 
 /**
@@ -84,30 +87,30 @@ export const EXPECTED_EMPTY: Record<string, string> = {
  * finding instead of silently passing.
  */
 const REF_TABLES: Record<string, { table: string; column: string; bare?: boolean }> = {
-  // `sessions` is the odd one out: it stores the bare id, every other entity
+  // `session` is the odd one out: it stores the bare id, every other entity
   // table stores the prefixed ref. Comparing without allowing for that reports
   // every session endpoint as dangling — a false alarm, which in a diagnostic
   // is worse than no check at all.
-  session: { table: 'sessions', column: 'session_id', bare: true },
-  agent: { table: 'subagents', column: 'agent_ref' },
-  file: { table: 'files', column: 'file_ref' },
-  branch: { table: 'branches', column: 'branch_ref' },
-  task: { table: 'tasks', column: 'task_ref' },
-  artifact: { table: 'artifacts', column: 'artifact_ref' },
-  // `prs` is keyed by `pr_ref` like every other entity table. It was left
+  session: { table: 'session', column: 'session_id', bare: true },
+  agent: { table: 'subagent', column: 'agent_ref' },
+  file: { table: 'file', column: 'file_ref' },
+  branch: { table: 'branch', column: 'branch_ref' },
+  task: { table: 'task', column: 'task_ref' },
+  artifact: { table: 'artifact', column: 'artifact_ref' },
+  // `pr` is keyed by `pr_ref` like every other entity table. It was left
   // unmapped on the belief that it was keyed by `(number, repo)` — that is
-  // `pr_merge_observations`, a different table (AW-107).
-  pr: { table: 'prs', column: 'pr_ref' },
+  // `pr_merge_observation`, a different table (AW-107).
+  pr: { table: 'pr', column: 'pr_ref' },
 };
 
-function tableNames(db: SessionIndexDb): string[] {
+function tableNames(db: Db): string[] {
   const rows = db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
     .all() as { name: string }[];
   return rows.map((row) => row.name).filter((name) => !SKIP_TABLES.test(name));
 }
 
-function columnNames(db: SessionIndexDb, table: string): string[] {
+function columnNames(db: Db, table: string): string[] {
   const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as { name: string }[];
   return rows.map((row) => row.name);
 }
@@ -115,9 +118,9 @@ function columnNames(db: SessionIndexDb, table: string): string[] {
 /**
  * One scan per table, not one per column: `COUNT(col)` skips NULLs, so every
  * column's population is answered by a single aggregate row. On a 280k-row
- * `facts` table the difference is seconds versus a minute.
+ * `fact` table the difference is seconds versus a minute.
  */
-function scanTable(db: SessionIndexDb, table: string): ColumnLiveness[] {
+function scanTable(db: Db, table: string): ColumnLiveness[] {
   const columns = columnNames(db, table);
   if (columns.length === 0) return [];
   const selects = columns.map((column, index) => `COUNT("${column}") AS c${index}`).join(', ');
@@ -133,10 +136,10 @@ function scanTable(db: SessionIndexDb, table: string): ColumnLiveness[] {
   }));
 }
 
-function relationLiveness(db: SessionIndexDb): RelationLiveness[] {
+function relationLiveness(db: Db): RelationLiveness[] {
   const observed = new Map(
     (
-      db.prepare('SELECT relation, COUNT(*) AS n FROM edges GROUP BY relation').all() as {
+      db.prepare('SELECT relation, COUNT(*) AS n FROM edge GROUP BY relation').all() as {
         relation: string;
         n: number;
       }[]
@@ -154,13 +157,13 @@ function relationLiveness(db: SessionIndexDb): RelationLiveness[] {
   return report.sort((a, b) => a.relation.localeCompare(b.relation));
 }
 
-function refNamespaces(db: SessionIndexDb): RefNamespaceLiveness[] {
+function refNamespaces(db: Db): RefNamespaceLiveness[] {
   const rows = db
     .prepare(
       `SELECT namespace, COUNT(*) AS n FROM (
-         SELECT substr(source_ref, 1, instr(source_ref, ':') - 1) AS namespace FROM edges
+         SELECT substr(source_ref, 1, instr(source_ref, ':') - 1) AS namespace FROM edge
          UNION ALL
-         SELECT substr(target_ref, 1, instr(target_ref, ':') - 1) FROM edges
+         SELECT substr(target_ref, 1, instr(target_ref, ':') - 1) FROM edge
        ) WHERE namespace <> '' GROUP BY namespace ORDER BY namespace`,
     )
     .all() as { namespace: string; n: number }[];
@@ -172,7 +175,7 @@ function refNamespaces(db: SessionIndexDb): RefNamespaceLiveness[] {
     const { c } = db
       .prepare(
         `SELECT COUNT(*) AS c FROM (
-           SELECT source_ref AS ref FROM edges UNION ALL SELECT target_ref FROM edges
+           SELECT source_ref AS ref FROM edge UNION ALL SELECT target_ref FROM edge
          ) e
          WHERE e.ref LIKE @prefix
            AND NOT EXISTS (SELECT 1 FROM "${target.table}" t WHERE t."${target.column}" = ${lhs})`,
@@ -183,20 +186,19 @@ function refNamespaces(db: SessionIndexDb): RefNamespaceLiveness[] {
 }
 
 /**
- * Rows still claiming `ok` whose file is gone. `reconcileMissingTranscripts`
- * (AW-105) now marks these at the end of every refresh pass, so a healthy index
- * reports 0 here and a non-zero count means the index is stale rather than that
- * the status is unreachable — which is what it meant when this check was
- * written, and why it was written.
+ * Rows still claiming `ok` whose file is gone. `refreshCorpus` marks these at
+ * the end of every pass, so a healthy index reports 0 here and a non-zero count
+ * means the index is stale rather than that the status is unreachable — which
+ * is what it meant when this check was written, and why it was written.
  */
-function staleTranscripts(db: SessionIndexDb): number {
-  const rows = db.prepare("SELECT path FROM transcripts WHERE status = 'ok'").all() as {
-    path: string;
+function staleTranscripts(db: Db): number {
+  const rows = db.prepare("SELECT source_key FROM transcript WHERE status = 'ok'").all() as {
+    source_key: string;
   }[];
-  return rows.filter((row) => !existsSync(toAbsolutePath(row.path))).length;
+  return rows.filter((row) => !existsSync(toAbsolutePath(row.source_key))).length;
 }
 
-export function runLiveness(db: SessionIndexDb): LivenessReport {
+export function runLiveness(db: Db): LivenessReport {
   const columns = tableNames(db).flatMap((table) => scanTable(db, table));
   // A column in an empty table says nothing, so those are not findings.
   const empty = columns.filter((column) => column.nonNull === 0 && column.rows > 0);
@@ -211,6 +213,6 @@ export function runLiveness(db: SessionIndexDb): LivenessReport {
     relations: relationLiveness(db),
     refNamespaces: refNamespaces(db),
     staleTranscripts: staleTranscripts(db),
-    transcripts: (db.prepare('SELECT COUNT(*) AS n FROM transcripts').get() as { n: number }).n,
+    transcripts: (db.prepare('SELECT COUNT(*) AS n FROM transcript').get() as { n: number }).n,
   };
 }

@@ -3,16 +3,16 @@
  *
  * Same posture as the live-reload watcher: indexing is a nicety, so every
  * failure path here degrades to `null` and a warning rather than aborting the
- * daemon. A missing `dist/schema.sql`, a better-sqlite3 ABI mismatch after a
- * Node upgrade, or an unreadable transcripts root must not stop `active-work
- * mcp serve` from serving.
+ * daemon. A failed migration, a better-sqlite3 ABI mismatch after a Node
+ * upgrade, or an unreadable transcripts root must not stop `active-work mcp
+ * serve` from serving.
  */
 import { existsSync } from 'node:fs';
-import { openSessionIndex, type SessionIndexDb } from '../miner/session-index/db.js';
-import { transcriptsRoot } from '../miner/session-index/discover.js';
-import { runRefresh, withRefreshLock } from '../miner/session-index/refresh.js';
-import { RefreshScheduler, type SchedulerStatus } from '../miner/session-index/scheduler.js';
+import { transcriptsRoot } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
+import { openGraph, type SessionGraph } from '../session-index/graph.js';
+import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
+import { RefreshScheduler, type SchedulerStatus } from '../session-index/scheduler.js';
 
 export interface SessionIndexWatcher {
   status(): SchedulerStatus;
@@ -56,15 +56,15 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     return null;
   }
 
-  let db: SessionIndexDb;
+  let graph: SessionGraph;
   try {
-    db = openSessionIndex();
+    graph = openGraph();
   } catch (err) {
     log.warn({ err }, 'session index unavailable; transcript indexing disabled');
     return null;
   }
 
-  const scheduler = new RefreshScheduler(() => withRefreshLock(() => runRefresh({ db })), {
+  const scheduler = new RefreshScheduler(() => withRefreshLock(() => runRefresh({ graph })), {
     onError: (err) => log.warn({ err }, 'session index refresh failed'),
   });
 
@@ -100,7 +100,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
       clearInterval(poll);
       watcher?.close();
       await scheduler.close();
-      db.close();
+      graph.db.close();
     },
   };
 }

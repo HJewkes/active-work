@@ -3,24 +3,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { runRefresh, type RefreshSummary } from '../../../src/miner/session-index/refresh.js';
-import { RefreshScheduler } from '../../../src/miner/session-index/scheduler.js';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { runRefresh, type RefreshSummary } from '../../src/session-index/refresh.js';
+import { RefreshScheduler } from '../../src/session-index/scheduler.js';
 import { FIXTURE_LINES, renderTranscript } from './fixture.js';
 
 let dir: string;
 let root: string;
-let db: SessionIndexDb;
+let graph: SessionGraph;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-refresh-'));
   root = path.join(dir, 'projects');
   mkdirSync(path.join(root, 'demo'), { recursive: true });
-  db = openSessionIndex(path.join(dir, 'index.sqlite3'));
+  graph = openGraph(path.join(dir, 'graph.sqlite3'));
 });
 
 afterEach(() => {
-  db.close();
+  graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -32,7 +32,7 @@ describe('runRefresh', () => {
   it('indexes the corpus and rolls up the sessions it touched', async () => {
     writeTranscript('a.jsonl');
 
-    const summary = await runRefresh({ db, root });
+    const summary = await runRefresh({ graph, root });
 
     expect(summary).toMatchObject({
       transcripts: 1,
@@ -44,18 +44,18 @@ describe('runRefresh', () => {
       errors: [],
     });
     expect(summary.factsAdded).toBe(FIXTURE_LINES.length);
-    expect(summary.sessionsRolledUp).toBeGreaterThan(0);
+    expect(summary.turnsRolledUp).toBeGreaterThan(0);
     // The rollup ran: turns are closed, which no single line can do.
-    expect(db.prepare('SELECT COUNT(*) AS n FROM turns WHERE ended_at IS NOT NULL').get()).toEqual({
-      n: 2,
-    });
+    expect(
+      graph.db.prepare('SELECT COUNT(*) AS n FROM turn WHERE ended_at IS NOT NULL').get(),
+    ).toEqual({ n: 2 });
   });
 
   it('reports an unchanged corpus without re-reading it', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
 
-    const second = await runRefresh({ db, root });
+    const second = await runRefresh({ graph, root });
 
     expect(second).toMatchObject({ indexed: 0, unchanged: 1, factsAdded: 0 });
   });
@@ -64,10 +64,10 @@ describe('runRefresh', () => {
     writeTranscript('a.jsonl');
     writeFileSync(path.join(root, 'demo', 'b.jsonl'), 'not json\n', 'utf8');
 
-    const limited = await runRefresh({ db, root, limit: 1 });
+    const limited = await runRefresh({ graph, root, limit: 1 });
     expect(limited).toMatchObject({ transcripts: 2, scanned: 1 });
 
-    const all = await runRefresh({ db, root });
+    const all = await runRefresh({ graph, root });
     expect(all.quarantined).toBe(1);
     expect(all.errors).toHaveLength(1);
     expect(all.errors[0]).toMatch(/quarantined: .*b\.jsonl/);
@@ -75,10 +75,10 @@ describe('runRefresh', () => {
 
   it('marks a transcript missing once its file is deleted (AW-105)', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
     rmSync(path.join(root, 'demo', 'a.jsonl'));
 
-    const summary = await runRefresh({ db, root });
+    const summary = await runRefresh({ graph, root });
 
     expect(summary.reconciledMissing).toBe(1);
     expect(statusOf('a.jsonl')).toBe('missing');
@@ -86,11 +86,11 @@ describe('runRefresh', () => {
 
   it('keeps what a deleted transcript taught the index', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
     const mined = counts();
     rmSync(path.join(root, 'demo', 'a.jsonl'));
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
 
     expect(counts()).toEqual(mined);
   });
@@ -98,9 +98,9 @@ describe('runRefresh', () => {
   it('leaves an indexed transcript alone when --limit skips visiting it', async () => {
     writeTranscript('a.jsonl');
     writeTranscript('b.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
 
-    const summary = await runRefresh({ db, root, limit: 1 });
+    const summary = await runRefresh({ graph, root, limit: 1 });
 
     expect(summary).toMatchObject({ scanned: 1, reconciledMissing: 0 });
     expect(statusOf('b.jsonl')).toBe('ok');
@@ -108,44 +108,48 @@ describe('runRefresh', () => {
 
   it('restores a transcript to ok when its file comes back', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
     rmSync(path.join(root, 'demo', 'a.jsonl'));
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
 
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
 
     expect(statusOf('a.jsonl')).toBe('ok');
   });
 
   it('a full refresh converges on the same row counts as an incremental one', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root });
     const incremental = counts();
 
-    await runRefresh({ db, root, full: true });
+    await runRefresh({ graph, root, full: true });
 
     expect(counts()).toEqual(incremental);
   });
 });
 
 function statusOf(name: string): string {
-  const row = db
-    .prepare<[string], { status: string }>('SELECT status FROM transcripts WHERE path LIKE ?')
+  const row = graph.db
+    .prepare<[string], { status: string }>('SELECT status FROM transcript WHERE source_key LIKE ?')
     .get(`%${name}`) as { status: string };
   return row.status;
 }
 
 function counts(): Record<string, number> {
   const scalar = (table: string): number =>
-    (db.prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+    (
+      graph.db.prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM ${table}`).get() as {
+        n: number;
+      }
+    ).n;
   return {
-    facts: scalar('facts'),
-    sessions: scalar('sessions'),
-    turns: scalar('turns'),
-    edges: scalar('edges'),
-    spans: scalar('searchable_spans'),
-    fts: scalar('spans_fts'),
+    facts: scalar('fact'),
+    sessions: scalar('session'),
+    turns: scalar('turn'),
+    edges: scalar('edge'),
+    spans: scalar('search_span'),
+    fts: scalar('search_fts'),
   };
 }
 
@@ -156,12 +160,15 @@ describe('RefreshScheduler', () => {
     transcripts: 0,
     scanned: 0,
     indexed: 0,
+    rewound: 0,
     unchanged: 0,
     quarantined: 0,
     missing: 0,
     reconciledMissing: 0,
     factsAdded: 0,
-    sessionsRolledUp: 0,
+    turnsRolledUp: 0,
+    tasksRequested: 0,
+    tasksApplied: 0,
     errors: [],
   });
 

@@ -6,6 +6,4 @@ export default defineConfig({
   target: 'node22',
   clean: true,
   sourcemap: true,
-  // `schema.sql` is read from disk at runtime; tsup bundles code, not assets.
-  onSuccess: 'node scripts/copy-schema.mjs',
 });

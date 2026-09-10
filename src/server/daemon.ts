@@ -10,7 +10,7 @@
 import { DaemonAlreadyRunningError, startDaemon } from '@titan-design/daemon';
 import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
-import type { SchedulerStatus } from '../miner/session-index/scheduler.js';
+import type { SchedulerStatus } from '../session-index/scheduler.js';
 import { getActiveRoot, getStateRoot } from '../utils/paths.js';
 import { handleDashboard } from './dashboard-routes.js';
 import { DAEMON_VERSION, type HealthIndexState } from './health.js';

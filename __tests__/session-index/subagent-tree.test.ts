@@ -15,8 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { runRefresh } from '../../../src/miner/session-index/refresh.js';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { runRefresh } from '../../src/session-index/refresh.js';
 import { FIXTURE_CWD } from './fixture.js';
 
 const PARENT = 'parent-sess';
@@ -26,17 +26,17 @@ const NESTED_TOOL_USE_ID = 'toolu_01NestedDispatch0000000';
 
 let dir: string;
 let root: string;
-let db: SessionIndexDb;
+let graph: SessionGraph;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-subagent-'));
   root = path.join(dir, 'projects');
   mkdirSync(path.join(root, 'demo'), { recursive: true });
-  db = openSessionIndex(path.join(dir, 'index.sqlite3'));
+  graph = openGraph(path.join(dir, 'graph.sqlite3'));
 });
 
 afterEach(() => {
-  db.close();
+  graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -167,14 +167,14 @@ function writeSubagent(turns = 2, { nestedDispatch = false } = {}): void {
 
 const factsFor = (sessionId: string): number =>
   (
-    db.prepare('SELECT COUNT(*) AS n FROM facts WHERE session_id = ?').get(sessionId) as {
+    graph.db.prepare('SELECT COUNT(*) AS n FROM fact WHERE session_id = ?').get(sessionId) as {
       n: number;
     }
   ).n;
 
 const turnsFor = (sessionId: string): number =>
   (
-    db.prepare('SELECT turn_count AS n FROM sessions WHERE session_id = ?').get(sessionId) as {
+    graph.db.prepare('SELECT turn_count AS n FROM session WHERE session_id = ?').get(sessionId) as {
       n: number;
     } | null
   )?.n ?? -1;
@@ -182,11 +182,11 @@ const turnsFor = (sessionId: string): number =>
 describe('subagent sidechains', () => {
   it('does not credit the parent with its subagent’s work', async () => {
     writeParent();
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
     const [turnsAlone, factsAlone] = [turnsFor(PARENT), factsFor(PARENT)];
 
     writeSubagent(3);
-    await runRefresh({ db, root, full: true });
+    await runRefresh({ graph, root, full: true, taskRoot: dir });
 
     // The parent is untouched by the arrival of 6 lines of subagent work...
     expect(turnsFor(PARENT)).toBe(turnsAlone);
@@ -203,26 +203,28 @@ describe('subagent sidechains', () => {
     // because a `<session>/` directory sorts before `<session>.jsonl`.
     writeParent();
 
-    const summary = await runRefresh({ db, root });
+    const summary = await runRefresh({ graph, root, taskRoot: dir });
 
     expect(summary).toMatchObject({ indexed: 1, quarantined: 0, errors: [] });
     expect(
-      db
-        .prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?')
+      graph.db
+        .prepare('SELECT child_session_id FROM subagent WHERE agent_ref = ?')
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ child_session_id: AGENT_ID });
     // The link is recorded even though no such session row exists.
-    expect(db.prepare('SELECT 1 FROM sessions WHERE session_id = ?').get(AGENT_ID)).toBeUndefined();
+    expect(
+      graph.db.prepare('SELECT 1 FROM session WHERE session_id = ?').get(AGENT_ID),
+    ).toBeUndefined();
   });
 
   it('gives the subagent its own session keyed on agentId, not the parent’s id', async () => {
     writeParent();
     writeSubagent();
 
-    const summary = await runRefresh({ db, root });
+    const summary = await runRefresh({ graph, root, taskRoot: dir });
 
     expect(summary.transcripts).toBe(2);
-    expect(db.prepare('SELECT session_id FROM sessions ORDER BY session_id').all()).toEqual([
+    expect(graph.db.prepare('SELECT session_id FROM session ORDER BY session_id').all()).toEqual([
       { session_id: AGENT_ID },
       { session_id: PARENT },
     ]);
@@ -232,12 +234,12 @@ describe('subagent sidechains', () => {
     writeParent({ withBridge: false });
     writeSubagent();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db
+      graph.db
         .prepare(
-          "SELECT source_ref, target_ref FROM edges WHERE relation = 'spawned' AND target_ref LIKE 'session:%'",
+          "SELECT source_ref, target_ref FROM edge WHERE relation = 'spawned' AND target_ref LIKE 'session:%'",
         )
         .all(),
     ).toEqual([{ source_ref: `session:${PARENT}`, target_ref: `session:${AGENT_ID}` }]);
@@ -253,12 +255,12 @@ describe('subagent sidechains', () => {
     writeSubagent();
     appendSessionlessLine();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db
+      graph.db
         .prepare(
-          "SELECT source_ref, target_ref FROM edges WHERE relation = 'spawned' AND target_ref LIKE 'session:%'",
+          "SELECT source_ref, target_ref FROM edge WHERE relation = 'spawned' AND target_ref LIKE 'session:%'",
         )
         .all(),
     ).toEqual([{ source_ref: `session:${PARENT}`, target_ref: `session:${AGENT_ID}` }]);
@@ -269,13 +271,13 @@ describe('subagent sidechains', () => {
     writeSubagent();
     appendSessionlessLine();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
-    const dangling = db
+    const dangling = graph.db
       .prepare(
-        `SELECT e.ref FROM (SELECT source_ref AS ref FROM edges UNION ALL SELECT target_ref FROM edges) e
+        `SELECT e.ref FROM (SELECT source_ref AS ref FROM edge UNION ALL SELECT target_ref FROM edge) e
           WHERE e.ref LIKE 'session:%'
-            AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = substr(e.ref, 9))`,
+            AND NOT EXISTS (SELECT 1 FROM session s WHERE s.session_id = substr(e.ref, 9))`,
       )
       .all();
 
@@ -286,12 +288,12 @@ describe('subagent sidechains', () => {
     writeParent();
     writeSubagent();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db
+      graph.db
         .prepare(
-          'SELECT session_id, child_session_id, agent_type FROM subagents WHERE agent_ref = ?',
+          'SELECT session_id, child_session_id, agent_type FROM subagent WHERE agent_ref = ?',
         )
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ session_id: PARENT, child_session_id: AGENT_ID, agent_type: 'Explore' });
@@ -301,13 +303,13 @@ describe('subagent sidechains', () => {
     writeParent({ withBridge: false });
     writeSubagent();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     // No bridge to invent — but the child still reaches its parent directly,
     // which is what the previous test's `spawned` edge asserts.
     expect(
-      db
-        .prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?')
+      graph.db
+        .prepare('SELECT child_session_id FROM subagent WHERE agent_ref = ?')
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ child_session_id: null });
   });
@@ -316,14 +318,14 @@ describe('subagent sidechains', () => {
     writeParent();
     writeSubagent();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db
+      graph.db
         .prepare(
           `SELECT sp.source_ref AS parent, tr.target_ref AS child
-             FROM edges sp
-             JOIN edges tr ON tr.source_ref = sp.target_ref AND tr.relation = 'transcribed_in'
+             FROM edge sp
+             JOIN edge tr ON tr.source_ref = sp.target_ref AND tr.relation = 'transcribed_in'
             WHERE sp.relation = 'spawned' AND sp.target_ref LIKE 'agent:%'`,
         )
         .all(),
@@ -337,12 +339,12 @@ describe('subagent sidechains', () => {
     writeParent();
     writeSubagent();
 
-    await runRefresh({ db, root, limit: 1 });
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, limit: 1, taskRoot: dir });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db
-        .prepare('SELECT child_session_id FROM subagents WHERE agent_ref = ?')
+      graph.db
+        .prepare('SELECT child_session_id FROM subagent WHERE agent_ref = ?')
         .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ child_session_id: AGENT_ID });
   });
@@ -356,10 +358,12 @@ describe('subagent sidechains', () => {
     writeParent();
     writeSubagent();
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     expect(
-      db.prepare('SELECT ended_at FROM subagents WHERE agent_ref = ?').get(`agent:${TOOL_USE_ID}`),
+      graph.db
+        .prepare('SELECT ended_at FROM subagent WHERE agent_ref = ?')
+        .get(`agent:${TOOL_USE_ID}`),
     ).toEqual({ ended_at: '2026-08-01T00:01:03.000Z' });
   });
 
@@ -367,13 +371,13 @@ describe('subagent sidechains', () => {
     writeParent();
     writeSubagent(2, { nestedDispatch: true });
 
-    await runRefresh({ db, root });
+    await runRefresh({ graph, root, taskRoot: dir });
 
     // The nested dispatch's parent is the dispatch whose child transcript it
     // was issued from — what makes the tree deeper than one level.
     expect(
-      db
-        .prepare('SELECT parent_agent_ref FROM subagents WHERE agent_ref = ?')
+      graph.db
+        .prepare('SELECT parent_agent_ref FROM subagent WHERE agent_ref = ?')
         .get(`agent:${NESTED_TOOL_USE_ID}`),
     ).toEqual({ parent_agent_ref: `agent:${TOOL_USE_ID}` });
   });

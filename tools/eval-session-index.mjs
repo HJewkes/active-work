@@ -21,7 +21,7 @@
  *      warm index under a much tighter one, with `unchanged` asserted so a
  *      fast run that secretly re-read the corpus still fails.
  *   4. FTS sanity — a stored span is findable by a token from its own text,
- *      through the mandatory `searchable_spans` join.
+ *      through the mandatory `search_span` join.
  *
  * Exit code makes this a local pre-merge gate. The pure functions below are
  * unit-tested in CI; the full run needs the operator's private `~/.claude`
@@ -45,14 +45,13 @@ const pexec = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel) => new URL(`file://${path.join(here, '..', 'src', rel)}`).href;
 
-const { openSessionIndex } = await import(src('miner/session-index/db.ts'));
-const { runRefresh } = await import(src('miner/session-index/refresh.ts'));
-const { discoverTranscripts, transcriptsRoot } = await import(
-  src('miner/session-index/discover.ts')
+const { openGraph } = await import(src('session-index/graph.ts'));
+const { runRefresh } = await import(src('session-index/refresh.ts'));
+// The reader's own text projection: the FTS check has to probe with tokens that
+// were actually indexed, not with tokens from the raw JSONL.
+const { discoverTranscripts, searchText, transcriptsRoot } = await import(
+  '@titan-design/session-read'
 );
-// The extractor's own text projection: the FTS check has to probe with tokens
-// that were actually indexed, not with tokens from the raw JSONL.
-const { searchText } = await import(src('miner/session-index/line-handler.ts'));
 
 export { score, attrAccuracy, round } from './eval-miner.mjs';
 import { score, attrAccuracy, round } from './eval-miner.mjs';
@@ -172,49 +171,50 @@ export function normalizeRows(rows) {
  * Every comparison excludes surrogate keys (`fact_id`, `span_id`, `edge_id`, …)
  * and indexing timestamps (`t_indexed`, `t_created`, `last_indexed_at`): those
  * legitimately differ between a full rebuild and an incremental replay without
- * the *content* differing. `facts` and `searchable_spans` are joined back to
- * `(transcript.path, byte_offset)`, which is the real, stable identity of a row
- * in this schema.
+ * the *content* differing. `fact` and `search_span` are joined back to
+ * `(transcript.source_key, byte_offset)`, which is the real, stable identity of
+ * a row in this schema.
  */
 const DIGEST_QUERIES = {
-  transcripts: `SELECT path, last_byte_offset, prefix_hash, file_size, status, quarantine_reason
-                  FROM transcripts ORDER BY path`,
-  facts: `SELECT t.path, f.byte_offset, f.byte_length, f.event_type, f.ts, f.seq, f.session_id,
-                 f.prompt_id, f.tool_use_id, f.agent_id, f.parent_agent_id, f.workflow_run_id
-            FROM facts f JOIN transcripts t ON t.transcript_id = f.transcript_id
-           ORDER BY t.path, f.byte_offset`,
-  sessions: `SELECT session_id, started_at, ended_at, start_type, cwd, git_branch, ai_title,
-                    seed_prompt, cli_version, turn_count, commit_count, push_count
-               FROM sessions ORDER BY session_id`,
+  transcript: `SELECT source_key AS path, last_offset, prefix_hash, file_size, status, status_reason
+                 FROM transcript ORDER BY source_key`,
+  fact: `SELECT t.source_key AS path, f.byte_offset, f.byte_length, f.event_type, f.ts, f.seq,
+                f.session_id, f.prompt_id, f.tool_use_id
+           FROM fact f JOIN transcript t ON t.source_id = f.transcript_id
+          ORDER BY t.source_key, f.byte_offset`,
+  session: `SELECT session_id, started_at, ended_at, start_type, cwd, git_branch, ai_title,
+                   seed_prompt, cli_version, turn_count, commit_count, push_count
+              FROM session ORDER BY session_id`,
   session_model_usage: `SELECT session_id, model, input_tokens, output_tokens, cache_read_tokens,
                                cache_creation_tokens, thinking_tokens, request_count
                           FROM session_model_usage ORDER BY session_id, model`,
-  turns: `SELECT prompt_id, session_id, turn_index, started_at, ended_at, duration_ms,
-                 tool_call_count, thinking_ms
-            FROM turns ORDER BY session_id, turn_index, prompt_id`,
-  permission_phases: `SELECT session_id, from_mode, to_mode, trigger, t_valid, t_invalid
-                        FROM permission_phases ORDER BY session_id, t_valid, trigger, to_mode`,
-  human_edits: `SELECT session_id, file_path, ts, lines_added, lines_removed
-                  FROM human_edits ORDER BY session_id, file_path, ts`,
-  subagents: `SELECT agent_ref, session_id, parent_agent_ref, agent_type, label, started_at, ended_at
-                FROM subagents ORDER BY agent_ref`,
-  prs: `SELECT pr_ref, number, repo, title, state, url, merged_at FROM prs ORDER BY pr_ref`,
-  branches: `SELECT branch_ref, repo, name, base, created_at, deleted_at
-               FROM branches ORDER BY branch_ref`,
-  files: `SELECT file_ref, repo, path FROM files ORDER BY file_ref`,
-  tasks: `SELECT task_ref, initiative, title, status FROM tasks ORDER BY task_ref`,
-  artifacts: `SELECT artifact_ref, kind, title, url, path, created_at
-                FROM artifacts ORDER BY artifact_ref`,
-  edges: `SELECT source_ref, relation, target_ref, t_valid, t_invalid, t_expired, confidence
-            FROM edges ORDER BY source_ref, relation, target_ref, t_valid`,
-  searchable_spans: `SELECT t.path, s.byte_offset, s.byte_length, s.field
-                       FROM searchable_spans s JOIN transcripts t ON t.transcript_id = s.transcript_id
-                      ORDER BY t.path, s.byte_offset, s.field`,
+  turn: `SELECT prompt_id, session_id, turn_index, started_at, ended_at, duration_ms,
+                tool_call_count, thinking_ms
+           FROM turn ORDER BY session_id, turn_index, prompt_id`,
+  permission_phase: `SELECT session_id, from_mode, to_mode, trigger, t_valid, t_invalid
+                       FROM permission_phase ORDER BY session_id, t_valid, trigger, to_mode`,
+  human_edit: `SELECT session_id, file_path, ts FROM human_edit ORDER BY session_id, file_path, ts`,
+  file_checkpoint: `SELECT session_id, file_path, backup_file_name, version, backup_time
+                      FROM file_checkpoint ORDER BY session_id, file_path, backup_file_name`,
+  subagent: `SELECT agent_ref, session_id, parent_agent_ref, agent_type, label, started_at, ended_at
+               FROM subagent ORDER BY agent_ref`,
+  pr: `SELECT pr_ref, number, repo, title, state, url, merged_at FROM pr ORDER BY pr_ref`,
+  branch: `SELECT branch_ref, repo, name, base, created_at, deleted_at
+             FROM branch ORDER BY branch_ref`,
+  file: `SELECT file_ref, repo, path FROM file ORDER BY file_ref`,
+  task: `SELECT task_ref, task_id, initiative, title, status FROM task ORDER BY task_ref`,
+  artifact: `SELECT artifact_ref, kind, title, url, path, created_at
+               FROM artifact ORDER BY artifact_ref`,
+  edge: `SELECT source_ref, relation, target_ref, t_valid, t_invalid, t_expired, confidence
+           FROM edge ORDER BY source_ref, relation, target_ref, t_valid`,
+  search_span: `SELECT t.source_key AS path, s.byte_offset, s.byte_length, s.field
+                  FROM search_span s JOIN transcript t ON t.source_id = s.source_id
+                 ORDER BY t.source_key, s.byte_offset, s.field`,
 };
 
 /**
  * Probe tokens for the FTS digest. A contentless FTS5 table cannot return the
- * text it tokenized, so `spans_fts` is compared by *what it matches*, never by
+ * text it tokenized, so `search_fts` is compared by *what it matches*, never by
  * rowid — full and incremental builds allocate rowids in a different order and
  * comparing those would fail on a correct index.
  */
@@ -231,14 +231,15 @@ const FTS_PROBES = [
   'null',
 ];
 
-function ftsDigest(db) {
+function ftsDigest(graph) {
+  const db = graph.db;
   const statement = db.prepare(
-    `SELECT t.path AS path, s.byte_offset AS byte_offset, s.field AS field
-       FROM spans_fts f
-       JOIN searchable_spans s ON s.span_id = f.rowid
-       JOIN transcripts t ON t.transcript_id = s.transcript_id
-      WHERE spans_fts MATCH ?
-      ORDER BY t.path, s.byte_offset, s.field`,
+    `SELECT t.source_key AS path, s.byte_offset AS byte_offset, s.field AS field
+       FROM search_fts f
+       JOIN search_span s ON s.span_id = f.rowid
+       JOIN transcript t ON t.source_id = s.source_id
+      WHERE search_fts MATCH ?
+      ORDER BY path, s.byte_offset, s.field`,
   );
   const rows = [];
   for (const probe of FTS_PROBES) {
@@ -248,16 +249,16 @@ function ftsDigest(db) {
 }
 
 function snapshotDigests(dbPath) {
-  const db = openSessionIndex(dbPath);
+  const graph = openGraph(dbPath);
   try {
     const digests = {};
     for (const [table, sql] of Object.entries(DIGEST_QUERIES)) {
-      digests[table] = digestRows(normalizeRows(db.prepare(sql).all()));
+      digests[table] = digestRows(normalizeRows(graph.db.prepare(sql).all()));
     }
-    digests.spans_fts = ftsDigest(db);
+    digests.search_fts = ftsDigest(graph);
     return digests;
   } finally {
-    db.close();
+    graph.db.close();
   }
 }
 
@@ -343,24 +344,26 @@ async function gitFiles(repo) {
   return files;
 }
 
-/** What the index claims about one repo, keyed the way ground truth is keyed. */
+/**
+ * What the index claims about one repo, keyed the way ground truth is keyed.
+ *
+ * No branch is claimed per PR: the `built_on` edge that used to supply one was
+ * removed in AW-106 as underivable, so `claimAccuracy` scores only the merge
+ * assertions and treats the missing branch as ignorance rather than error.
+ */
 function indexClaims(db, repoName) {
   const prs = db
     .prepare(
-      `SELECT p.number AS number, p.merged_at AS merged_at,
-              (SELECT REPLACE(e.target_ref, 'branch:' || ? || '/', '')
-                 FROM edges e
-                WHERE e.source_ref = p.pr_ref AND e.relation = 'built_on' AND e.t_expired IS NULL
-                LIMIT 1) AS branch
-         FROM prs p WHERE p.repo LIKE '%/' || ? OR p.repo = ?`,
+      `SELECT p.number AS number, p.merged_at AS merged_at
+         FROM pr p WHERE p.repo LIKE '%/' || ? OR p.repo = ?`,
     )
-    .all(repoName, repoName, repoName);
-  const files = db.prepare('SELECT path FROM files WHERE repo = ?').all(repoName);
-  const branches = db.prepare('SELECT name FROM branches WHERE repo = ?').all(repoName);
+    .all(repoName, repoName);
+  const files = db.prepare('SELECT path FROM file WHERE repo = ?').all(repoName);
+  const branches = db.prepare('SELECT name FROM branch WHERE repo = ?').all(repoName);
   return {
     prs: prs.map((p) => ({
       number: p.number,
-      branch: p.branch || '',
+      branch: '',
       merged: Boolean(p.merged_at),
     })),
     files: files.map((f) => f.path),
@@ -370,7 +373,8 @@ function indexClaims(db, repoName) {
 
 async function groundTruthCheck(dbPath, repos, minPrecision) {
   if (repos.length === 0) return { skipped: 'no --repo given' };
-  const db = openSessionIndex(dbPath);
+  const graph = openGraph(dbPath);
+  const db = graph.db;
   try {
     const perRepo = {};
     for (const repo of repos) {
@@ -562,18 +566,19 @@ async function performanceCheck(snapshot, work, limits) {
  * assert the span comes back through the join. The text has to be re-derived
  * with the extractor's own `searchText` projection — tokens from the raw JSONL
  * (field names, uuids) were never indexed, so probing with those would report a
- * healthy index as broken. Re-reading from disk rather than from `spans_fts` is
+ * healthy index as broken. Re-reading from disk rather than from `search_fts` is
  * not laziness either: a contentless FTS5 table cannot return what it
  * tokenized, which is exactly why the join is mandatory.
  */
 async function ftsCheck(dbPath, sampleSize = 20) {
-  const db = openSessionIndex(dbPath);
+  const graph = openGraph(dbPath);
+  const db = graph.db;
   try {
     const spans = db
       .prepare(
         `SELECT s.span_id AS span_id, s.field AS field, s.byte_offset AS byte_offset,
-                s.byte_length AS byte_length, t.path AS path
-           FROM searchable_spans s JOIN transcripts t ON t.transcript_id = s.transcript_id
+                s.byte_length AS byte_length, t.source_key AS path
+           FROM search_span s JOIN transcript t ON t.source_id = s.source_id
           ORDER BY s.span_id LIMIT 4000`,
       )
       .all();
@@ -581,9 +586,9 @@ async function ftsCheck(dbPath, sampleSize = 20) {
 
     const step = Math.max(1, Math.floor(spans.length / sampleSize));
     const lookup = db.prepare(
-      `SELECT s.span_id AS span_id FROM spans_fts f
-         JOIN searchable_spans s ON s.span_id = f.rowid
-        WHERE spans_fts MATCH ? AND s.span_id = ?`,
+      `SELECT s.span_id AS span_id FROM search_fts f
+         JOIN search_span s ON s.span_id = f.rowid
+        WHERE search_fts MATCH ? AND s.span_id = ?`,
     );
 
     let checked = 0;
@@ -608,7 +613,7 @@ async function ftsCheck(dbPath, sampleSize = 20) {
   }
 }
 
-/** `transcripts.path` is `~`-relative only when the file lives under `$HOME`. */
+/** `transcript.source_key` is `~`-relative only when the file lives under `$HOME`. */
 function resolveTranscriptPath(stored) {
   return stored.startsWith('~/') ? path.join(os.homedir(), stored.slice(2)) : stored;
 }

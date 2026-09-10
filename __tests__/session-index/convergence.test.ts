@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { runRefresh } from '../../../src/miner/session-index/refresh.js';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { runRefresh } from '../../src/session-index/refresh.js';
 
 /**
  * Regression cover for the order-dependence class of bug: a value that depends
@@ -99,18 +99,18 @@ function writeCorpus(): void {
   );
 }
 
-function query(db: SessionIndexDb) {
+function query(graph: SessionGraph) {
   return {
-    turns: db.prepare('SELECT prompt_id, turn_index FROM turns ORDER BY turn_index').all() as {
+    turns: graph.db.prepare('SELECT prompt_id, turn_index FROM turn ORDER BY turn_index').all() as {
       prompt_id: string;
       turn_index: number;
     }[],
-    branch: db.prepare('SELECT created_at FROM branches').get() as { created_at: string },
-    session: db.prepare('SELECT started_at, start_type FROM sessions').get() as {
+    branch: graph.db.prepare('SELECT created_at FROM branch').get() as { created_at: string },
+    session: graph.db.prepare('SELECT started_at, start_type FROM session').get() as {
       started_at: string;
       start_type: string | null;
     },
-    pr: db.prepare('SELECT state, merged_at FROM prs').get() as {
+    pr: graph.db.prepare('SELECT state, merged_at FROM pr').get() as {
       state: string | null;
       merged_at: string | null;
     },
@@ -119,12 +119,12 @@ function query(db: SessionIndexDb) {
 
 async function refreshAndRead(dbName: string): Promise<ReturnType<typeof query>> {
   const dbPath = path.join(dir, `${dbName}.sqlite3`);
-  await runRefresh({ dbPath, root: path.join(dir, 'projects'), full: true });
-  const db = openSessionIndex(dbPath);
+  await runRefresh({ dbPath, root: path.join(dir, 'projects'), full: true, taskRoot: dir });
+  const graph = openGraph(dbPath);
   try {
-    return query(db);
+    return query(graph);
   } finally {
-    db.close();
+    graph.db.close();
   }
 }
 
@@ -215,14 +215,14 @@ describe('order-independent index state', () => {
       for (const [name, body] of Object.entries(stage)) {
         writeFileSync(path.join(root, name), body, 'utf8');
       }
-      await runRefresh({ dbPath: staged, root: projects });
+      await runRefresh({ dbPath: staged, root: projects, taskRoot: dir });
     }
 
-    const db = openSessionIndex(staged);
+    const graph = openGraph(staged);
     try {
-      expect(query(db)).toEqual(whole);
+      expect(query(graph)).toEqual(whole);
     } finally {
-      db.close();
+      graph.db.close();
     }
   });
 });

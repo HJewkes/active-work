@@ -11,30 +11,32 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { runLiveness } from '../../../src/miner/session-index/liveness.js';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { runLiveness } from '../../src/session-index/liveness.js';
 
 let dir: string;
-let db: SessionIndexDb;
+let graph: SessionGraph;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-liveness-'));
-  db = openSessionIndex(path.join(dir, 'index.sqlite3'));
+  graph = openGraph(path.join(dir, 'graph.sqlite3'));
 });
 
 afterEach(() => {
-  db.close();
+  graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
 function addSession(id: string): void {
-  db.prepare('INSERT INTO sessions (session_id, turn_count) VALUES (?, 0)').run(id);
+  graph.db.prepare('INSERT INTO session (session_id, turn_count) VALUES (?, 0)').run(id);
 }
 
 function addEdge(source: string, relation: string, target: string): void {
-  db.prepare(
-    "INSERT INTO edges (source_ref, relation, target_ref, t_valid) VALUES (?, ?, ?, '2026-08-01')",
-  ).run(source, relation, target);
+  graph.db
+    .prepare(
+      "INSERT INTO edge (source_ref, relation, target_ref, t_valid) VALUES (?, ?, ?, '2026-08-01')",
+    )
+    .run(source, relation, target);
 }
 
 const columnFor = (report: ReturnType<typeof runLiveness>, table: string, column: string) =>
@@ -44,31 +46,31 @@ describe('liveness report', () => {
   it('reports a column nothing writes, and not one that has values', () => {
     addSession('s-1');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     // `start_type` is nullable and unset here; `session_id` is the primary key.
     expect(report.emptyColumns).toContainEqual(
-      expect.objectContaining({ table: 'sessions', column: 'start_type' }),
+      expect.objectContaining({ table: 'session', column: 'start_type' }),
     );
     expect(report.emptyColumns).not.toContainEqual(
-      expect.objectContaining({ table: 'sessions', column: 'session_id' }),
+      expect.objectContaining({ table: 'session', column: 'session_id' }),
     );
   });
 
   it('stays silent about an empty table, where a null column means nothing', () => {
     // No sessions at all: every column is trivially empty, and reporting them
     // would bury the real findings under noise.
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
-    expect(report.emptyColumns.filter((entry) => entry.table === 'sessions')).toEqual([]);
-    expect(columnFor(report, 'sessions', 'start_type')).toMatchObject({ rows: 0, nonNull: 0 });
+    expect(report.emptyColumns.filter((entry) => entry.table === 'session')).toEqual([]);
+    expect(columnFor(report, 'session', 'start_type')).toMatchObject({ rows: 0, nonNull: 0 });
   });
 
   it('separates a declared-but-unwritten relation from an undeclared one', () => {
     addSession('s-1');
     addEdge('session:s-1', 'invented_by_nobody', 'session:s-1');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.relations).toContainEqual({
       relation: 'invented_by_nobody',
@@ -85,7 +87,7 @@ describe('liveness report', () => {
     addSession('s-1');
     addEdge('session:s-1', 'touched', 'session:s-1');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.refNamespaces).toContainEqual({ namespace: 'session', edges: 2, dangling: 0 });
   });
@@ -94,7 +96,7 @@ describe('liveness report', () => {
     addSession('s-1');
     addEdge('session:s-1', 'touched', 'session:ghost');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.refNamespaces).toContainEqual({ namespace: 'session', edges: 2, dangling: 1 });
   });
@@ -105,22 +107,22 @@ describe('liveness report', () => {
     // extending that map has to surface as a finding, not pass quietly.
     addEdge('session:s-1', 'touched', 'commit:acme/demo@abc123');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.refNamespaces).toContainEqual({ namespace: 'commit', edges: 1, dangling: null });
   });
 
-  // `pr` read as UNMAPPED for its whole life on the belief that `prs` was keyed
-  // by `(number, repo)`. That is `pr_merge_observations`; `prs` has a `pr_ref`
-  // primary key like every other entity table (AW-107).
-  it('resolves a pr endpoint against the prs table', () => {
+  // `pr` read as UNMAPPED for its whole life on the belief that the table was
+  // keyed by `(number, repo)`. That is `pr_merge_observation`; `pr` has a
+  // `pr_ref` primary key like every other entity table (AW-107).
+  it('resolves a pr endpoint against the pr table', () => {
     addSession('s-1');
-    db.prepare(
-      "INSERT INTO prs (pr_ref, number, repo) VALUES ('pr:acme/demo#1', 1, 'acme/demo')",
-    ).run();
+    graph.db
+      .prepare("INSERT INTO pr (pr_ref, number, repo) VALUES ('pr:acme/demo#1', 1, 'acme/demo')")
+      .run();
     addEdge('session:s-1', 'linked', 'pr:acme/demo#1');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.refNamespaces).toContainEqual({ namespace: 'pr', edges: 1, dangling: 0 });
   });
@@ -129,7 +131,7 @@ describe('liveness report', () => {
     addSession('s-1');
     addEdge('session:s-1', 'linked', 'pr:acme/demo#404');
 
-    const report = runLiveness(db);
+    const report = runLiveness(graph.db);
 
     expect(report.refNamespaces).toContainEqual({ namespace: 'pr', edges: 1, dangling: 1 });
   });

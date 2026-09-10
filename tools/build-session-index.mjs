@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* eslint-disable no-undef -- Node ESM build tool */
 /**
- * build-session-index.mjs — manual rebuild of the AW-23 session signal index
- * (`<minerRoot>/index.sqlite3`).
+ * build-session-index.mjs — manual rebuild of the session graph
+ * (`<minerRoot>/graph.sqlite3`).
  *
  * A thin argv wrapper over `runRefresh`, which is the same function behind
  * `active-work miner refresh` and the daemon's transcript watcher — the three
@@ -23,8 +23,8 @@ register();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel) => new URL(`file://${path.join(here, '..', 'src', rel)}`).href;
 
-const { openSessionIndex } = await import(src('miner/session-index/db.ts'));
-const { runRefresh, withRefreshLock } = await import(src('miner/session-index/refresh.ts'));
+const { openGraph } = await import(src('session-index/graph.ts'));
+const { runRefresh, withRefreshLock } = await import(src('session-index/refresh.ts'));
 
 function parseArgs(argv) {
   const args = { db: null, full: false, limit: undefined, json: false };
@@ -38,9 +38,9 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv);
-const db = openSessionIndex(args.db ?? undefined);
+const graph = openGraph(args.db ?? undefined);
 const summary = await withRefreshLock(() =>
-  runRefresh({ db, full: args.full, limit: args.limit }),
+  runRefresh({ graph, full: args.full, limit: args.limit }),
 );
 
 if (args.json) {
@@ -48,16 +48,17 @@ if (args.json) {
 } else {
   console.log(
     `transcripts ${summary.transcripts} · facts +${summary.factsAdded} · ` +
-      `indexed ${summary.indexed} · unchanged ${summary.unchanged} · ` +
-      `quarantined ${summary.quarantined} · missing ${summary.missing} · ` +
-      `sessions rolled up ${summary.sessionsRolledUp} · ${summary.durationMs}ms`,
+      `indexed ${summary.indexed} · rewound ${summary.rewound} · ` +
+      `unchanged ${summary.unchanged} · quarantined ${summary.quarantined} · ` +
+      `missing ${summary.missing} · turns rolled up ${summary.turnsRolledUp} · ` +
+      `${summary.durationMs}ms`,
   );
   for (const error of summary.errors) console.log(`  ! ${error}`);
   console.log(
     'counts →',
-    ['sessions', 'facts', 'edges', 'files', 'prs', 'branches', 'tasks']
-      .map((t) => `${t} ${db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n}`)
+    ['session', 'fact', 'edge', 'file', 'pr', 'branch', 'task']
+      .map((t) => `${t} ${graph.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n}`)
       .join(' · '),
   );
 }
-db.close();
+graph.db.close();

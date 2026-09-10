@@ -3,21 +3,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { indexTranscript } from '../../../src/miner/session-index/quarantine.js';
-import { allSessionIds, rollupSessions } from '../../../src/miner/session-index/rollup.js';
-import { FIXTURE_LINES, renderTranscript } from './fixture.js';
+import {
+  allSessionIds,
+  applyDelta,
+  indexTranscript,
+  rollupSessions,
+} from '@titan-design/session-graph';
+import { extractTranscript } from '@titan-design/session-read';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { FIXTURE_LINES, offsetAfterLine, renderTranscript } from './fixture.js';
 
 let dir: string;
-let db: SessionIndexDb;
+let graph: SessionGraph;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-rollup-'));
-  db = openSessionIndex(path.join(dir, 'index.sqlite3'));
+  graph = openGraph(path.join(dir, 'graph.sqlite3'));
 });
 
 afterEach(() => {
-  db.close();
+  graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -30,16 +35,46 @@ interface TurnRow {
   thinking_ms: number;
 }
 
-async function build(chunkBytes?: number): Promise<TurnRow[]> {
+async function build(): Promise<TurnRow[]> {
   const absolutePath = path.join(dir, 'session.jsonl');
   writeFileSync(absolutePath, renderTranscript(FIXTURE_LINES), 'utf8');
-  await indexTranscript(db, { absolutePath, displayPath: '~/demo/session.jsonl' }, { chunkBytes });
-  rollupSessions(db, allSessionIds(db));
-  return db
+  await indexTranscript(graph, {
+    projectDir: 'demo',
+    absolutePath,
+    displayPath: '~/demo/session.jsonl',
+    subagentId: null,
+  });
+  rollupSessions(graph, allSessionIds(graph));
+  return turns();
+}
+
+/** The same corpus applied as two chunks split mid-transcript. */
+async function buildChunked(): Promise<TurnRow[]> {
+  const absolutePath = path.join(dir, 'session.jsonl');
+  writeFileSync(absolutePath, renderTranscript(FIXTURE_LINES), 'utf8');
+  const transcriptId = graph.transcripts.ensure('~/demo/session.jsonl').sourceId;
+  const first = await extractTranscript(absolutePath, {
+    untilByteOffset: offsetAfterLine(FIXTURE_LINES, 8),
+  });
+  applyDelta(graph, transcriptId, first);
+  applyDelta(
+    graph,
+    transcriptId,
+    await extractTranscript(absolutePath, {
+      fromByteOffset: first.lastByteOffset,
+      priorPrefixHash: first.prefixHash,
+    }),
+  );
+  rollupSessions(graph, allSessionIds(graph));
+  return turns();
+}
+
+function turns(): TurnRow[] {
+  return graph.db
     .prepare<
       [],
       TurnRow
-    >('SELECT prompt_id, started_at, ended_at, duration_ms, tool_call_count, thinking_ms FROM turns ORDER BY turn_index')
+    >('SELECT prompt_id, started_at, ended_at, duration_ms, tool_call_count, thinking_ms FROM turn ORDER BY turn_index')
     .all();
 }
 
@@ -70,9 +105,9 @@ describe('rollupSessions', () => {
   });
 
   it('matches a one-pass build when facts arrive across chunk boundaries', async () => {
-    const chunked = await build(64);
-    db.close();
-    db = openSessionIndex(path.join(dir, 'whole.sqlite3'));
+    const chunked = await buildChunked();
+    graph.db.close();
+    graph = openGraph(path.join(dir, 'whole.sqlite3'));
     const whole = await build();
 
     expect(chunked).toEqual(whole);
@@ -81,19 +116,13 @@ describe('rollupSessions', () => {
   it('recomputes rather than accumulates when run repeatedly', async () => {
     const once = await build();
 
-    rollupSessions(db, allSessionIds(db));
-    rollupSessions(db, allSessionIds(db));
+    rollupSessions(graph, allSessionIds(graph));
+    rollupSessions(graph, allSessionIds(graph));
 
-    const thrice = db
-      .prepare<
-        [],
-        TurnRow
-      >('SELECT prompt_id, started_at, ended_at, duration_ms, tool_call_count, thinking_ms FROM turns ORDER BY turn_index')
-      .all();
-    expect(thrice).toEqual(once);
+    expect(turns()).toEqual(once);
   });
 
   it('is a no-op for an empty session list', () => {
-    expect(rollupSessions(db, [])).toBe(0);
+    expect(rollupSessions(graph, [])).toBe(0);
   });
 });

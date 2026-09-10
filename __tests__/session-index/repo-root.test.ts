@@ -3,14 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { commandCwd } from '../../../src/miner/session-index/bash-parse.js';
-import { fileRef, repoForCwd, toRepoRelative } from '../../../src/miner/session-index/edges.js';
 import {
   clearRepoCache,
+  commandCwd,
+  fileRef,
   parseOriginUrl,
+  repoForCwd,
   repoNameFromRemoteUrl,
   resolveRepo,
-} from '../../../src/miner/session-index/repo-root.js';
+  toRepoRelative,
+} from '@titan-design/session-read';
 
 let dir: string;
 

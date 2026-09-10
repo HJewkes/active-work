@@ -15,22 +15,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseGitIntent, parsePrCreateTitle } from '../../../src/miner/session-index/bash-parse.js';
-import { openSessionIndex, type SessionIndexDb } from '../../../src/miner/session-index/db.js';
-import { indexTranscript } from '../../../src/miner/session-index/quarantine.js';
-import { reconcilePrCreates } from '../../../src/miner/session-index/rollup.js';
+import { applyDelta, indexTranscript, reconcile } from '@titan-design/session-graph';
+import { extractTranscript, parseGitIntent, parsePrCreateTitle } from '@titan-design/session-read';
+import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import { FIXTURE_CWD, renderTranscript } from './fixture.js';
 
 let dir: string;
-let db: SessionIndexDb;
+let graph: SessionGraph;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-pr-create-'));
-  db = openSessionIndex(path.join(dir, 'index.sqlite3'));
+  graph = openGraph(path.join(dir, 'graph.sqlite3'));
 });
 
 afterEach(() => {
-  db.close();
+  graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -155,18 +154,43 @@ function prCreateLines(action = 'created'): Record<string, unknown>[] {
   ];
 }
 
-async function index(lines: Record<string, unknown>[], chunkBytes?: number): Promise<void> {
+async function index(lines: Record<string, unknown>[]): Promise<void> {
   const absolutePath = path.join(dir, 'session.jsonl');
   writeFileSync(absolutePath, renderTranscript(lines), 'utf8');
-  await indexTranscript(db, { absolutePath, displayPath: '~/demo/session.jsonl' }, { chunkBytes });
-  reconcilePrCreates(db);
+  await indexTranscript(graph, {
+    projectDir: 'demo',
+    absolutePath,
+    displayPath: '~/demo/session.jsonl',
+    subagentId: null,
+  });
+  reconcile(graph);
+}
+
+/** The command in one chunk, its result in the next. */
+async function indexSplit(lines: Record<string, unknown>[]): Promise<void> {
+  const absolutePath = path.join(dir, 'session.jsonl');
+  writeFileSync(absolutePath, renderTranscript(lines), 'utf8');
+  const transcriptId = graph.transcripts.ensure('~/demo/session.jsonl').sourceId;
+  const split = Buffer.byteLength(renderTranscript(lines.slice(0, 1)), 'utf8');
+  const first = await extractTranscript(absolutePath, { untilByteOffset: split });
+  applyDelta(graph, transcriptId, first);
+  reconcile(graph);
+  applyDelta(
+    graph,
+    transcriptId,
+    await extractTranscript(absolutePath, {
+      fromByteOffset: first.lastByteOffset,
+      priorPrefixHash: first.prefixHash,
+    }),
+  );
+  reconcile(graph);
 }
 
 describe('gh pr create end to end', () => {
   it('joins the command title to the number its result reports', async () => {
     await index(prCreateLines());
 
-    expect(db.prepare('SELECT pr_ref, number, repo, title FROM prs').all()).toEqual([
+    expect(graph.db.prepare('SELECT pr_ref, number, repo, title FROM pr').all()).toEqual([
       {
         pr_ref: 'pr:acme/demo#42',
         number: 42,
@@ -179,7 +203,7 @@ describe('gh pr create end to end', () => {
   it('records the head branch base from the same command', async () => {
     await index(prCreateLines());
 
-    const row = db.prepare("SELECT base FROM branches WHERE name = 'feat/x'").get();
+    const row = graph.db.prepare("SELECT base FROM branch WHERE name = 'feat/x'").get();
     expect(row).toEqual({ base: 'main' });
   });
 
@@ -187,9 +211,9 @@ describe('gh pr create end to end', () => {
   // them. Persisting each half is what makes the join order-independent — the
   // same reason `pr_merge_observations` exists.
   it('joins the halves even when a chunk boundary separates them', async () => {
-    await index(prCreateLines(), 64);
+    await indexSplit(prCreateLines());
 
-    expect(db.prepare('SELECT number, title FROM prs').all()).toEqual([
+    expect(graph.db.prepare('SELECT number, title FROM pr').all()).toEqual([
       { number: 42, title: 'Ship `it` (AW-1)' },
     ]);
   });
@@ -197,16 +221,16 @@ describe('gh pr create end to end', () => {
   it('ignores a gitOperation that is not a creation', async () => {
     await index(prCreateLines('commented'));
 
-    expect(db.prepare('SELECT COUNT(*) AS n FROM prs').get()).toEqual({ n: 0 });
+    expect(graph.db.prepare('SELECT COUNT(*) AS n FROM pr').get()).toEqual({ n: 0 });
   });
 });
 
-describe('human_edits', () => {
+describe('human_edit', () => {
   // AW-104 dropped these: the `edited_text_file` attachment carries no
   // before-state and a truncated after-state, so no line states a delta.
   it('has no line-count columns to leave empty', () => {
     const columns = (
-      db.prepare('PRAGMA table_info("human_edits")').all() as { name: string }[]
+      graph.db.prepare('PRAGMA table_info("human_edit")').all() as { name: string }[]
     ).map((c) => c.name);
 
     expect(columns).not.toContain('lines_added');
