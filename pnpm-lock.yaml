@@ -21,8 +21,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@titan-design/daemon':
-        specifier: ^0.1.1
-        version: 0.1.1(zod@4.4.3)
+        specifier: ^0.1.2
+        version: 0.1.2(zod@4.4.3)
       '@titan-design/locator':
         specifier: ^0.1.0
         version: 0.1.0
@@ -30,8 +30,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0(zod@4.4.3)
       '@titan-design/session-graph':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^0.3.1
+        version: 0.3.1
       '@titan-design/session-read':
         specifier: ^0.2.0
         version: 0.2.0
@@ -681,8 +681,8 @@ packages:
     resolution: {integrity: sha512-uI3n7htcBl8TXA9GFXBct60MZ0H57g0CGd7HIZp/B2n5KX48SCMk2FEPeZAVfAcfEwenBnJIq2OkeukhCt5iqA==}
     engines: {node: '>=20'}
 
-  '@titan-design/daemon@0.1.1':
-    resolution: {integrity: sha512-lx2Z5ItEWRa+XmcEppo3x4Ypziz2IRk0xqgYU8p/eZZWSnqV0hbV1ScVkfR/Np4czoMo8aYqQpC4NeO4MjD5Pg==}
+  '@titan-design/daemon@0.1.2':
+    resolution: {integrity: sha512-k63Pzc7Mvbp/kwyhINkgQcA5wxLE+SxjaRmzItt0bnuOg6e6peBc3lJ6CmeemeOowlpNawc0TU+/KbKzyCwH3Q==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -697,8 +697,8 @@ packages:
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/session-graph@0.3.0':
-    resolution: {integrity: sha512-ohPEpyn7M1kq+PqfaS7kellhzFG9mv1LHVJYCxPvzSoIief4CJFM2boO6RAO5WTWQxDVjJohyoYs9OjFM/w6Cg==}
+  '@titan-design/session-graph@0.3.1':
+    resolution: {integrity: sha512-MJyRhei19jibZPaKWN56UwCZvcXiBFwgRCAEVtCPY7v1qnEn/KEKMYm5fRrAlVHdm+x6P2Qduu08ARAwo9sdyQ==}
     engines: {node: '>=20'}
 
   '@titan-design/session-read@0.2.0':
@@ -2797,7 +2797,7 @@ snapshots:
 
   '@titan-design/cluster@0.1.0': {}
 
-  '@titan-design/daemon@0.1.1(zod@4.4.3)':
+  '@titan-design/daemon@0.1.2(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 2.0.2(hono@4.12.18)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
@@ -2814,7 +2814,7 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@titan-design/session-graph@0.3.0':
+  '@titan-design/session-graph@0.3.1':
     dependencies:
       '@titan-design/cluster': 0.1.0
       '@titan-design/locator': 0.1.0
