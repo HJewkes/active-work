@@ -3,7 +3,7 @@
  *
  * The package's `Command` carries a third type parameter for the context, so
  * every command would otherwise have to spell out `Command<A, R, CommandContext>`.
- * These aliases bind it once, which is why all 62 command modules import from
+ * These aliases bind it once, which is why all 60 command modules import from
  * here unchanged. The package is the implementation; this file is the product's
  * dialect of it.
  */
