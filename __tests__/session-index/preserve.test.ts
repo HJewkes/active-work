@@ -50,7 +50,7 @@ function insertPruned(): void {
     .run(PRUNED);
   preserveRow(graph, {
     table: 'session',
-    keyColumn: 'session_id',
+    identity: ['session_id'],
     key: PRUNED.session_id,
     payload: PRUNED,
     origin: 'recovered from the retired index.sqlite3 (TP-41)',
@@ -118,7 +118,7 @@ describe('preserved rows', () => {
       .run();
     preserveRow(graph, {
       table: 'note',
-      keyColumn: 'note_ref',
+      identity: ['note_ref'],
       key: 'note:a/n.md',
       payload: { hits: 4 },
       origin: 'retrieval hit counter',
@@ -169,6 +169,63 @@ describe('preserved rows', () => {
 
     expect(sessions()).toEqual([{ session_id: 'pruned', turn_count: 882 }]);
     expect(summary.preserved.restored).toBeGreaterThan(0);
+  });
+
+  it('does not duplicate a row on a table with no UNIQUE over its identity', () => {
+    // `permission_phase` is keyed by an auto-assigned `phase_id` and constrains
+    // nothing else, so `INSERT OR IGNORE` has no conflict to ignore. Replay runs
+    // on every pass, so an unguarded insert compounds silently: measured on the
+    // live graph, 38 rows per refresh, forever.
+    const phase = {
+      session_id: 'pruned',
+      from_mode: null,
+      to_mode: 'acceptEdits',
+      trigger: 'command',
+      t_valid: '2026-06-01T10:00:00Z',
+      t_invalid: null,
+    };
+    const columns = Object.keys(phase);
+    graph.db
+      .prepare(
+        `INSERT INTO permission_phase (${columns.join(', ')})
+         VALUES (${columns.map((c) => `@${c}`).join(', ')})`,
+      )
+      .run(phase);
+    preserveRow(graph, {
+      table: 'permission_phase',
+      identity: ['session_id', 't_valid', 'to_mode'],
+      key: `${phase.session_id}:${phase.t_valid}:${phase.to_mode}`,
+      payload: phase,
+      origin: 'recovered from the retired index.sqlite3 (TP-41)',
+      mode: 'insert',
+    });
+
+    const count = () =>
+      (graph.db.prepare('SELECT COUNT(*) c FROM permission_phase').get() as { c: number }).c;
+
+    expect(replayPreserved(graph)).toEqual({ restored: 0, merged: 0, skipped: 1 });
+    expect(replayPreserved(graph)).toEqual({ restored: 0, merged: 0, skipped: 1 });
+    expect(count()).toBe(1);
+
+    resetIndex(graph);
+    expect(replayPreserved(graph)).toEqual({ restored: 1, merged: 0, skipped: 0 });
+    expect(replayPreserved(graph)).toEqual({ restored: 0, merged: 0, skipped: 1 });
+    expect(count()).toBe(1);
+  });
+
+  it('refuses a declaration whose identity a rebuild could not match', () => {
+    // The identity columns have to be in the payload, or the replay's existence
+    // check reads undefined and the guard silently stops guarding.
+    expect(() =>
+      preserveRow(graph, {
+        table: 'session',
+        identity: ['session_id'],
+        key: 'x',
+        payload: { turn_count: 1 },
+        origin: 'test',
+        mode: 'insert',
+      }),
+    ).toThrow(/missing session_id/);
   });
 
   it('is not cleared by either reset, which is the whole mechanism', () => {

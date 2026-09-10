@@ -43,7 +43,17 @@ export type PreserveMode = 'insert' | 'merge';
 
 export interface PreservedRow {
   table: string;
-  keyColumn: string;
+  /**
+   * The columns that identify one row of `table`, spelled out rather than left
+   * to a constraint.
+   *
+   * `insert` reads their values from `payload` to ask whether derivation has
+   * already produced this row; `merge` matches its single column against `key`.
+   * Declared rather than inferred because a replay that leans on `INSERT OR
+   * IGNORE` silently duplicates on every pass for any table without a matching
+   * UNIQUE — `permission_phase` has none, and grew by 38 rows per refresh.
+   */
+  identity: string[];
   key: string;
   payload: Record<string, string | number | null>;
   /** Where the data came from, in words. Read by whoever finds it years later. */
@@ -52,16 +62,28 @@ export interface PreservedRow {
 }
 
 const UPSERT = `
-  INSERT INTO preserved_row (table_name, key_column, row_key, payload, origin, mode)
-  VALUES (@table, @keyColumn, @key, @payload, @origin, @mode)
+  INSERT INTO preserved_row (table_name, identity, row_key, payload, origin, mode)
+  VALUES (@table, @identity, @key, @payload, @origin, @mode)
   ON CONFLICT (table_name, row_key) DO UPDATE SET
-    key_column = excluded.key_column, payload = excluded.payload,
+    identity = excluded.identity, payload = excluded.payload,
     origin = excluded.origin, mode = excluded.mode
 `;
 
 /** Declare that a row is not derivable, so a rebuild restores it. */
 export function preserveRow(graph: WorkspaceGraph, row: PreservedRow): void {
-  graph.db.prepare(UPSERT).run({ ...row, payload: JSON.stringify(row.payload) });
+  if (row.identity.length === 0) throw new Error(`preserveRow: ${row.table} needs an identity`);
+  if (row.mode === 'merge' && row.identity.length !== 1) {
+    throw new Error(`preserveRow: a merge over ${row.table} matches exactly one column`);
+  }
+  const missing = row.mode === 'insert' ? row.identity.filter((c) => !(c in row.payload)) : [];
+  if (missing.length > 0) {
+    throw new Error(`preserveRow: ${row.table} payload is missing ${missing.join(', ')}`);
+  }
+  graph.db.prepare(UPSERT).run({
+    ...row,
+    identity: JSON.stringify(row.identity),
+    payload: JSON.stringify(row.payload),
+  });
 }
 
 export function listPreserved(graph: WorkspaceGraph): PreservedRow[] {
@@ -69,7 +91,7 @@ export function listPreserved(graph: WorkspaceGraph): PreservedRow[] {
     .prepare('SELECT * FROM preserved_row ORDER BY table_name, row_key')
     .all() as {
     table_name: string;
-    key_column: string;
+    identity: string;
     row_key: string;
     payload: string;
     origin: string;
@@ -77,7 +99,7 @@ export function listPreserved(graph: WorkspaceGraph): PreservedRow[] {
   }[];
   return rows.map((row) => ({
     table: row.table_name,
-    keyColumn: row.key_column,
+    identity: JSON.parse(row.identity) as string[],
     key: row.row_key,
     payload: JSON.parse(row.payload) as Record<string, string | number | null>,
     origin: row.origin,
@@ -116,24 +138,35 @@ const UNREACHABLE_SESSIONS = `
    ORDER BY s.session_id
 `;
 
-/** Tables whose rows belong to a session, and the column that identifies one row. */
-const SESSION_OWNED: { table: string; keyColumn: string; key: (row: Row) => string }[] = [
-  { table: 'session', keyColumn: 'session_id', key: (r) => String(r.session_id) },
-  { table: 'turn', keyColumn: 'prompt_id', key: (r) => String(r.prompt_id) },
+/**
+ * Tables whose rows belong to a session, and the columns that identify one row.
+ *
+ * `key` is only preserved_row's own primary key, so it may be any stable
+ * string; `identity` is what the replay matches against the live table, so it
+ * must be columns that survive a rebuild. The two differ wherever the live
+ * table's key is auto-assigned.
+ */
+const SESSION_OWNED: { table: string; identity: string[]; key: (row: Row) => string }[] = [
+  { table: 'session', identity: ['session_id'], key: (r) => String(r.session_id) },
+  { table: 'turn', identity: ['prompt_id'], key: (r) => String(r.prompt_id) },
   {
     table: 'session_model_usage',
-    keyColumn: 'session_id',
+    identity: ['session_id', 'model'],
     key: (r) => `${r.session_id}:${r.model}`,
   },
-  { table: 'fact', keyColumn: 'fact_id', key: (r) => `${r.transcript_id}:${r.byte_offset}` },
+  {
+    table: 'fact',
+    identity: ['transcript_id', 'byte_offset'],
+    key: (r) => `${r.transcript_id}:${r.byte_offset}`,
+  },
   {
     table: 'permission_phase',
-    keyColumn: 'phase_id',
+    identity: ['session_id', 't_valid', 'to_mode'],
     key: (r) => `${r.session_id}:${r.t_valid}:${r.to_mode}`,
   },
   {
     table: 'human_edit',
-    keyColumn: 'edit_id',
+    identity: ['session_id', 'file_path', 'ts'],
     key: (r) => `${r.session_id}:${r.file_path}:${r.ts}`,
   },
 ];
@@ -170,7 +203,7 @@ export function preserveUnreachable(graph: WorkspaceGraph, origin: string): numb
         const payload = payloadOf(row);
         preserveRow(graph, {
           table: spec.table,
-          keyColumn: spec.keyColumn,
+          identity: spec.identity,
           key: spec.key(row),
           payload,
           origin,
@@ -192,12 +225,25 @@ export interface ReplaySummary {
   skipped: number;
 }
 
+/**
+ * Insert only if derivation has not already produced this row.
+ *
+ * The existence check is explicit rather than `INSERT OR IGNORE`, because that
+ * form only ignores a conflict SQLite can see. `permission_phase` carries no
+ * UNIQUE over its identity, so every replay inserted a fresh copy — and
+ * `replayPreserved` runs on every pass, so 38 rows compounded per refresh with
+ * no correctness symptom until someone read the table.
+ */
 function restore(graph: WorkspaceGraph, row: PreservedRow): boolean {
   const columns = Object.keys(row.payload);
   const names = columns.map((c) => `"${c}"`).join(', ');
   const values = columns.map((c) => `@${c}`).join(', ');
+  const match = row.identity.map((c) => `"${c}" IS @${c}`).join(' AND ');
   const info = graph.db
-    .prepare(`INSERT OR IGNORE INTO "${row.table}" (${names}) VALUES (${values})`)
+    .prepare(
+      `INSERT INTO "${row.table}" (${names}) SELECT ${values}
+        WHERE NOT EXISTS (SELECT 1 FROM "${row.table}" WHERE ${match})`,
+    )
     .run(row.payload);
   return info.changes > 0;
 }
@@ -207,7 +253,7 @@ function merge(graph: WorkspaceGraph, row: PreservedRow): boolean {
     .map((c) => `"${c}" = @${c}`)
     .join(', ');
   const info = graph.db
-    .prepare(`UPDATE "${row.table}" SET ${assignments} WHERE "${row.keyColumn}" = @__key`)
+    .prepare(`UPDATE "${row.table}" SET ${assignments} WHERE "${row.identity[0]}" = @__key`)
     .run({ ...row.payload, __key: row.key });
   return info.changes > 0;
 }

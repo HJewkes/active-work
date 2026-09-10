@@ -181,7 +181,7 @@ export const WORKSPACE_MIGRATIONS: Migration[] = [
 const PRESERVE_DDL = `
   CREATE TABLE IF NOT EXISTS preserved_row (
     table_name   TEXT NOT NULL,
-    key_column   TEXT NOT NULL,
+    identity     TEXT NOT NULL,
     row_key      TEXT NOT NULL,
     payload      TEXT NOT NULL,
     origin       TEXT NOT NULL,

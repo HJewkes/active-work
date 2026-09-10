@@ -115,23 +115,29 @@ const ORIGIN = 'recovered from the retired index.sqlite3; transcript pruned by C
 /**
  * Declare a row non-derivable, so `replayPreserved` puts it back after a reset.
  *
- * `row_key` only has to be unique within its table — `insert` mode replays with
- * INSERT OR IGNORE over the payload's own columns — so a synthetic key from the
- * natural one is enough for tables SQLite keys by rowid.
+ * `row_key` only has to be unique within its table, so a synthetic key from the
+ * natural one is enough. `identity` is a different thing: the replay matches
+ * those columns against the live table to decide whether derivation already
+ * produced the row, so they must be columns a rebuild would reproduce.
  */
 const preserveStmt = apply
-  ? graph.prepare(`INSERT INTO preserved_row (table_name, key_column, row_key, payload, origin, mode)
-                   VALUES (@table, @keyColumn, @key, @payload, '${ORIGIN}', 'insert')
+  ? graph.prepare(`INSERT INTO preserved_row (table_name, identity, row_key, payload, origin, mode)
+                   VALUES (@table, @identity, @key, @payload, '${ORIGIN}', 'insert')
                    ON CONFLICT (table_name, row_key) DO UPDATE SET payload = excluded.payload`)
   : null;
 
-function preserve(table, keyColumn, key, payload) {
+function preserve(table, identity, key, payload) {
   if (!apply) return;
-  preserveStmt.run({ table, keyColumn, key: String(key), payload: JSON.stringify(payload) });
+  preserveStmt.run({
+    table,
+    identity: JSON.stringify(identity),
+    key: String(key),
+    payload: JSON.stringify(payload),
+  });
 }
 
 /** Copy rows whose columns are identical between the two schemas. */
-function copyBySession(fromTable, toTable, columns, keyOf) {
+function copyBySession(fromTable, toTable, columns, identity, keyOf) {
   const cols = columns.join(', ');
   const rows = old.prepare(`SELECT ${cols} FROM ${fromTable} WHERE session_id IN (${q})`).all(...ids);
   if (!apply || rows.length === 0) return rows.length;
@@ -139,7 +145,7 @@ function copyBySession(fromTable, toTable, columns, keyOf) {
   const insert = graph.prepare(`INSERT OR IGNORE INTO ${toTable} (${cols}) VALUES (${placeholders})`);
   for (const row of rows) {
     insert.run(row);
-    preserve(toTable, columns[0], keyOf(row), row);
+    preserve(toTable, identity, keyOf(row), row);
   }
   return rows.length;
 }
@@ -155,7 +161,7 @@ function run() {
     for (const f of facts) {
       const row = { ...f, transcript_id: map.get(f.transcript_id) };
       insert.run(row);
-      preserve('fact', 'fact_id', `${row.transcript_id}:${row.byte_offset}`, row);
+      preserve('fact', ['transcript_id', 'byte_offset'], `${row.transcript_id}:${row.byte_offset}`, row);
     }
   }
 
@@ -166,15 +172,15 @@ function run() {
     for (const s of sessions) {
       const row = { ...s, transcript_id: map.get(s.transcript_id) ?? null };
       insert.run(row);
-      preserve('session', 'session_id', row.session_id, row);
+      preserve('session', ['session_id'], row.session_id, row);
     }
   }
 
-  const turns = copyBySession('turns', 'turn', ['prompt_id', 'session_id', 'turn_index', 'started_at', 'ended_at', 'duration_ms', 'tool_call_count', 'thinking_ms'], (r) => r.prompt_id);
+  const turns = copyBySession('turns', 'turn', ['prompt_id', 'session_id', 'turn_index', 'started_at', 'ended_at', 'duration_ms', 'tool_call_count', 'thinking_ms'], ['prompt_id'], (r) => r.prompt_id);
   // cost_usd is dropped on purpose: the new schema has no column for it (TP-23).
-  const usage = copyBySession('session_model_usage', 'session_model_usage', ['session_id', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'thinking_tokens', 'request_count'], (r) => `${r.session_id}:${r.model}`);
-  const phases = copyBySession('permission_phases', 'permission_phase', ['session_id', 'from_mode', 'to_mode', 'trigger', 't_valid', 't_invalid'], (r) => `${r.session_id}:${r.t_valid}:${r.to_mode}`);
-  const edits = copyBySession('human_edits', 'human_edit', ['session_id', 'file_path', 'ts'], (r) => `${r.session_id}:${r.file_path}:${r.ts}`);
+  const usage = copyBySession('session_model_usage', 'session_model_usage', ['session_id', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_creation_tokens', 'thinking_tokens', 'request_count'], ['session_id', 'model'], (r) => `${r.session_id}:${r.model}`);
+  const phases = copyBySession('permission_phases', 'permission_phase', ['session_id', 'from_mode', 'to_mode', 'trigger', 't_valid', 't_invalid'], ['session_id', 't_valid', 'to_mode'], (r) => `${r.session_id}:${r.t_valid}:${r.to_mode}`);
+  const edits = copyBySession('human_edits', 'human_edit', ['session_id', 'file_path', 'ts'], ['session_id', 'file_path', 'ts'], (r) => `${r.session_id}:${r.file_path}:${r.ts}`);
 
   return { transcripts, facts: facts.length, sessions: sessions.length, turns, usage, phases, edits };
 }
