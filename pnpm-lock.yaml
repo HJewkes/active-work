@@ -18,8 +18,8 @@ importers:
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       '@titan-design/daemon':
-        specifier: ^0.1.0
-        version: 0.1.0(zod@4.4.3)
+        specifier: ^0.1.1
+        version: 0.1.1(zod@4.4.3)
       '@titan-design/registry':
         specifier: ^0.1.0
         version: 0.1.0(zod@4.4.3)
@@ -665,8 +665,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@titan-design/daemon@0.1.0':
-    resolution: {integrity: sha512-fk+7uDtUGGUd/aS0FgVp2hq7a6IBdLcvfebWflAHU07np2mAFM700uoMOj1ECQQ7kDEsTGb19dz/eKYHcGTSMg==}
+  '@titan-design/daemon@0.1.1':
+    resolution: {integrity: sha512-lx2Z5ItEWRa+XmcEppo3x4Ypziz2IRk0xqgYU8p/eZZWSnqV0hbV1ScVkfR/Np4czoMo8aYqQpC4NeO4MjD5Pg==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -2763,7 +2763,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.3':
     optional: true
 
-  '@titan-design/daemon@0.1.0(zod@4.4.3)':
+  '@titan-design/daemon@0.1.1(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 2.0.2(hono@4.12.18)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
