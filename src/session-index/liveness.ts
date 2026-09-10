@@ -86,21 +86,46 @@ export const EXPECTED_EMPTY: Record<string, string> = {
  * than skipped, so adding a ref type without extending this shows up as a
  * finding instead of silently passing.
  */
-const REF_TABLES: Record<string, { table: string; column: string; bare?: boolean }> = {
-  // `session` is the odd one out: it stores the bare id, every other entity
-  // table stores the prefixed ref. Comparing without allowing for that reports
-  // every session endpoint as dangling — a false alarm, which in a diagnostic
-  // is worse than no check at all.
-  session: { table: 'session', column: 'session_id', bare: true },
-  agent: { table: 'subagent', column: 'agent_ref' },
-  file: { table: 'file', column: 'file_ref' },
-  branch: { table: 'branch', column: 'branch_ref' },
-  task: { table: 'task', column: 'task_ref' },
-  artifact: { table: 'artifact', column: 'artifact_ref' },
+interface RefTarget {
+  table: string;
+  column: string;
+  bare?: boolean;
+}
+
+/**
+ * A namespace resolves against *every* listed table, and an endpoint is
+ * dangling only when none of them holds it.
+ *
+ * `session` and `task` each have two, and that is the point of TP-24's ref
+ * scheme rather than an accident: a `session:` ref names a mined transcript
+ * and a workspace session record at once, and a `task:` ref names what the
+ * transcripts witnessed and what the store says. Resolving against one table
+ * would report every endpoint the other side wrote as dangling.
+ */
+const REF_TABLES: Record<string, RefTarget[]> = {
+  // `session` is the odd one out: `session` stores the bare id, every other
+  // entity table stores the prefixed ref. Comparing without allowing for that
+  // reports every session endpoint as dangling — a false alarm, which in a
+  // diagnostic is worse than no check at all.
+  session: [
+    { table: 'session', column: 'session_id', bare: true },
+    { table: 'session_record', column: 'session_ref' },
+  ],
+  agent: [{ table: 'subagent', column: 'agent_ref' }],
+  file: [{ table: 'file', column: 'file_ref' }],
+  branch: [{ table: 'branch', column: 'branch_ref' }],
+  task: [
+    { table: 'task', column: 'task_ref' },
+    { table: 'workspace_task', column: 'task_ref' },
+  ],
+  artifact: [{ table: 'artifact', column: 'artifact_ref' }],
   // `pr` is keyed by `pr_ref` like every other entity table. It was left
   // unmapped on the belief that it was keyed by `(number, repo)` — that is
   // `pr_merge_observation`, a different table (AW-107).
-  pr: { table: 'pr', column: 'pr_ref' },
+  pr: [{ table: 'pr', column: 'pr_ref' }],
+  initiative: [{ table: 'initiative', column: 'initiative_ref' }],
+  note: [{ table: 'note', column: 'note_ref' }],
+  source: [{ table: 'source', column: 'source_ref' }],
 };
 
 function tableNames(db: Db): string[] {
@@ -136,6 +161,14 @@ function scanTable(db: Db, table: string): ColumnLiveness[] {
   }));
 }
 
+/**
+ * Relations active-work derives in the same edge table (TP-24). Declared here
+ * so `miner liveness` reports them as expected structures rather than as
+ * undeclared ones — the vocabulary is `session-read`'s plus the workspace
+ * indexer's, and this file is where the two meet.
+ */
+const WORKSPACE_RELATIONS = ['holds', 'mentions', 'shares_tag'];
+
 function relationLiveness(db: Db): RelationLiveness[] {
   const observed = new Map(
     (
@@ -145,7 +178,7 @@ function relationLiveness(db: Db): RelationLiveness[] {
       }[]
     ).map((row) => [row.relation, row.n]),
   );
-  const declared = Object.values(RELATIONS) as string[];
+  const declared = [...(Object.values(RELATIONS) as string[]), ...WORKSPACE_RELATIONS];
   const report: RelationLiveness[] = declared.map((relation) => ({
     relation,
     count: observed.get(relation) ?? 0,
@@ -169,20 +202,26 @@ function refNamespaces(db: Db): RefNamespaceLiveness[] {
     .all() as { namespace: string; n: number }[];
 
   return rows.map(({ namespace, n }) => {
-    const target = REF_TABLES[namespace];
-    if (!target) return { namespace, edges: n, dangling: null };
-    const lhs = target.bare ? `substr(e.ref, ${namespace.length + 2})` : 'e.ref';
-    const { c } = db
-      .prepare(
-        `SELECT COUNT(*) AS c FROM (
-           SELECT source_ref AS ref FROM edge UNION ALL SELECT target_ref FROM edge
-         ) e
-         WHERE e.ref LIKE @prefix
-           AND NOT EXISTS (SELECT 1 FROM "${target.table}" t WHERE t."${target.column}" = ${lhs})`,
-      )
-      .get({ prefix: `${namespace}:%` }) as { c: number };
+    const targets = REF_TABLES[namespace];
+    if (!targets) return { namespace, edges: n, dangling: null };
+    const { c } = db.prepare(danglingSql(namespace, targets)).get({ prefix: `${namespace}:%` }) as {
+      c: number;
+    };
     return { namespace, edges: n, dangling: c };
   });
+}
+
+function danglingSql(namespace: string, targets: RefTarget[]): string {
+  const absent = targets
+    .map((target) => {
+      const lhs = target.bare ? `substr(e.ref, ${namespace.length + 2})` : 'e.ref';
+      return `NOT EXISTS (SELECT 1 FROM "${target.table}" t WHERE t."${target.column}" = ${lhs})`;
+    })
+    .join(' AND ');
+  return `SELECT COUNT(*) AS c FROM (
+            SELECT source_ref AS ref FROM edge UNION ALL SELECT target_ref FROM edge
+          ) e
+          WHERE e.ref LIKE @prefix AND ${absent}`;
 }
 
 /**

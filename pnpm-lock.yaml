@@ -35,6 +35,9 @@ importers:
       '@titan-design/session-read':
         specifier: ^0.2.0
         version: 0.2.0
+      '@titan-design/store-sqlite':
+        specifier: ^0.1.0
+        version: 0.1.0
       better-sqlite3:
         specifier: ^13.0.2
         version: 13.0.2

@@ -1,18 +1,31 @@
 import Database from 'better-sqlite3';
-import { MIGRATIONS, openSessionGraph, type SessionGraph } from '@titan-design/session-graph';
+import { openSessionGraph, type SessionGraph } from '@titan-design/session-graph';
+import { runMigrations, WatermarkTable } from '@titan-design/store-sqlite';
 import path from 'node:path';
 import { getMinerRoot } from '../utils/paths.js';
+import { MIGRATIONS, WORKSPACE_KIT } from '../workspace-index/schema.js';
 
 /**
  * active-work's binding of `@titan-design/session-graph`: where the graph file
- * lives, and how to open it read-only.
+ * lives, how to open it read-only, and the workspace tables active-work adds on
+ * top of the package's chain.
  *
- * The package owns the schema and its migration chain, so nothing here
- * describes tables. What active-work still decides is the path — under
- * `getMinerRoot()`, so `ACTIVE_ROOT` overrides and test isolation keep working.
+ * The package owns its own schema, so nothing here describes a session-graph
+ * table. What active-work still decides is the path — under `getMinerRoot()`,
+ * so `ACTIVE_ROOT` overrides and test isolation keep working — and the
+ * workspace half of the same file (TP-24).
  */
 
 export type { SessionGraph };
+
+/**
+ * The session graph plus what the workspace pass needs: one watermark table
+ * over the workspace files. `edges` and `spans` are shared with the transcript
+ * side on purpose, because cross-class retrieval is a join.
+ */
+export interface WorkspaceGraph extends SessionGraph {
+  workspaceFiles: WatermarkTable;
+}
 
 /**
  * The schema version the code expects, derived from the migration chain rather
@@ -33,9 +46,21 @@ export function defaultGraphPath(): string {
   return path.join(getMinerRoot(), 'graph.sqlite3');
 }
 
-/** Open (creating if absent) the session graph, migrating it to `SCHEMA_VERSION`. */
-export function openGraph(dbPath: string = defaultGraphPath()): SessionGraph {
-  return openSessionGraph(dbPath);
+/**
+ * Open (creating if absent) the graph, migrating it to `SCHEMA_VERSION`.
+ *
+ * Two calls, not one: `openSessionGraph` applies the package's chain, then
+ * `runMigrations` applies the whole chain including active-work's workspace
+ * migration. The kit's runner records applied versions in `_migration` and
+ * skips them, so the package's are re-checked rather than re-run.
+ */
+export function openGraph(dbPath: string = defaultGraphPath()): WorkspaceGraph {
+  const graph = openSessionGraph(dbPath);
+  runMigrations(graph.db, MIGRATIONS);
+  return {
+    ...graph,
+    workspaceFiles: new WatermarkTable(graph.db, { name: WORKSPACE_KIT.watermark }),
+  };
 }
 
 /**

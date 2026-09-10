@@ -20,6 +20,24 @@ const ArgsSchema = z.object({
 });
 type Args = z.infer<typeof ArgsSchema>;
 
+/** Mirrors `WorkspaceRefreshSummary`; the registry validates every result it returns. */
+const WorkspaceSchema = z.object({
+  files: z.number(),
+  indexed: z.number(),
+  unchanged: z.number(),
+  removed: z.number(),
+  malformed: z.array(z.object({ path: z.string(), reason: z.string() })),
+  rows: z.object({
+    initiative: z.number(),
+    note: z.number(),
+    task: z.number(),
+    session: z.number(),
+    source: z.number(),
+  }),
+  edges: z.object({ holds: z.number(), mentions: z.number(), sharesTag: z.number() }),
+  orphanRatio: z.number(),
+});
+
 const ResultSchema = z.object({
   startedAt: z.string(),
   durationMs: z.number(),
@@ -35,6 +53,8 @@ const ResultSchema = z.object({
   turnsRolledUp: z.number(),
   tasksRequested: z.number(),
   tasksApplied: z.number(),
+  workspace: WorkspaceSchema.nullable(),
+  preserved: z.object({ restored: z.number(), merged: z.number(), skipped: z.number() }),
   errors: z.array(z.string()),
 });
 type Result = z.infer<typeof ResultSchema>;
