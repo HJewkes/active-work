@@ -70,14 +70,13 @@ register();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel) => new URL(`file://${path.join(here, '..', 'src', rel)}`).href;
 
-const { runDrainIngest } = await import(src('miner/transcript-reader.ts'));
-const { loadTemplates, readOccurrences } = await import(src('miner/store.ts'));
-const { loadReaderState } = await import(src('miner/reader-state.ts'));
-const { extractSignature } = await import(src('miner/signature.ts'));
-const { applyMasks } = await import(src('miner/masks.ts'));
-const { extractBlobs } = await import(src('miner/blob-extract.ts'));
+const { runDrainIngest } = await import(src('drain/transcript-reader.ts'));
+const { loadTemplates, readOccurrences } = await import(src('drain/store.ts'));
+const { loadReaderState } = await import(src('drain/reader-state.ts'));
+const { extractBlobs } = await import(src('drain/blob-extract.ts'));
+const { applyMasks, extractSignature } = await import('@titan-design/cluster');
 const { discoverTranscripts, transcriptsRoot } = await import(
-  src('miner/session-index/discover.ts')
+  '@titan-design/session-read'
 );
 
 export { round } from './eval-miner.mjs';

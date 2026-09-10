@@ -1,5 +1,6 @@
-import { promises as fs } from 'node:fs';
-import { MinerIngestor } from './index.js';
+import { nextOffset, prefixHash, readJsonLines, resumePoint } from '@titan-design/locator';
+import { discoverTranscripts, transcriptsRoot } from '@titan-design/session-read';
+import { MinerIngestor } from './ingestor.js';
 import { collectToolUses, extractBlobs } from './blob-extract.js';
 import {
   loadReaderState,
@@ -9,9 +10,6 @@ import {
   type ReaderState,
   type TranscriptState,
 } from './reader-state.js';
-import { discoverTranscripts, transcriptsRoot } from './session-index/discover.js';
-import { readJsonLines } from './session-index/json-lines.js';
-import { prefixHash } from './session-index/prefix-hash.js';
 import { getMinerRoot } from '../utils/paths.js';
 import type { Locator } from '../schemas/template.js';
 
@@ -19,12 +17,13 @@ import type { Locator } from '../schemas/template.js';
  * AW-89: streams `~/.claude/projects/*<slash>*.jsonl` into
  * `MinerIngestor.ingestBlob`, the last build step deferred from AW-28/PR #81.
  *
- * Incremental by byte watermark per transcript (`reader-state.json`), reusing
- * `session-index`'s `discover` / `json-lines` / `prefix-hash` primitives so
- * the two miners agree on what a transcript is and where a line starts. What
- * is deliberately *not* shared is the extraction model: session-index indexes
- * every line, this reads whole tool-result blobs, because Drain clusters a
- * blob's shape through one signature line.
+ * Incremental by byte watermark per transcript (`reader-state.json`), over
+ * `@titan-design/locator`'s line reader and resume point and
+ * `@titan-design/session-read`'s discovery, so this and the session graph agree
+ * on what a transcript is and where a line starts. What is deliberately *not*
+ * shared is the extraction model: the graph indexes every line, this reads
+ * whole tool-result blobs, because Drain clusters a blob's shape through one
+ * signature line.
  *
  * Ingest runs buffered: one `templates.yml` write and one `occurrences.jsonl`
  * append per pass rather than per blob. Clustering is untouched by this — see
@@ -126,27 +125,8 @@ function emptyCounters(): PassCounters {
   };
 }
 
-/**
- * Where to resume in `absolutePath`, and with what carried-forward tool names.
- *
- * A file shorter than its watermark was rewritten or truncated, so every
- * stored offset past that point is meaningless and the only correct answer is
- * byte 0. `verifyHashes` extends the same check to a same-length rewrite.
- */
-async function resumePoint(
-  entry: TranscriptState,
-  absolutePath: string,
-  options: DrainIngestOptions,
-): Promise<{ start: number; size: number; rewound: boolean }> {
-  const { size } = await fs.stat(absolutePath);
-  if (options.full) return { start: 0, size, rewound: false };
-
-  let rewound = size < entry.lastByteOffset;
-  if (!rewound && options.verifyHashes && entry.prefixHash !== null) {
-    rewound = (await prefixHash(absolutePath, entry.lastByteOffset)) !== entry.prefixHash;
-  }
-  return { start: rewound ? 0 : entry.lastByteOffset, size, rewound };
-}
+/** A watermark at byte 0, which is what `--full` resumes every transcript from. */
+const BYTE_ZERO = { path: '', lastByteOffset: 0, prefixHash: null };
 
 /** Parse a line, counting (not throwing on) transcript corruption. */
 function parseLine(text: string, counters: PassCounters): Record<string, unknown> | null {
@@ -184,7 +164,7 @@ async function readTranscript(
   let offset = pass.start;
 
   for await (const line of readJsonLines(pass.absolutePath, pass.start)) {
-    offset = line.byteOffset + line.byteLength + 1;
+    offset = nextOffset(line);
     counters.linesRead++;
     const parsed = parseLine(line.text, counters);
     if (parsed) {
@@ -264,12 +244,21 @@ export async function runDrainIngest(
     const transcriptIndex = transcriptIndexFor(state, transcript.displayPath);
     const entry = state.transcripts[transcriptIndex];
     try {
-      const point = await resumePoint(entry, transcript.absolutePath, options);
-      if (point.rewound) {
+      // `full` is expressed as a zeroed watermark rather than as a flag the
+      // resume point knows about: the package's contract is "given this entry,
+      // where do I resume", and re-reading from byte 0 is not a rewrite.
+      const point = await resumePoint(options.full ? BYTE_ZERO : entry, transcript.absolutePath, {
+        verifyHash: options.verifyHashes,
+      });
+      if (point.state === 'missing') {
+        counters.errors.push(`${transcript.displayPath}: source file no longer exists`);
+        continue;
+      }
+      if (point.state === 'rewritten') {
         rewound++;
         entry.pendingToolNames = {};
       }
-      if (point.start >= point.size && !point.rewound) {
+      if (point.state === 'unchanged') {
         unchanged++;
         continue;
       }

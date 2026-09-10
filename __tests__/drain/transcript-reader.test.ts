@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runDrainIngest } from '../../src/miner/transcript-reader.js';
-import { loadTemplates, readOccurrences } from '../../src/miner/store.js';
-import { loadReaderState } from '../../src/miner/reader-state.js';
+import { runDrainIngest } from '../../src/drain/transcript-reader.js';
+import { loadTemplates, readOccurrences } from '../../src/drain/store.js';
+import { loadReaderState } from '../../src/drain/reader-state.js';
 
 let root: string;
 let corpus: string;

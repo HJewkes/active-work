@@ -1,11 +1,11 @@
-import { toolTypeFor } from './route.js';
-import { hasErrorSignal } from './signature.js';
+import { hasErrorSignal } from '@titan-design/cluster';
+import { toolTypeFor } from './partition.js';
 
 /**
  * Projects one transcript JSONL line into the tool-result *blobs* the Drain
  * miner clusters (AW-89).
  *
- * Deliberately per-blob, not per-line: `src/miner/index.ts` clusters a whole
+ * Deliberately per-blob, not per-line: `ingestor.ts` clusters a whole
  * stdout/stderr blob through one extracted signature line, because feeding
  * Drain a stack trace line-by-line makes recursion depth — not failure shape —
  * the thing it clusters on.

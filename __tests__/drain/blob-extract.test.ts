@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectToolUses, extractBlobs, toolResultText } from '../../src/miner/blob-extract.js';
+import { collectToolUses, extractBlobs, toolResultText } from '../../src/drain/blob-extract.js';
 
 function userLine(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { MinerIngestor, type IngestBlobInput } from '../../src/miner/index.js';
-import { loadTemplates, readOccurrences } from '../../src/miner/store.js';
+import { MinerIngestor, type IngestBlobInput } from '../../src/drain/ingestor.js';
+import { loadTemplates, readOccurrences } from '../../src/drain/store.js';
 
 let dir: string;
 

@@ -9,7 +9,7 @@ import {
   readOccurrences,
   rewriteOccurrences,
   saveTemplates,
-} from '../../src/miner/store.js';
+} from '../../src/drain/store.js';
 import type { Occurrence, Template } from '../../src/schemas/template.js';
 
 let dir: string;
