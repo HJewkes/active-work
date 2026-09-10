@@ -137,4 +137,4 @@ A version higher than `CURRENT_VERSION` is a hard error — the operator is told
 - Plan: `docs/superpowers/plans/2026-05-12-active-work-v2.md`
 - Repo conventions: `CLAUDE.md`
 - Skill content: `skill/SKILL.md`
-- CLI reference (auto-generated): `docs/cli-reference.md`
+- CLI reference: generated at release into `docs/cli-reference.md`, not committed. Run `node scripts/gen-cli-reference.mjs` for a local copy.
