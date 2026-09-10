@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs';
 import { transcriptsRoot } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
-import { openGraph, type SessionGraph } from '../session-index/graph.js';
+import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
 import { RefreshScheduler, type SchedulerStatus } from '../session-index/scheduler.js';
 
@@ -56,7 +56,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     return null;
   }
 
-  let graph: SessionGraph;
+  let graph: WorkspaceGraph;
   try {
     graph = openGraph();
   } catch (err) {

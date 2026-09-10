@@ -3,8 +3,10 @@ import { promises as fs } from 'node:fs';
 import lockfile from 'proper-lockfile';
 import { discoverTranscripts, transcriptsRoot } from '@titan-design/session-read';
 import { refreshCorpus, resetIndex } from '@titan-design/session-graph';
-import { defaultGraphPath, openGraph, type SessionGraph } from './graph.js';
+import { defaultGraphPath, openGraph, type WorkspaceGraph } from './graph.js';
 import { taskResolver } from './tasks.js';
+import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
+import { resetWorkspaceIndex } from '../workspace-index/write.js';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
@@ -20,7 +22,7 @@ import { taskResolver } from './tasks.js';
 
 export interface RefreshOptions {
   /** Reuse an open graph (the daemon holds one); otherwise one is opened. */
-  graph?: SessionGraph;
+  graph?: WorkspaceGraph;
   dbPath?: string;
   /** Wipe every derived row and re-read every transcript from byte 0. */
   full?: boolean;
@@ -32,6 +34,14 @@ export interface RefreshOptions {
   root?: string;
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
+  /**
+   * Active root the workspace pass indexes; defaults to `taskRoot`, then to
+   * `getActiveRoot()`. Both halves of this database read the same root, so a
+   * test that redirects one must redirect the other.
+   */
+  activeRoot?: string;
+  /** Skip the workspace half of the pass. For tests that only care about transcripts. */
+  skipWorkspace?: boolean;
 }
 
 export interface RefreshSummary {
@@ -55,6 +65,8 @@ export interface RefreshSummary {
   /** Task ids handed to the resolver, and rows it wrote. */
   tasksRequested: number;
   tasksApplied: number;
+  /** The workspace half of the pass (TP-24); null when skipped. */
+  workspace: WorkspaceRefreshSummary | null;
   errors: string[];
 }
 
@@ -111,7 +123,12 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
   const owned = options.graph === undefined;
 
   try {
-    if (options.full) resetIndex(graph);
+    if (options.full) {
+      // Both halves, because they share the edge and FTS tables: resetting one
+      // alone would leave the other's rows behind their own spans and edges.
+      resetIndex(graph);
+      resetWorkspaceIndex(graph);
+    }
     const discovered = await discoverTranscripts(options.root ?? transcriptsRoot());
     const visiting = discovered.slice(0, options.limit ?? discovered.length);
     const verify = options.verifyHashes ?? options.full ?? false;
@@ -122,6 +139,15 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       withContentHash: verify,
       resolveTasks: taskResolver(options.taskRoot),
     });
+
+    // After the transcripts, so `mentions` and the task join see the rows the
+    // transcript pass just wrote.
+    const workspace = options.skipWorkspace
+      ? null
+      : await refreshWorkspace(graph, {
+          activeRoot: options.activeRoot ?? options.taskRoot,
+          full: options.full,
+        });
 
     return {
       startedAt,
@@ -138,9 +164,13 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       turnsRolledUp: summary.turnsRolledUp,
       tasksRequested: summary.tasks.requested,
       tasksApplied: summary.tasks.applied,
+      workspace,
       errors: [
         ...(summary.tasks.failed ? [`tasks: ${summary.tasks.error ?? 'resolver failed'}`] : []),
         ...quarantineErrors(graph),
+        ...(workspace?.malformed ?? []).map(
+          (entry) => `workspace: ${entry.path} — ${entry.reason}`,
+        ),
       ],
     };
   } finally {
@@ -156,7 +186,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
  * is "is the index healthy". Rows marked `missing` are excluded: a rotated
  * transcript is ordinary, and `reconciledMissing` already counts them.
  */
-function quarantineErrors(graph: SessionGraph): string[] {
+function quarantineErrors(graph: WorkspaceGraph): string[] {
   return graph.transcripts
     .list()
     .filter((row) => row.status === 'quarantined')

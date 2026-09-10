@@ -19,6 +19,8 @@ import { loadTasks } from './lint/load-tasks.js';
 import { loadNotesFromDir } from './notes/note-file.js';
 import { NOTE_TITLE_MAX_LENGTH } from './schemas/note.js';
 import { sweepAllLeases, type LeaseSweepResult } from './sessions/lease.js';
+import { openGraph, type WorkspaceGraph } from './session-index/graph.js';
+import { checkWorkspaceIndex, type WorkspaceIndexHealth } from './workspace-index/doctor.js';
 import {
   deriveOpenLoops,
   findSessionIssues,
@@ -445,6 +447,44 @@ function artifactHashesCheck(drifted: string[]): DoctorCheck {
   };
 }
 
+function workspaceIndexCheck(health: WorkspaceIndexHealth | null): DoctorCheck {
+  if (health === null) {
+    return { name: 'workspace-index', status: 'ok', detail: 'no index built yet' };
+  }
+  if (health.missing.length === 0) {
+    return {
+      name: 'workspace-index',
+      status: 'ok',
+      detail: `${health.checked} indexed refs all resolve to a file that opens`,
+    };
+  }
+  return {
+    name: 'workspace-index',
+    status: 'warn',
+    // Brain's whole failure, made visible: 5,013 of 5,065 notes detached on one
+    // directory move and nothing noticed, because nothing checked.
+    detail:
+      `${health.missing.length} of ${health.checked} indexed refs point at a file that no longer opens ` +
+      `(run \`active-work miner refresh\`): ${health.missing.slice(0, 5).join('; ')}`,
+  };
+}
+
+/** Indexed refs whose file is gone (TP-24). Absent index is not a fault — it is rebuildable. */
+async function checkWorkspaceIndexRefs(deps: DoctorDeps): Promise<DoctorCheck> {
+  const activeRoot = deps.activeRoot ?? getActiveRoot();
+  let graph: WorkspaceGraph;
+  try {
+    graph = openGraph();
+  } catch {
+    return workspaceIndexCheck(null);
+  }
+  try {
+    return workspaceIndexCheck(await checkWorkspaceIndex(graph, activeRoot));
+  } finally {
+    graph.db.close();
+  }
+}
+
 /** Structured artifacts (tasks/*.yml, artifacts.yml, brief.md) whose content no longer matches the last CLI write (AW-66). */
 async function checkArtifactHashes(deps: DoctorDeps): Promise<DoctorCheck> {
   const activeRoot = deps.activeRoot ?? getActiveRoot();
@@ -459,20 +499,29 @@ async function checkArtifactHashes(deps: DoctorDeps): Promise<DoctorCheck> {
 
 /** Run all health checks and return a report. `ok` is false iff any check failed. */
 export async function runDoctor(deps: DoctorDeps = {}): Promise<DoctorReport> {
-  const [installChecks, sessionChecks, noteTitles, artifactHashes, leases] = await Promise.all([
-    Promise.all([
-      checkNode(deps),
-      checkActiveRoot(deps),
-      checkDaemon(deps),
-      checkMcp(deps),
-      checkSkill(deps),
-      checkSupervisor(deps),
-    ]),
-    checkSessions(deps),
-    checkNoteTitles(deps),
-    checkArtifactHashes(deps),
-    checkLeases(deps),
-  ]);
-  const checks = [...installChecks, ...sessionChecks, noteTitles, artifactHashes, leases];
+  const [installChecks, sessionChecks, noteTitles, artifactHashes, leases, workspaceIndex] =
+    await Promise.all([
+      Promise.all([
+        checkNode(deps),
+        checkActiveRoot(deps),
+        checkDaemon(deps),
+        checkMcp(deps),
+        checkSkill(deps),
+        checkSupervisor(deps),
+      ]),
+      checkSessions(deps),
+      checkNoteTitles(deps),
+      checkArtifactHashes(deps),
+      checkLeases(deps),
+      checkWorkspaceIndexRefs(deps),
+    ]);
+  const checks = [
+    ...installChecks,
+    ...sessionChecks,
+    noteTitles,
+    artifactHashes,
+    leases,
+    workspaceIndex,
+  ];
   return { ok: checks.every((c) => c.status !== 'fail'), checks };
 }
