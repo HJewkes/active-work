@@ -25,3 +25,4 @@ tools/out/
 
 # OS
 Thumbs.db
+.worktrees/
