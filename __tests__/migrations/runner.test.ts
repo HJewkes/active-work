@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { ConfigError } from '../../src/errors.js';
 import {
+  BASE_VERSION,
   CURRENT_VERSION,
   MIGRATIONS,
+  chainProblems,
   runMigrations,
   type Migration,
 } from '../../src/migrations/index.js';
@@ -27,7 +29,8 @@ describe('runMigrations', () => {
   });
 
   it('ships a contiguous chain from v1 up to CURRENT_VERSION', () => {
-    expect(MIGRATIONS).toHaveLength(CURRENT_VERSION - 1);
+    expect(chainProblems()).toEqual([]);
+    expect(MIGRATIONS).toHaveLength(CURRENT_VERSION - BASE_VERSION);
     MIGRATIONS.forEach((m, i) => {
       expect(m.from).toBe(i + 1);
       expect(m.to).toBe(i + 2);
@@ -115,5 +118,37 @@ describe('runMigrations', () => {
       await expect(runMigrations(root, 0, broken)).rejects.toBeInstanceOf(ConfigError);
       await expect(runMigrations(root, 0, broken)).rejects.toThrow(/does not advance/);
     });
+  });
+});
+
+/** The shapes a mis-resolved merge of two concurrent migrations produces (TP-35). */
+describe('chainProblems', () => {
+  const step = (from: number, to: number, description = `v${from} -> v${to}`): Migration => ({
+    from,
+    to,
+    description,
+    async run() {
+      // no-op
+    },
+  });
+
+  it('accepts a chain that walks from the base version in single steps', () => {
+    expect(chainProblems([step(1, 2), step(2, 3)])).toEqual([]);
+  });
+
+  it('reports two migrations claiming the same source version', () => {
+    const problems = chainProblems([step(1, 2), step(2, 3, 'worktrees'), step(2, 3, 'open loops')]);
+    expect(problems).toContain('v2 has 2 migrations, expected one: worktrees, open loops');
+  });
+
+  it('reports a hole in the middle of the chain', () => {
+    const problems = chainProblems([step(1, 2), step(3, 4)]);
+    expect(problems).toEqual(['no migration from v2; the chain stops short of v4']);
+  });
+
+  it('reports a migrator that cannot advance rather than looping on it', () => {
+    expect(chainProblems([step(1, 1), step(1, 2)])).toContain(
+      'v1 -> v1 does not advance the version (from=1, to=1)',
+    );
   });
 });

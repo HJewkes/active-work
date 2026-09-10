@@ -46,7 +46,7 @@ Every initiative is a directory under `$XDG_DATA_HOME/active-work/<slug>/`:
   sources/            # raw source documents (PRs, deepdives, pointers)
 ```
 
-A top-level `<activeRoot>/.schema-version` file holds the integer schema version. `src/migrations/index.ts` exports `CURRENT_VERSION` and `ensureSchemaVersion(activeRoot)`, which migrates forward in place (writing `.pre-migration-v<N>.bak` backups) and refuses to operate against a future version.
+A top-level `<activeRoot>/.schema-version` file holds the integer schema version. `src/migrations/index.ts` exports `CURRENT_VERSION` and `ensureSchemaVersion(activeRoot)`, which migrates forward in place (writing `.pre-migration-v<N>.bak` backups) and refuses to operate against a future version. `CURRENT_VERSION` is derived from the `MIGRATIONS` chain rather than hand-maintained, so adding a migrator is the only way to move it; `chainProblems()` reports any gap, duplicate, or non-advancing step, and a test asserts the shipped chain is clean.
 
 Schema shapes live under `src/schemas/`:
 

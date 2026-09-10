@@ -7,24 +7,69 @@ import { v3ToV4Worktrees } from './v3-to-v4-worktrees.js';
 export type { Migration } from './types.js';
 
 /**
- * The schema version this build of the code expects.
- *
- * Bump this whenever the on-disk layout changes, and add a matching
- * entry to {@link MIGRATIONS} that walks data from the previous version
- * to the new one.
- */
-export const CURRENT_VERSION = 4;
-
-/**
- * Migrations registry. Add an entry when bumping {@link CURRENT_VERSION}.
- * Keep entries sorted by `from` ascending.
+ * The oldest version this build migrates from.
  *
  * v1 is the baseline. There is intentionally no v0 -> v1 migrator: the
  * plan's fresh-start policy says v0 data is not auto-migrated. Setup
- * stamps `CURRENT_VERSION` on first run; an existing `.schema-version`
- * file containing `0` is treated as an error so the user notices.
+ * stamps {@link CURRENT_VERSION} on first run; an existing
+ * `.schema-version` file containing `0` is treated as an error so the
+ * user notices.
  */
-export const MIGRATIONS: Migration[] = [v1ToV2Artifacts, v2ToV3OpenLoops, v3ToV4Worktrees];
+export const BASE_VERSION = 1;
+
+/**
+ * Migrations registry. Add an entry when the on-disk layout changes.
+ * Keep entries sorted by `from` ascending.
+ */
+export const MIGRATIONS: readonly Migration[] = [v1ToV2Artifacts, v2ToV3OpenLoops, v3ToV4Worktrees];
+
+/**
+ * The schema version this build expects, derived from the chain rather
+ * than hand-maintained (TP-35): adding a migrator is the only way to
+ * move it, so the constant and the list cannot disagree.
+ */
+export const CURRENT_VERSION = targetVersion(MIGRATIONS);
+
+function targetVersion(migrations: readonly Migration[]): number {
+  return migrations.reduce((highest, m) => Math.max(highest, m.to), BASE_VERSION);
+}
+
+/**
+ * Everything wrong with a migration chain, as readable lines; empty means
+ * it walks {@link BASE_VERSION} to its target in single steps with no
+ * duplicate or missing version. Exported so a test can assert the shipped
+ * chain, which is what stops a bad merge resolution reaching a release.
+ */
+export function chainProblems(migrations: readonly Migration[] = MIGRATIONS): string[] {
+  const problems: string[] = [];
+  const byFrom = new Map<number, Migration[]>();
+  for (const m of migrations) {
+    if (m.to <= m.from) {
+      problems.push(`${m.description} does not advance the version (from=${m.from}, to=${m.to})`);
+    }
+    byFrom.set(m.from, [...(byFrom.get(m.from) ?? []), m]);
+  }
+  for (const [from, group] of byFrom) {
+    if (group.length > 1) {
+      const names = group.map((m) => m.description).join(', ');
+      problems.push(`v${from} has ${group.length} migrations, expected one: ${names}`);
+    }
+  }
+  problems.push(...gaps(byFrom, targetVersion(migrations)));
+  return problems;
+}
+
+function gaps(byFrom: Map<number, Migration[]>, target: number): string[] {
+  let cursor = BASE_VERSION;
+  while (cursor < target) {
+    const next = byFrom.get(cursor)?.[0];
+    if (!next) return [`no migration from v${cursor}; the chain stops short of v${target}`];
+    // Guards the walk as well as the chain: a non-advancing step would loop here.
+    if (next.to <= cursor) return [`${next.description} cannot advance past v${cursor}`];
+    cursor = next.to;
+  }
+  return [];
+}
 
 /**
  * Runs every migrator needed to bring `activeRoot` from `fromVersion`
@@ -38,7 +83,7 @@ export const MIGRATIONS: Migration[] = [v1ToV2Artifacts, v2ToV3OpenLoops, v3ToV4
 export async function runMigrations(
   activeRoot: string,
   fromVersion: number,
-  migrations: Migration[] = MIGRATIONS,
+  migrations: readonly Migration[] = MIGRATIONS,
 ): Promise<{ ran: Migration[] }> {
   if (fromVersion === CURRENT_VERSION) {
     return { ran: [] };
