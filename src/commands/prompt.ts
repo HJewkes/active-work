@@ -14,6 +14,8 @@ const ArgsSchema = z.object({
   // Frame the prompt as ad-hoc work on the workstream rather than a
   // continuation of its handoff / top task.
   adhoc: z.boolean().optional(),
+  // Rank the notes against this instead of the top task and brief titles.
+  about: z.string().min(1).optional(),
   // Skip the check for another session already live on this initiative.
   no_sibling_check: z.boolean().optional(),
 });
@@ -43,12 +45,18 @@ const promptCommand = defineCommand<PromptArgs, string>({
         description:
           'Frame the prompt as ad-hoc work on the workstream, awaiting the user’s task, not a continuation of the handoff / top task.',
       },
+      about: {
+        long: '--about',
+        description:
+          'What this session is about, ranking the notes against it instead of the top task and brief titles.',
+      },
       no_sibling_check: {
         long: '--no-sibling-check',
         description: 'Skip the check for another session already live on this initiative.',
       },
     },
-    usage: 'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc] [--no-sibling-check]',
+    usage:
+      'active-work prompt [slug] [--offline] [--cwd <dir>] [--adhoc] [--about <text>] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -78,6 +86,7 @@ const promptCommand = defineCommand<PromptArgs, string>({
       slug,
       includeLiveStatus: !args.offline,
       adhoc: args.adhoc,
+      ...(args.about !== undefined ? { about: args.about } : {}),
       detectSiblings: !args.no_sibling_check && !args.offline,
       ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
     });

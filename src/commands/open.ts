@@ -34,6 +34,7 @@ const ArgsSchema = z.object({
   // Frame the bootstrap prompt as ad-hoc work related to the workstream rather
   // than a continuation of its handoff / top task.
   adhoc: z.boolean().optional(),
+  about: z.string().min(1).optional(),
   // Skip the sibling-session probe (and the lease write that goes with it).
   no_sibling_check: z.boolean().optional(),
   // Internal: `aw` calls this command in-process and holds a `launcher` lease
@@ -158,6 +159,7 @@ async function bootstrapInitiative(
     resolvedFrom: 'slug' | 'cwd';
     cwdHintOverride?: string;
     adhoc?: boolean;
+    about?: string;
     detectSiblings?: boolean;
     deferLease?: boolean;
   },
@@ -178,6 +180,7 @@ async function bootstrapInitiative(
     includeLiveStatus: !opts.offline,
     archivedTaskIds,
     adhoc: opts.adhoc,
+    ...(opts.about !== undefined ? { about: opts.about } : {}),
     detectSiblings,
     ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
   });
@@ -219,6 +222,11 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         description:
           'Always return the picker list; skip resolving the initiative from the current directory.',
       },
+      about: {
+        long: '--about',
+        description:
+          'What this session is about, ranking the notes against it instead of the top task and brief titles.',
+      },
       adhoc: {
         long: '--adhoc',
         description:
@@ -231,7 +239,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
       },
     },
     usage:
-      'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc] [--no-sibling-check]',
+      'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc] [--about <text>] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -247,6 +255,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         offline: args.offline,
         resolvedFrom: 'slug',
         adhoc: args.adhoc,
+        ...(args.about !== undefined ? { about: args.about } : {}),
         detectSiblings,
         deferLease,
       });
@@ -265,6 +274,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
           resolvedFrom: 'cwd',
           cwdHintOverride: matched.worktreePath,
           adhoc: args.adhoc,
+          ...(args.about !== undefined ? { about: args.about } : {}),
           detectSiblings,
           deferLease,
         });
