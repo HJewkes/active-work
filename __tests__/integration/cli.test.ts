@@ -170,4 +170,25 @@ describe('cli integration', () => {
     expect(typeof last.ts).toBe('string');
     expect(typeof last.duration_ms).toBe('number');
   });
+
+  it('reports the version of the build it is, not a constant', async () => {
+    // Through 0.4.0 this answered '0.1.0' from a hardcoded TODO while the
+    // installed package was three releases ahead. The daemon runs the installed
+    // binary rather than the repo, so this field is how anyone establishes which
+    // build is live — a constant cannot answer it.
+    const { status, stdout } = runCli(['--version']);
+    const reported = stdout.trim();
+
+    expect(status).toBe(0);
+    if (existsSync(DIST_BIN)) {
+      // tsup substitutes the define, so a built bundle must match package.json.
+      const pkg = JSON.parse(await fs.readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+        version: string;
+      };
+      expect(reported).toBe(pkg.version);
+    } else {
+      // Unbuilt tree under tsx: visibly not a release, rather than a stale number.
+      expect(reported).toBe('0.0.0-dev');
+    }
+  });
 });

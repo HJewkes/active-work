@@ -13,6 +13,7 @@ import {
   type CommandContext,
 } from './registry/index.js';
 import { readCommanderOption } from '@titan-design/registry';
+import { BUILD_VERSION } from './version.js';
 import { color } from './utils/color.js';
 import { appendUsage } from './utils/usage-log.js';
 
@@ -272,7 +273,7 @@ function buildProgram(): Command {
   program
     .name('active-work')
     .description('active-work CLI — durable workspace state for engineering work')
-    .version('0.1.0')
+    .version(BUILD_VERSION)
     .option('--json', 'emit machine-readable JSON envelope on stdout')
     .addHelpText(
       'after',

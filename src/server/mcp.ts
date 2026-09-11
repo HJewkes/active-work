@@ -28,7 +28,7 @@ import { registry, type AnyCommand, type CommandContext } from '../registry/inde
 import '../commands/index.js'; // populates registry on import
 import { formatError } from '../errors.js';
 import { getActiveRoot } from '../utils/paths.js';
-import { DAEMON_VERSION } from './health.js';
+import { BUILD_VERSION } from '../version.js';
 
 const TOOL_NAME_PREFIX = 'active__';
 const NAMING = { prefix: TOOL_NAME_PREFIX } as const;
@@ -44,7 +44,7 @@ export function mcpOptions(): McpServerOptions<CommandContext> {
     formatError,
     toolPrefix: TOOL_NAME_PREFIX,
     name: '@hjewkes/active-work',
-    version: DAEMON_VERSION,
+    version: BUILD_VERSION,
   };
 }
 

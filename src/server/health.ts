@@ -7,9 +7,6 @@
  * from when the app happened to be built.
  */
 
-// TODO: read version from package.json at build time; hardcoded for v0.
-export const DAEMON_VERSION = '0.1.0';
-
 export const startedAt = Date.now();
 
 /**
