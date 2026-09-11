@@ -20,6 +20,7 @@ import {
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
 import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
+import { rankNotes, subjectOf, type NoteRanking, type NoteRelevance } from './rank-notes.js';
 import { readLiveLeases, type LiveSibling, type SiblingProbe } from '../sessions/lease.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
@@ -114,6 +115,16 @@ export interface BootstrapInput {
   siblingProbe?: SiblingProbe;
   /** This session's own lease, excluded from the sibling list. */
   ownLeaseId?: string;
+  /**
+   * What this session is about, overriding the top task and brief titles that
+   * otherwise supply the subject the notes are ranked against (TP-26).
+   */
+  about?: string;
+  /**
+   * Optional relevance source (DI). Defaults to a query against the live graph.
+   * One that throws yields date-ordered notes, never a failed bootstrap.
+   */
+  noteRelevance?: NoteRelevance;
 }
 
 export interface BootstrapMetadata {
@@ -444,14 +455,24 @@ function renderNoteLine(note: LoadedNote): string {
   return `- [${kind}] ${title} (${created})`;
 }
 
-function renderDurableNotes(loaded: LoadedNotes, slug: string): string | null {
-  const { notes, malformed } = loaded;
+function renderDurableNotes(
+  loaded: LoadedNotes,
+  ranking: NoteRanking,
+  slug: string,
+): string | null {
+  const { malformed } = loaded;
+  const notes = ranking.local;
   if (notes.length === 0 && malformed.length === 0) return null;
   const shown = notes.slice(0, DURABLE_NOTES_LIMIT);
   const lines = shown.map(renderNoteLine);
   const overflow = notes.length - shown.length;
+  // The heading and the overflow both have to say which ordering this is.
+  // "Newest 12 of 34" is a lie when the list is ranked, and a reader who
+  // cannot tell why a note leads cannot judge whether the ordering is working.
+  const ordering = ranking.ranked ? 'most relevant' : 'newest';
   if (overflow > 0) {
-    lines.push(`(+${overflow} older — \`active-work note list ${slug}\`)`);
+    const rest = ranking.ranked ? 'more' : 'older';
+    lines.push(`(+${overflow} ${rest} — \`active-work note list ${slug}\`)`);
   }
   if (malformed.length > 0) {
     lines.push(
@@ -460,9 +481,25 @@ function renderDurableNotes(loaded: LoadedNotes, slug: string): string | null {
   }
   const heading =
     overflow > 0
-      ? `# Durable notes (newest ${shown.length} of ${notes.length})`
+      ? `# Durable notes (${ordering} ${shown.length} of ${notes.length})`
       : `# Durable notes (${notes.length})`;
   return `${heading}\n${lines.join('\n')}`;
+}
+
+/**
+ * Notes from other initiatives that bear on this one.
+ *
+ * Every note is labelled with the initiative it came from, because an
+ * unlabelled foreign note is worse than none: the reader cannot tell why it is
+ * there or how much to trust it here. Absent entirely when nothing clears the
+ * floor, which is most sessions.
+ */
+function renderForeignNotes(ranking: NoteRanking): string | null {
+  if (ranking.foreign.length === 0) return null;
+  const lines = ranking.foreign.map(
+    (note) => `- [from \`${note.initiative}\`] ${note.title} (\`${note.ref}\`)`,
+  );
+  return `# From other initiatives\n${lines.join('\n')}`;
 }
 
 /**
@@ -1066,6 +1103,8 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     detectSiblings = true,
     siblingProbe = readLiveLeases,
     ownLeaseId,
+    about,
+    noteRelevance,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -1141,6 +1180,20 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     .filter((t) => t.status === 'open')
     .sort(compareTasksByPriority)[0]?.title;
 
+  // Ranked against what this session is about, rather than by date (TP-26).
+  // `rankNotes` swallows its own failures and hands back date order, so the
+  // index staying optional costs nothing here.
+  const noteRanking = rankNotes({
+    notes: notes.notes,
+    slug,
+    subject: subjectOf({
+      ...(about !== undefined ? { about } : {}),
+      briefTitle: brief.title,
+      ...(topTaskTitle !== undefined ? { topTaskTitle } : {}),
+    }),
+    ...(noteRelevance ? { relevance: noteRelevance } : {}),
+  });
+
   const sections: string[] = [];
   sections.push(
     adhoc
@@ -1192,8 +1245,10 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     );
   }
 
-  const notesBody = renderDurableNotes(notes, slug);
+  const notesBody = renderDurableNotes(notes, noteRanking, slug);
   if (notesBody) sections.push(notesBody);
+  const foreignBody = renderForeignNotes(noteRanking);
+  if (foreignBody) sections.push(foreignBody);
 
   if (artifactsError) {
     const artifactsPath = path.join(initiativeDir, 'artifacts.yml');

@@ -133,4 +133,61 @@ describe('bootstrap durable notes', () => {
       expect(artifactsAt).toBeGreaterThan(notesAt);
     });
   });
+
+  it('says newest when the ranking was unavailable, so the heading is never a lie', async () => {
+    await withTempActiveRoot(async (root) => {
+      await writeNote(root, '2026-06-01-one.md', noteFixture('fyi', 'One', '2026-06-01'));
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot: root,
+        slug: SLUG,
+        ...offlineOpts,
+        noteRelevance: () => {
+          throw new Error('no index');
+        },
+      });
+
+      expect(prompt).toContain('# Durable notes (1)');
+      expect(prompt).not.toContain('# From other initiatives');
+    });
+  });
+
+  it('labels a foreign note with the initiative it came from', async () => {
+    await withTempActiveRoot(async (root) => {
+      await writeNote(root, '2026-06-01-one.md', noteFixture('fyi', 'One', '2026-06-01'));
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot: root,
+        slug: SLUG,
+        ...offlineOpts,
+        noteRelevance: () => [
+          { ref: 'note:other-thing/2026-05-01-a.md', scorePerTerm: 9, title: 'The foreign lesson' },
+        ],
+      });
+
+      // Unlabelled, a foreign note is worse than none: the reader cannot tell
+      // why it is there or how much it applies here.
+      expect(prompt).toContain('# From other initiatives');
+      expect(prompt).toContain('[from `other-thing`] The foreign lesson');
+      expect(prompt).toContain('`note:other-thing/2026-05-01-a.md`');
+    });
+  });
+
+  it('omits the foreign section entirely when nothing clears the floor', async () => {
+    await withTempActiveRoot(async (root) => {
+      await writeNote(root, '2026-06-01-one.md', noteFixture('fyi', 'One', '2026-06-01'));
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot: root,
+        slug: SLUG,
+        ...offlineOpts,
+        noteRelevance: () => [
+          { ref: 'note:other-thing/2026-05-01-a.md', scorePerTerm: 1.0, title: 'Barely matched' },
+        ],
+      });
+
+      expect(prompt).not.toContain('# From other initiatives');
+      expect(prompt).not.toContain('Barely matched');
+    });
+  });
 });
