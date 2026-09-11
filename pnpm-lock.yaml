@@ -24,20 +24,23 @@ importers:
         specifier: ^0.1.2
         version: 0.1.2(zod@4.4.3)
       '@titan-design/locator':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       '@titan-design/registry':
         specifier: ^0.1.0
         version: 0.1.0(zod@4.4.3)
+      '@titan-design/retrieval':
+        specifier: 0.2.0
+        version: 0.2.0
       '@titan-design/session-graph':
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.3.2
+        version: 0.3.2
       '@titan-design/session-read':
+        specifier: ^0.2.1
+        version: 0.2.1
+      '@titan-design/store-sqlite':
         specifier: ^0.2.0
         version: 0.2.0
-      '@titan-design/store-sqlite':
-        specifier: ^0.1.0
-        version: 0.1.0
       better-sqlite3:
         specifier: ^13.0.2
         version: 13.0.2
@@ -684,14 +687,27 @@ packages:
     resolution: {integrity: sha512-uI3n7htcBl8TXA9GFXBct60MZ0H57g0CGd7HIZp/B2n5KX48SCMk2FEPeZAVfAcfEwenBnJIq2OkeukhCt5iqA==}
     engines: {node: '>=20'}
 
+  '@titan-design/cluster@0.1.1':
+    resolution: {integrity: sha512-fBkjkHjwPhP8khmTLmOOP9syDzHDMkxRWA5Z59FxnpYBSutSuTrYQfj6uqq7yhYI79wJr6+6Zswg7aL/P+ipXg==}
+    engines: {node: '>=20'}
+
   '@titan-design/daemon@0.1.2':
     resolution: {integrity: sha512-k63Pzc7Mvbp/kwyhINkgQcA5wxLE+SxjaRmzItt0bnuOg6e6peBc3lJ6CmeemeOowlpNawc0TU+/KbKzyCwH3Q==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/locator@0.1.0':
-    resolution: {integrity: sha512-9Bcrua0GWLj8Wopq5qdhApgrG5XqcUbQkL8cJZMNSSwoIuS0R3B6XLzdww4KOpfwQ1R53wzPLyMwByC/0/JkUg==}
+  '@titan-design/embed@0.1.0':
+    resolution: {integrity: sha512-HUkW72DuC2ZxNknsEJKf/z10NF7SXXHQFR3B1tDgdKleyx0D7oMcMHe8IJKFxMJnluQ6UBkoBCLsypq5XHUfbQ==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@huggingface/transformers': ^3.0.0
+    peerDependenciesMeta:
+      '@huggingface/transformers':
+        optional: true
+
+  '@titan-design/locator@0.2.0':
+    resolution: {integrity: sha512-HXdZRkEt+CGXCUOTJYPo5jolaUyg+RVXQaeG/nFrKbUNMftt+k4lcjdru53GFkIlHd3vli2L/d0BjP296ePuJA==}
     engines: {node: '>=20'}
 
   '@titan-design/registry@0.1.0':
@@ -700,16 +716,25 @@ packages:
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/session-graph@0.3.1':
-    resolution: {integrity: sha512-MJyRhei19jibZPaKWN56UwCZvcXiBFwgRCAEVtCPY7v1qnEn/KEKMYm5fRrAlVHdm+x6P2Qduu08ARAwo9sdyQ==}
+  '@titan-design/retrieval@0.2.0':
+    resolution: {integrity: sha512-dmRyhr9lME3HbDNKgsaromm7FbH5LTtogGApETyzkZ97IPbfi10p7f82DlLVsrOYIg9LBvPZdo1BwHJ96yZITw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@huggingface/transformers': ^3.0.0
+    peerDependenciesMeta:
+      '@huggingface/transformers':
+        optional: true
+
+  '@titan-design/session-graph@0.3.2':
+    resolution: {integrity: sha512-2mzx08gsWR9pX7Rcwaj9jNk9ffISYRg/dy0FfOeyH4ZuW+Rxc1H2xLxpvyzN++8tKlelJ7rPPhBaFvBN7Qec8g==}
     engines: {node: '>=20'}
 
-  '@titan-design/session-read@0.2.0':
-    resolution: {integrity: sha512-hWnqebm3iOOiEfz8EddSAOASzEnL1acpbQyaA3kdMc5vGnAxUOb2YxWbcrHP5OikXfA55gNCUvrBqa4yDi/Ltw==}
+  '@titan-design/session-read@0.2.1':
+    resolution: {integrity: sha512-rFKW5D36f03bMON9TpwFUw8hGOHM8KJZ+hINSFPlZeYUOSAV/WBPbflpRW0G8Ust77yy7vk6npkGnb1w3j/RqQ==}
     engines: {node: '>=20'}
 
-  '@titan-design/store-sqlite@0.1.0':
-    resolution: {integrity: sha512-fSp6VNuwE74kqxtvxVM0Selb+NnnD+NpI1mDO/paQLTAuHyCIns59LORoIIdhm5+H1PPWHjeik0TksA5KhD5yw==}
+  '@titan-design/store-sqlite@0.2.0':
+    resolution: {integrity: sha512-1q2HnVwjrKrO2tXYQ89UJVTo/dStGHrfijZTRxf6wqF+ZlkLD9/XH6QGwoROyULI9dvC20x28YE6n1Cv1ljQxQ==}
     engines: {node: '>=20'}
 
   '@tybys/wasm-util@0.10.2':
@@ -874,8 +899,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  acorn@8.17.0:
-    resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
+  acorn@8.18.0:
+    resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
     engines: {node: '>=0.4.0'}
     hasBin: true
 
@@ -2800,6 +2825,8 @@ snapshots:
 
   '@titan-design/cluster@0.1.0': {}
 
+  '@titan-design/cluster@0.1.1': {}
+
   '@titan-design/daemon@0.1.2(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 2.0.2(hono@4.12.18)
@@ -2811,24 +2838,31 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@titan-design/locator@0.1.0': {}
+  '@titan-design/embed@0.1.0': {}
+
+  '@titan-design/locator@0.2.0': {}
 
   '@titan-design/registry@0.1.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
-  '@titan-design/session-graph@0.3.1':
+  '@titan-design/retrieval@0.2.0':
     dependencies:
-      '@titan-design/cluster': 0.1.0
-      '@titan-design/locator': 0.1.0
-      '@titan-design/session-read': 0.2.0
-      '@titan-design/store-sqlite': 0.1.0
+      '@titan-design/embed': 0.1.0
+      '@titan-design/store-sqlite': 0.2.0
 
-  '@titan-design/session-read@0.2.0':
+  '@titan-design/session-graph@0.3.2':
     dependencies:
-      '@titan-design/locator': 0.1.0
+      '@titan-design/cluster': 0.1.1
+      '@titan-design/locator': 0.2.0
+      '@titan-design/session-read': 0.2.1
+      '@titan-design/store-sqlite': 0.2.0
 
-  '@titan-design/store-sqlite@0.1.0':
+  '@titan-design/session-read@0.2.1':
+    dependencies:
+      '@titan-design/locator': 0.2.0
+
+  '@titan-design/store-sqlite@0.2.0':
     dependencies:
       better-sqlite3: 13.0.2
 
@@ -3040,7 +3074,7 @@ snapshots:
 
   acorn@8.16.0: {}
 
-  acorn@8.17.0:
+  acorn@8.18.0:
     optional: true
 
   ajv-formats@3.0.1(ajv@8.20.0):
@@ -4285,7 +4319,7 @@ snapshots:
   terser@5.47.1:
     dependencies:
       '@jridgewell/source-map': 0.3.11
-      acorn: 8.17.0
+      acorn: 8.18.0
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
