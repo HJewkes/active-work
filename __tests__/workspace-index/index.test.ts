@@ -225,4 +225,22 @@ describe('malformed files', () => {
       [],
     );
   });
+
+  it('reports a schema rejection as one line per issue, not as a JSON dump', async () => {
+    // `ZodError.message` is the issue list as indented JSON, ~25 lines per file.
+    // Twelve malformed notes put several hundred lines into every refresh.
+    writeFile(
+      root,
+      'beta/sources/notes/2026-09-11-bad.md',
+      '---\nkind: nonsense\ncreated: 2026-09-11\n---\n\nbody\n',
+    );
+
+    const summary = await refreshWorkspace(graph, { activeRoot: root });
+    const entry = summary.malformed.find((m) => m.path.endsWith('2026-09-11-bad.md'));
+
+    expect(entry).toBeDefined();
+    expect(entry!.reason).not.toContain('\n');
+    expect(entry!.reason).toContain('kind:');
+    expect(entry!.reason).toContain('title:');
+  });
 });
