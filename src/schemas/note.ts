@@ -15,12 +15,17 @@ const isoDate = z
   .refine(isValidIsoDate, { message: 'Must be a valid zero-padded YYYY-MM-DD date' });
 
 /**
- * What a note is for. Actionable work becomes a task; these four cover the
- * durable knowledge a session leaves behind that no task would carry:
- * `process` (how to work), `gotcha` (what bit us), `fyi` (context worth
- * keeping), `decision` (what we settled and why).
+ * What a note is for. Actionable work becomes a task; these cover the durable
+ * knowledge a session leaves behind that no task would carry: `process` (how to
+ * work), `gotcha` (what bit us), `fyi` (context worth keeping), `decision`
+ * (what we settled and why), `plan` (intended shape of work not yet broken into
+ * tasks).
+ *
+ * `plan` was added after the fact, because eleven notes across three
+ * initiatives had been written with it and the loader silently dropped every
+ * one. A kind the corpus already uses is a kind, whatever the enum said.
  */
-export const NoteKindSchema = z.enum(['process', 'gotcha', 'fyi', 'decision']);
+export const NoteKindSchema = z.enum(['process', 'gotcha', 'fyi', 'decision', 'plan']);
 
 /**
  * Titles are slugified into filenames, so an unbounded one yields a path no

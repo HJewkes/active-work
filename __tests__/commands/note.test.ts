@@ -80,6 +80,14 @@ describe('note.add', () => {
     ).toBe(false);
   });
 
+  it('accepts plan, a kind the corpus used before the enum did', () => {
+    // Eleven notes across three initiatives carried `kind: plan` and the loader
+    // dropped every one. A kind the corpus already uses is a kind.
+    expect(
+      noteAddCmd.args.safeParse({ slug: SLUG, kind: 'plan', title: 'Shape', body: 'x' }).success,
+    ).toBe(true);
+  });
+
   it('requires exactly one of --body and --body-file', () => {
     const base = { slug: SLUG, kind: 'fyi', title: 'Body rules' };
     expect(noteAddCmd.args.safeParse(base).success).toBe(false);

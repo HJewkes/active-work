@@ -19,7 +19,8 @@ import '../commands/index.js'; // populate the registry on import
 import { formatError } from '../errors.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { handleDashboard } from './dashboard-routes.js';
-import { DAEMON_VERSION, startedAt, type HealthIndexState } from './health.js';
+import { startedAt, type HealthIndexState } from './health.js';
+import { BUILD_VERSION } from '../version.js';
 
 export interface BuildHttpAppOptions {
   port: number;
@@ -47,7 +48,7 @@ export function buildHttpApp(options: BuildHttpAppOptions): Hono {
     registry,
     createContext: () => ({ activeRoot: getActiveRoot(), warnings: [], format: 'json' }),
     formatError,
-    version: DAEMON_VERSION,
+    version: BUILD_VERSION,
     startedAt,
     port: () => options.port,
     hub: options.hub,

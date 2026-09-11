@@ -13,7 +13,8 @@ import { DaemonError } from '../errors.js';
 import type { SchedulerStatus } from '../session-index/scheduler.js';
 import { getActiveRoot, getStateRoot } from '../utils/paths.js';
 import { handleDashboard } from './dashboard-routes.js';
-import { DAEMON_VERSION, type HealthIndexState } from './health.js';
+import { type HealthIndexState } from './health.js';
+import { BUILD_VERSION } from '../version.js';
 import { resolveDaemonPort } from './lifecycle.js';
 import { getLogger } from './logger.js';
 import { mcpOptions } from './mcp.js';
@@ -50,7 +51,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
     stateDir: getStateRoot(),
     port: resolvePort(options),
     watchRoot: getActiveRoot(),
-    version: DAEMON_VERSION,
+    version: BUILD_VERSION,
     logger: log,
     health: () => ({ index: toHealthIndexState(indexWatch?.status()) }),
     mountRoutes: (app: Hono) => {

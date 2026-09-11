@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import matter from 'gray-matter';
+import { z } from 'zod';
 import type { WorkspaceGraph } from '../session-index/graph.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { rebuildEdges, type EdgeCounts, type NoteFacts } from './edges.js';
@@ -84,16 +85,28 @@ interface Attempt {
   reason: string | null;
 }
 
+/**
+ * One line per rejected file, not the whole zod issue array.
+ *
+ * `ZodError.message` is the issue list serialised as indented JSON — around 25
+ * lines per file. Twelve malformed notes put several hundred lines into every
+ * `miner refresh`, which is how a real finding becomes output people scroll
+ * past. The field and its reason are the entire signal; the JSON adds nothing.
+ */
+function describeFailure(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    return err.issues
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 async function readAttempt(file: WorkspaceFile, watermarkId: number): Promise<Attempt> {
   try {
     return { file, watermarkId, record: await readRecord(file), reason: null };
   } catch (err) {
-    return {
-      file,
-      watermarkId,
-      record: null,
-      reason: err instanceof Error ? err.message : String(err),
-    };
+    return { file, watermarkId, record: null, reason: describeFailure(err) };
   }
 }
 
