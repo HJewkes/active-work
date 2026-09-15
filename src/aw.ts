@@ -13,12 +13,14 @@
  * invocations so the two surfaces stay distinct.
  */
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import * as clackPrompts from '@clack/prompts';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
 import { resolveLaunchCwd } from './commands/_open-helpers.js';
 import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
+import { applyProfileEnv } from './launcher-profile.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT } from './errors.js';
 import { color } from './utils/color.js';
@@ -36,6 +38,7 @@ interface OpenSuccess {
   prompt: string;
   cwd_hint: string;
   channels?: string[];
+  profile?: string;
   resolved_from?: 'slug' | 'cwd';
 }
 
@@ -101,14 +104,19 @@ function spawnClaude(
   cwd: string,
   channels?: string[],
   leaseId?: string,
+  profile?: string,
 ): Promise<number> {
+  const { env: profileEnv, warning } = applyProfileEnv(process.env, profile, (dir) =>
+    existsSync(dir),
+  );
+  if (warning) process.stderr.write(color.yellow(`warning: ${warning}\n`));
   return new Promise((resolve) => {
     const child = spawn('claude', buildClaudeArgs(prompt, channels), {
       cwd,
       stdio: 'inherit',
       // Explicit env (the default is an implicit `process.env`) so the session
       // can recognize its own lease and not warn about itself.
-      env: buildLauncherEnv(process.env, leaseId),
+      env: buildLauncherEnv(profileEnv, leaseId),
     });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
@@ -280,7 +288,7 @@ export async function main(argv: string[]): Promise<void> {
         slug: opened.slug,
         cwd: launchCwd,
       },
-      (leaseId) => spawnClaude(opened.prompt, launchCwd, opened.channels, leaseId),
+      (leaseId) => spawnClaude(opened.prompt, launchCwd, opened.channels, leaseId, opened.profile),
     );
     process.exit(code);
   } catch (err) {

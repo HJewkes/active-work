@@ -56,6 +56,19 @@ export const BriefFrontmatterSchema = z
         message: 'task_prefix must be uppercase letters/digits starting with a letter',
       }),
     channels: z.array(channelTarget).optional(),
+    // Claude account profile this initiative runs under. The launcher resolves
+    // it to a CLAUDE_CONFIG_DIR, so a workstream stays on its own account and
+    // usage budget without the caller remembering to switch first. Restricted
+    // to a bare directory name — it is joined onto the profile root, so path
+    // separators and traversal must not survive validation.
+    profile: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z0-9._-]+$/, {
+        message: 'profile must be a bare directory name (letters, digits, dot, dash, underscore)',
+      })
+      .refine((v) => v !== '.' && v !== '..', { message: 'profile must not be "." or ".."' })
+      .optional(),
     // High-water mark for task ids: the largest numeric suffix ever issued
     // for this initiative's task_prefix. Optional so pre-existing brief.md
     // files (written before this field existed) keep validating; task.add
