@@ -60,6 +60,7 @@ const OpenResultSchema = z.object({
   prompt: z.string(),
   cwd_hint: z.string(),
   channels: z.array(z.string()).optional(),
+  profile: z.string().optional(),
   metadata: z.object({
     slug: z.string(),
     brief_title: z.string(),
@@ -194,6 +195,7 @@ async function bootstrapInitiative(
     prompt,
     cwd_hint: cwdHint,
     channels: mergeChannels(defaultChannels, brief.channels),
+    ...(brief.profile ? { profile: brief.profile } : {}),
     metadata,
     resolved_from: opts.resolvedFrom,
   };

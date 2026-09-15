@@ -12,6 +12,24 @@ const validBase = {
 };
 
 describe('BriefFrontmatterSchema', () => {
+  it('accepts an optional profile naming a Claude account directory', () => {
+    const result = BriefFrontmatterSchema.safeParse({ ...validBase, profile: 'agents' });
+    expect(result.success).toBe(true);
+  });
+
+  it('omits profile without complaint', () => {
+    const result = BriefFrontmatterSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['../other', 'a/b', '/abs', '.', '..', ''])(
+    'rejects profile %j so it cannot escape the profile root',
+    (profile) => {
+      const result = BriefFrontmatterSchema.safeParse({ ...validBase, profile });
+      expect(result.success).toBe(false);
+    },
+  );
+
   it('accepts a golden valid focused brief', () => {
     const result = BriefFrontmatterSchema.safeParse(validBase);
     expect(result.success).toBe(true);
