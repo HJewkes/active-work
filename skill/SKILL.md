@@ -66,7 +66,7 @@ Auto-prompt the wrap when you detect the user winding down ("I'm done", "let's s
 `aw <slug>` is the operator-facing launcher: it assembles the bootstrap prompt and execs `claude` with the initiative's worktree as cwd. Omit the slug and it resolves the initiative from the caller's cwd (matching against each initiative's **registered** worktrees — the entries in `artifacts.yml` that carry a `name`, not the ones `wrap` merely swept), falling back to the interactive picker when nothing matches uniquely; `aw --pick` forces the picker. (Register a worktree so this resolution works with `active-work worktree set <slug> <path>`, or at creation via `new --worktree` / `track --worktree`.) `active-work open <slug>` is the same assembly logic, but prints the prompt to stdout instead of spawning Claude — use it from MCP / scripts / any caller that wants to handle the spawn itself (pass `--cwd <dir>` when the caller's process cwd isn't the user's shell cwd, e.g. the daemon). The bootstrap prompt inlines:
 
 - A brief excerpt (the brief's prose body, truncated to 40 lines)
-- **Open loops** — unresolved `next_steps` from prior sessions, with the age of each hang
+- **Open loops** — unresolved `next_steps` from prior sessions, with the age of each hang. Under a loop, up to two indented `see:` lines name workspace notes, sources, tasks or session records related to it (ref plus title, `[from \`<initiative>\`]` when foreign); open one when it bears on closing the loop. Absent when the index is missing or nothing matched
 - **Abandoned loops** from the last 14 days, each with the reason it was dropped (`active-work loops <slug> --state abandoned` for the full history)
 - The most recent session summary
 - The top N open tasks (rank-sorted)
@@ -75,7 +75,9 @@ Auto-prompt the wrap when you detect the user winding down ("I'm done", "let's s
 - Open artifacts with status
 - A context block with today's date, bootstrap time, and time since the last session
 
-To re-seed context **mid-session** (a session that wasn't started via `aw`, or one that has drifted), run `active-work prompt` — it prints the same bootstrap prompt to stdout, cwd-resolved and side-effect-free (no auto-archive). The bundled `/aw-prompt` slash command wraps it and injects the output straight into the session.
+For ad-hoc lookups, `active-work context related --for "<text>"` returns the same kind of ranked, bounded hits for any text.
+
+To re-seed context **mid-session** (a session that wasn't started via `aw`, or one that has drifted), run `active-work prompt` — it prints the same bootstrap prompt to stdout, cwd-resolved and side-effect-free apart from logging the retrieval hits it shows (no auto-archive). The bundled `/aw-prompt` slash command wraps it and injects the output straight into the session.
 
 The brief excerpt is already in your context, so **do not re-read `brief.md`** at the top of the session. Current state needs no separate file — it is the open-loop section, derived fresh at every bootstrap from the session ledger. Jump straight to the highest-rank open task unless the user redirects you. If the user opens a slug without further instruction, ask "continue with `<top task title>`?" and proceed on confirmation.
 
