@@ -79,7 +79,7 @@ const bootstrap = (root: string, extra: Partial<BootstrapInput>) =>
   });
 
 describe('bootstrap loop retrieval', () => {
-  it('renders see: lines under their loop, labelling a foreign hit', async () => {
+  it('renders a see: line under its loop', async () => {
     await withTempActiveRoot(async (root) => {
       await writeLoopSession(root);
       const retriever = fixed([
@@ -95,8 +95,26 @@ describe('bootstrap loop retrieval', () => {
       expect(prompt).toContain(
         '(from 2026-05-11, ref 2026-05-11-0900-loop-session#s1)\n' +
           '    see: note:sample-initiative/2026-05-01-refs.md "Refs are minted at write"\n' +
-          '    see: [from `relay`] note:relay/2026-04-01-ids.md "Ids need a prefix"\n' +
           '- [1d] Decide the eval harness',
+      );
+    });
+  });
+
+  it('gives the second loop its own first line before the first loop gets a second', async () => {
+    await withTempActiveRoot(async (root) => {
+      await writeLoopSession(root);
+      const retriever = fixed([
+        hit('note:sample-initiative/2026-05-01-refs.md', SLUG, 'Refs are minted at write'),
+        hit('note:relay/2026-04-01-ids.md', 'relay', 'Ids need a prefix'),
+      ]);
+
+      const { prompt } = await bootstrap(root, {
+        loopRetriever: retriever,
+        hitLog: recorder().writer,
+      });
+
+      expect(prompt).toMatch(
+        /ref 2026-05-11-0900-loop-session#s2\)\n {4}see: \[from `relay`\] note:relay\/2026-04-01-ids\.md "Ids need a prefix"\n/,
       );
     });
   });

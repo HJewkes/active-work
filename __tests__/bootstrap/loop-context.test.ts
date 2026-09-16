@@ -48,29 +48,35 @@ const run = (loops: OpenLoop[], retriever: LoopRetriever, shown: string[] = []) 
   relatedForLoops({ loops, labels: loops.map((l) => l.text), slug: 'alpha', shown, retriever });
 
 describe('relatedForLoops', () => {
-  it('gives each loop at most two hits and never repeats one across loops', async () => {
+  it('gives every loop its best hit before any loop gets a second', async () => {
     const loops = [loop('s#a'), loop('s#b')];
 
     const context = await run(loops, retrieverOf(pool(10)));
 
+    // Both loops rank the same pool, so a hit taken once is never repeated.
     expect(context.hits.get('s#a')!.map((h) => h.ref)).toEqual([
       'note:alpha/n0.md',
-      'note:alpha/n1.md',
+      'note:alpha/n2.md',
     ]);
     expect(context.hits.get('s#b')!.map((h) => h.ref)).toEqual([
-      'note:alpha/n2.md',
+      'note:alpha/n1.md',
       'note:alpha/n3.md',
     ]);
   });
 
-  it('stops at six hits across every loop', async () => {
-    const loops = ['a', 'b', 'c', 'd', 'e'].map((id) => loop(`s#${id}`));
+  it('spreads six hits over six of seven loops rather than two each over three', async () => {
+    const loops = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => loop(`s#${id}`));
+    const perLoop: LoopRetriever = async (input) => ({
+      hits: [hit(`note:alpha/${input.text}-1.md`), hit(`note:alpha/${input.text}-2.md`)],
+      degraded: [],
+      query: { terms: [], expression: '' },
+    });
 
-    const context = await run(loops, retrieverOf(pool(20)));
+    const context = await run(loops, perLoop);
 
-    const total = [...context.hits.values()].reduce((sum, hits) => sum + hits.length, 0);
-    expect(total).toBe(6);
-    expect(context.hits.has('s#d')).toBe(false);
+    expect([...context.hits.keys()]).toEqual(['s#a', 's#b', 's#c', 's#d', 's#e', 's#f']);
+    expect([...context.hits.values()].every((hits) => hits.length === 1)).toBe(true);
+    expect(context.hits.get('s#a')![0]!.ref).toBe('note:alpha/loop s#a-1.md');
   });
 
   it('stops at 1,200 rendered characters across every loop', async () => {
@@ -121,7 +127,8 @@ describe('relatedForLoops', () => {
     const context = await run([loop('s#a'), loop('s#b'), loop('s#c')], flaky);
 
     expect(context.hits.has('s#a')).toBe(false);
-    expect(context.hits.get('s#b')).toHaveLength(2);
+    expect(context.hits.get('s#b')!.map((h) => h.ref)).toEqual(['note:alpha/n0.md']);
+    expect(context.hits.get('s#c')!.map((h) => h.ref)).toEqual(['note:alpha/n1.md']);
     expect(context.degraded).toEqual([
       { source: 'loop-retriever', reason: 'error', message: 'graph locked' },
     ]);

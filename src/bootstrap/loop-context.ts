@@ -60,44 +60,35 @@ function ownRefs(loop: OpenLoop): string[] {
   return refs;
 }
 
-interface Remaining {
-  hits: number;
-  chars: number;
-  excluded: Set<string>;
-}
+/**
+ * Candidates to ask each loop for. Other loops can take at most `HITS_TOTAL - 1`
+ * of them first, so this many always leaves a loop its own two.
+ */
+const CANDIDATES_PER_LOOP = HITS_TOTAL + HITS_PER_LOOP - 1;
 
 async function queryLoop(
   input: LoopContextInput,
   index: number,
-  remaining: Remaining,
-): Promise<RelatedResult> {
-  const loop = input.loops[index]!;
+  context: LoopContext,
+): Promise<RelatedHit[]> {
   const retriever = input.retriever ?? relatedContext;
-  return retriever({
-    text: input.labels[index]!,
-    initiative: input.slug,
-    classes: RELATED_DEFAULT_CLASSES,
-    limit: Math.min(HITS_PER_LOOP, remaining.hits),
-    budget: remaining.chars,
-    exclude: [...remaining.excluded, ...ownRefs(loop)],
-    render: (hit) => renderSeeLine(hit, input.slug) + '\n',
-  });
-}
-
-/** Stop at the first hit that would overflow, so the budget never reorders what ranked. */
-function take(result: RelatedResult, slug: string, remaining: Remaining): LoopHit[] {
-  const taken: LoopHit[] = [];
-  for (const hit of result.hits) {
-    if (taken.length === HITS_PER_LOOP || remaining.hits === 0) break;
-    if (remaining.excluded.has(hit.ref)) continue;
-    const cost = renderSeeLine(hit, slug).length + 1;
-    if (cost > remaining.chars) break;
-    remaining.chars -= cost;
-    remaining.hits -= 1;
-    remaining.excluded.add(hit.ref);
-    taken.push({ ...hit, rank: taken.length + 1 });
+  try {
+    const result = await retriever({
+      text: input.labels[index]!,
+      initiative: input.slug,
+      classes: RELATED_DEFAULT_CLASSES,
+      limit: CANDIDATES_PER_LOOP,
+      budget: CHARS_TOTAL,
+      exclude: [...input.shown, ...ownRefs(input.loops[index]!)],
+      render: (hit) => renderSeeLine(hit, input.slug) + '\n',
+    });
+    addDegraded(context, result.degraded);
+    return result.hits;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    addDegraded(context, [{ source: 'loop-retriever', reason: 'error', message }]);
+    return [];
   }
-  return taken;
 }
 
 function addDegraded(context: LoopContext, entries: RelatedDegradation[]): void {
@@ -109,26 +100,50 @@ function addDegraded(context: LoopContext, entries: RelatedDegradation[]): void 
   }
 }
 
-/** Loops are queried in render order, so the oldest loops get first claim on the budget. */
+interface Allocation {
+  hits: number;
+  chars: number;
+  taken: Set<string>;
+}
+
+/** False once the budget is spent; a hit that would overflow ends allocation rather than being skipped. */
+function allocateOne(
+  loop: OpenLoop,
+  candidates: RelatedHit[],
+  context: LoopContext,
+  allocation: Allocation,
+  slug: string,
+): boolean {
+  const hit = candidates.find((candidate) => !allocation.taken.has(candidate.ref));
+  if (hit === undefined) return true;
+  const cost = renderSeeLine(hit, slug).length + 1;
+  if (allocation.hits === 0 || cost > allocation.chars) return false;
+  const lines = context.hits.get(loop.ref) ?? [];
+  context.hits.set(loop.ref, [...lines, { ...hit, rank: lines.length + 1 }]);
+  allocation.taken.add(hit.ref);
+  allocation.hits -= 1;
+  allocation.chars -= cost;
+  return true;
+}
+
+/**
+ * Round-robin over the loops: every loop's best hit first, then second hits.
+ *
+ * Seven loops therefore get six one-line annotations rather than three loops
+ * getting two each, and a loop whose best hit an earlier loop already took
+ * still gets its next one in the first pass.
+ */
 export async function relatedForLoops(input: LoopContextInput): Promise<LoopContext> {
   const context: LoopContext = { hits: new Map(), degraded: [] };
-  const remaining: Remaining = {
-    hits: HITS_TOTAL,
-    chars: CHARS_TOTAL,
-    excluded: new Set(input.shown),
-  };
-  for (let i = 0; i < input.loops.length && remaining.hits > 0 && remaining.chars > 0; i++) {
-    let result: RelatedResult;
-    try {
-      result = await queryLoop(input, i, remaining);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      addDegraded(context, [{ source: 'loop-retriever', reason: 'error', message }]);
-      continue;
+  const candidates: RelatedHit[][] = [];
+  for (let i = 0; i < input.loops.length; i++) candidates.push(await queryLoop(input, i, context));
+  const allocation: Allocation = { hits: HITS_TOTAL, chars: CHARS_TOTAL, taken: new Set() };
+  for (let pass = 0; pass < HITS_PER_LOOP; pass++) {
+    for (let i = 0; i < input.loops.length; i++) {
+      const loop = input.loops[i]!;
+      if ((context.hits.get(loop.ref)?.length ?? 0) !== pass) continue;
+      if (!allocateOne(loop, candidates[i]!, context, allocation, input.slug)) return context;
     }
-    addDegraded(context, result.degraded);
-    const hits = take(result, input.slug, remaining);
-    if (hits.length > 0) context.hits.set(input.loops[i]!.ref, hits);
   }
   return context;
 }
