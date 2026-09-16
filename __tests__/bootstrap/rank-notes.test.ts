@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  graphNoteRelevance,
   rankNotes,
   subjectOf,
   subjectTerms,
@@ -8,6 +12,7 @@ import {
   type NoteRelevance,
 } from '../../src/bootstrap/rank-notes.js';
 import type { LoadedNote } from '../../src/notes/note-file.js';
+import { refreshInto, writeFile } from '../workspace-index/fixture.js';
 
 /**
  * The ranker, without a database.
@@ -49,6 +54,12 @@ describe('subjectOf', () => {
     // Blank is not an override; it is an absent one.
     expect(subjectOf({ about: '   ', briefTitle: 'X' })).toBe('X');
   });
+
+  it('leads with the top task id, since notes cite tasks by id', () => {
+    expect(subjectOf({ topTaskId: 'TP-84', topTaskTitle: 'Score it', briefTitle: 'Titan' })).toBe(
+      'TP-84 Score it Titan',
+    );
+  });
 });
 
 describe('subjectTerms', () => {
@@ -65,6 +76,10 @@ describe('subjectTerms', () => {
 
   it('deduplicates, so a repeated word does not weight the query twice', () => {
     expect(subjectTerms('index the index indexer')).toEqual(['index', 'indexer']);
+  });
+
+  it('keeps a task id whole instead of splitting it into two short, dropped halves (TP-86)', () => {
+    expect(subjectTerms('TP-84 scored AW-138 at k=10')).toEqual(['tp-84', 'scored', 'aw-138']);
   });
 });
 
@@ -185,5 +200,37 @@ describe('rankNotes', () => {
       relevance: relevance([{ ref: 'note:beta/x.md', scorePerTerm: 9 }]),
     });
     expect(ranking.foreign[0]!.title).toBe('note:beta/x.md');
+  });
+});
+
+describe('rankNotes against a real index', () => {
+  it('ranks a note citing the top task id above an otherwise equal note (TP-86)', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'aw-rank-ids-'));
+    const root = path.join(dir, 'active');
+    const body = (extra: string) =>
+      `---\nkind: process\ntitle: Recorded\ncreated: 2026-09-02\n---\n\nRecorded while working${extra}.\n`;
+    writeFile(
+      root,
+      'alpha/brief.md',
+      '---\nschema_version: 5\ntitle: alpha\nupdated: 2026-09-01\n---\n',
+    );
+    writeFile(root, 'alpha/sources/notes/plain.md', body(''));
+    writeFile(root, 'alpha/sources/notes/cites.md', body(' on TP-84'));
+    const dbPath = path.join(dir, 'graph.sqlite3');
+    (await refreshInto(dbPath, root)).db.close();
+    try {
+      // Newest first, so date order alone would put the plain note on top.
+      const ranking = rankNotes({
+        notes: [note('plain.md', 'Plain'), note('cites.md', 'Cites')],
+        slug: 'alpha',
+        subject: subjectOf({ topTaskId: 'TP-84', topTaskTitle: 'Score the harness' }),
+        relevance: graphNoteRelevance(dbPath),
+      });
+
+      expect(ranking.ranked).toBe(true);
+      expect(titles(ranking)).toEqual(['Cites', 'Plain']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

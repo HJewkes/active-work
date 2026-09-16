@@ -25,7 +25,7 @@ type PromptArgs = z.infer<typeof ArgsSchema>;
 const promptCommand = defineCommand<PromptArgs, string>({
   name: 'prompt',
   description:
-    "Print the bootstrap prompt for an initiative — the same text `aw` feeds Claude at launch — without any side effects. Resolves the initiative from a slug or the caller's cwd. Use it to re-seed context in a running session.",
+    "Print the bootstrap prompt for an initiative — the same text `aw` feeds Claude at launch — without side effects beyond appending the hits it shows to the retrieval-hit log. Resolves the initiative from a slug or the caller's cwd. Use it to re-seed context in a running session.",
   args: ArgsSchema,
   result: z.string(),
   cli: {

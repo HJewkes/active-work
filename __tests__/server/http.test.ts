@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHttpApp } from '../../src/server/http.js';
 import { EventHub } from '@titan-design/daemon';
-import { withTempActiveRoot } from '../setup/test-helpers.js';
+import { withEmptyActiveRoot, withTempActiveRoot } from '../setup/test-helpers.js';
 
 const TEST_PORT = 17400;
 
@@ -56,6 +56,22 @@ describe('POST /rpc/:name', () => {
       const body = (await res.json()) as { ok: boolean; data?: { sections: unknown } };
       expect(body.ok).toBe(true);
       expect(body.data?.sections).toBeDefined();
+    });
+  });
+
+  it('answers context.related with no hits rather than an error when there is no index', async () => {
+    // The spawn broker calls this over loopback and must always get an envelope back.
+    await withEmptyActiveRoot(async () => {
+      const app = buildHttpApp({ port: TEST_PORT });
+      const res = await post(app, '/rpc/context.related', { for: 'TP-85 retrieval' });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        ok: boolean;
+        data?: { hits: unknown[]; degraded: { reason: string }[] };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.data?.hits).toEqual([]);
+      expect(body.data?.degraded[0]?.reason).toBe('missing');
     });
   });
 

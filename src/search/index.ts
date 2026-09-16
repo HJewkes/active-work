@@ -1,7 +1,12 @@
-import { createRetrievalEngine, ftsRetriever, type Degradation } from '@titan-design/retrieval';
+import {
+  createRetrievalEngine,
+  ftsRetriever,
+  type Degradation,
+  type Retriever,
+} from '@titan-design/retrieval';
 import { defaultGraphPath, openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { getActiveRoot } from '../utils/paths.js';
-import { SEARCH_CLASSES, capFor } from './classes.js';
+import { SEARCH_CLASSES, capFor, type SearchClass } from './classes.js';
 import { resolveHits, type ResolvedHit } from './resolve.js';
 
 /**
@@ -23,6 +28,10 @@ export interface SearchOptions {
   /** Reuse an open graph (the daemon holds one); otherwise one is opened and closed. */
   graph?: WorkspaceGraph;
   excerptWidth?: number;
+  /** Search only these classes, by name. Every class when absent. */
+  classes?: string[];
+  /** The query is already an FTS5 expression; pass it through untouched. */
+  rawExpression?: boolean;
 }
 
 export interface SearchResult {
@@ -41,6 +50,26 @@ export interface SearchResult {
  */
 const AFFINITY_BOOST = 0.007;
 
+function selectClasses(names: string[] | undefined): SearchClass[] {
+  return names === undefined
+    ? SEARCH_CLASSES
+    : SEARCH_CLASSES.filter((cls) => names.includes(cls.name));
+}
+
+function classRetriever(
+  graph: WorkspaceGraph,
+  cls: SearchClass,
+  limit: number,
+  options: SearchOptions,
+): Retriever {
+  return ftsRetriever(graph.spans, {
+    name: cls.name,
+    scope: cls.scope,
+    cap: capFor(cls, limit),
+    ...(options.rawExpression ? { toMatchExpression: (query: string) => query } : {}),
+  });
+}
+
 export async function searchWorkspace(
   query: string,
   options: SearchOptions = {},
@@ -50,16 +79,11 @@ export async function searchWorkspace(
   const owned = options.graph === undefined;
   const limit = options.limit ?? 10;
   try {
+    const classes = selectClasses(options.classes);
     const engine = createRetrievalEngine({
-      retrievers: SEARCH_CLASSES.map((cls) =>
-        ftsRetriever(graph.spans, {
-          name: cls.name,
-          scope: cls.scope,
-          cap: capFor(cls, limit),
-        }),
-      ),
+      retrievers: classes.map((cls) => classRetriever(graph, cls, limit, options)),
       fusion: {
-        weights: Object.fromEntries(SEARCH_CLASSES.map((cls) => [cls.name, cls.weight])),
+        weights: Object.fromEntries(classes.map((cls) => [cls.name, cls.weight])),
       },
     });
 

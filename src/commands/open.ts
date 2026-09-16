@@ -70,6 +70,7 @@ const OpenResultSchema = z.object({
     recently_done_count: z.number().int().nonnegative(),
     bootstrap_at: z.string(),
     sibling_sessions: z.number().int().nonnegative().optional(),
+    retrieval_degraded: z.array(z.string()).optional(),
   }),
   // How the initiative was selected: an explicit/prefix slug, or a match
   // between the caller's cwd and one of the initiative's worktrees.

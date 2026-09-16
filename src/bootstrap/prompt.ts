@@ -21,6 +21,14 @@ import {
 } from '../sessions/open-loops.js';
 import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
 import { rankNotes, subjectOf, type NoteRanking, type NoteRelevance } from './rank-notes.js';
+import {
+  relatedForLoops,
+  renderSeeLine,
+  type LoopContext,
+  type LoopHit,
+  type LoopRetriever,
+} from './loop-context.js';
+import { fileHitLog, type HitLogEntry, type HitLogWriter } from '../search/hit-log.js';
 import { readLiveLeases, type LiveSibling, type SiblingProbe } from '../sessions/lease.js';
 import { readYaml } from '../utils/yaml-io.js';
 import {
@@ -125,6 +133,13 @@ export interface BootstrapInput {
    * One that throws yields date-ordered notes, never a failed bootstrap.
    */
   noteRelevance?: NoteRelevance;
+  /**
+   * Optional per-loop retriever (DI). Defaults to `context related` against the
+   * live graph. One that throws or finds nothing renders the loops as before.
+   */
+  loopRetriever?: LoopRetriever;
+  /** Optional hit log (DI). Defaults to `retrieval-hits.jsonl` in the state dir. */
+  hitLog?: HitLogWriter;
 }
 
 export interface BootstrapMetadata {
@@ -138,6 +153,8 @@ export interface BootstrapMetadata {
   bootstrap_at: string;
   /** Number of sibling sessions rendered; absent when none were found. */
   sibling_sessions?: number;
+  /** Why retrieval showed less than it might have; absent when nothing degraded. */
+  retrieval_degraded?: string[];
 }
 
 export interface BootstrapOutput {
@@ -561,16 +578,23 @@ function loopLabel(loop: OpenLoop): string {
   return loop.kind === 'pr' ? `PR #${ref} ${loop.text}` : `${ref} ${loop.text}`;
 }
 
+interface LoopRelated {
+  slug: string;
+  hits: Map<string, LoopHit[]>;
+}
+
 /**
  * Loops are already unresolved and oldest-first; `ageDays` comes from the
  * derivation so the render never recomputes time. The full `ref` is printed
  * rather than an abbreviated session id because it is the handle `wrap
- * --resolve` takes.
+ * --resolve` takes. A loop's `see:` lines sit under it because the reader
+ * works loop by loop (TP-85); a loop with none renders exactly as before.
  */
 function renderOpenLoops(
   loops: OpenLoop[],
   malformed: MalformedSession[],
   newestSession: LoadedSession | undefined,
+  related: LoopRelated,
 ): string {
   const note = malformedNote(malformed);
   if (loops.length === 0) {
@@ -583,7 +607,8 @@ function renderOpenLoops(
     const age = `[${String(loop.ageDays).padStart(ageWidth)}d]`;
     const label = labels[i]!.padEnd(labelWidth);
     const from = loop.openedAt.slice(0, 10);
-    return `- ${age} ${label}   (from ${from}, ref ${loop.ref})`;
+    const see = (related.hits.get(loop.ref) ?? []).map((hit) => renderSeeLine(hit, related.slug));
+    return [`- ${age} ${label}   (from ${from}, ref ${loop.ref})`, ...see].join('\n');
   });
   const oldest = loops[0]!.ageDays;
   return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
@@ -1082,6 +1107,57 @@ async function loadBrief(
   }
 }
 
+/** Refs the notes sections print, so a loop's `see:` lines never repeat them. */
+function shownNoteRefs(ranking: NoteRanking, slug: string): string[] {
+  const local = ranking.local
+    .slice(0, DURABLE_NOTES_LIMIT)
+    .map((note) => `note:${slug}/${note.filename}`);
+  return [...local, ...ranking.foreign.map((note) => note.ref)];
+}
+
+interface RenderedHits {
+  slug: string;
+  loops: OpenLoop[];
+  labels: string[];
+  loopContext: LoopContext;
+  noteRanking: NoteRanking;
+  subject: string;
+}
+
+/** One log line per hit the prompt shows, in the order it shows them. */
+function hitLogEntries(input: RenderedHits, ts: string): HitLogEntry[] {
+  const { slug } = input;
+  const loopEntries = input.loops.flatMap((loop, i) =>
+    (input.loopContext.hits.get(loop.ref) ?? []).map((hit) => ({
+      ts,
+      slug,
+      trigger: 'bootstrap-loop' as const,
+      query: input.labels[i]!,
+      ref: hit.ref,
+      rank: hit.rank,
+    })),
+  );
+  const foreignEntries = input.noteRanking.foreign.map((note, i) => ({
+    ts,
+    slug,
+    trigger: 'bootstrap-foreign' as const,
+    query: input.subject,
+    ref: note.ref,
+    rank: i + 1,
+  }));
+  return [...loopEntries, ...foreignEntries];
+}
+
+/** Everything that made retrieval show less, as one readable line each. */
+async function retrievalDegradations(input: RenderedHits, hitLog: HitLogWriter): Promise<string[]> {
+  const degraded = input.loopContext.degraded.map(
+    (entry) => `${entry.source}: ${entry.reason} (${entry.message})`,
+  );
+  const failure = await hitLog(hitLogEntries(input, nowIso()));
+  if (failure !== null) degraded.push(`hit-log: error (${failure})`);
+  return degraded;
+}
+
 /**
  * Build the bootstrap prompt for `slug`.
  *
@@ -1105,6 +1181,8 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     ownLeaseId,
     about,
     noteRelevance,
+    loopRetriever,
+    hitLog = fileHitLog(),
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -1176,23 +1254,37 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
       siblings = [];
     }
   }
-  const topTaskTitle = tasks
-    .filter((t) => t.status === 'open')
-    .sort(compareTasksByPriority)[0]?.title;
+  const topTask = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority)[0];
+  const topTaskTitle = topTask?.title;
 
   // Ranked against what this session is about, rather than by date (TP-26).
   // `rankNotes` swallows its own failures and hands back date order, so the
   // index staying optional costs nothing here.
+  const subject = subjectOf({
+    ...(about !== undefined ? { about } : {}),
+    briefTitle: brief.title,
+    ...(topTask !== undefined ? { topTaskId: topTask.id, topTaskTitle: topTask.title } : {}),
+  });
   const noteRanking = rankNotes({
     notes: notes.notes,
     slug,
-    subject: subjectOf({
-      ...(about !== undefined ? { about } : {}),
-      briefTitle: brief.title,
-      ...(topTaskTitle !== undefined ? { topTaskTitle } : {}),
-    }),
+    subject,
     ...(noteRelevance ? { relevance: noteRelevance } : {}),
   });
+
+  // Fails open like the ranking above: no index or no match renders the loops as before.
+  const loopLabels = openLoops.map(loopLabel);
+  const loopContext = await relatedForLoops({
+    loops: openLoops,
+    labels: loopLabels,
+    slug,
+    shown: shownNoteRefs(noteRanking, slug),
+    ...(loopRetriever ? { retriever: loopRetriever } : {}),
+  });
+  const retrievalDegraded = await retrievalDegradations(
+    { slug, loops: openLoops, labels: loopLabels, loopContext, noteRanking, subject },
+    hitLog,
+  );
 
   const sections: string[] = [];
   sections.push(
@@ -1205,7 +1297,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   const stateBody = renderBriefState(brief, now);
   if (stateBody) sections.push(stateBody);
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
-  sections.push(renderOpenLoops(openLoops, malformed, sessions[0]));
+  sections.push(
+    renderOpenLoops(openLoops, malformed, sessions[0], { slug, hits: loopContext.hits }),
+  );
 
   const abandonedBody = renderAbandonedLoops(resolvedLoops, recentlyDoneDays);
   if (abandonedBody) sections.push(abandonedBody);
@@ -1294,6 +1388,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   }
   if (siblings.length > 0) {
     metadata.sibling_sessions = siblings.length;
+  }
+  if (retrievalDegraded.length > 0) {
+    metadata.retrieval_degraded = retrievalDegraded;
   }
 
   return { prompt, metadata };

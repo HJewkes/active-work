@@ -8,6 +8,7 @@
   "active__artifact__status",
   "active__audit",
   "active__context__graph",
+  "active__context__related",
   "active__discover",
   "active__doctor",
   "active__drop",
