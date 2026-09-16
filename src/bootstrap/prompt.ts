@@ -1176,9 +1176,8 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
       siblings = [];
     }
   }
-  const topTaskTitle = tasks
-    .filter((t) => t.status === 'open')
-    .sort(compareTasksByPriority)[0]?.title;
+  const topTask = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority)[0];
+  const topTaskTitle = topTask?.title;
 
   // Ranked against what this session is about, rather than by date (TP-26).
   // `rankNotes` swallows its own failures and hands back date order, so the
@@ -1189,7 +1188,7 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     subject: subjectOf({
       ...(about !== undefined ? { about } : {}),
       briefTitle: brief.title,
-      ...(topTaskTitle !== undefined ? { topTaskTitle } : {}),
+      ...(topTask !== undefined ? { topTaskId: topTask.id, topTaskTitle: topTask.title } : {}),
     }),
     ...(noteRelevance ? { relevance: noteRelevance } : {}),
   });

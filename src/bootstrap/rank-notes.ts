@@ -1,6 +1,7 @@
 import { fuseByRRF } from '@titan-design/retrieval';
 import type { LoadedNote } from '../notes/note-file.js';
 import { defaultGraphPath, openGraph } from '../session-index/graph.js';
+import { meaningfulTerms, orExpression } from '../search/terms.js';
 
 /**
  * Which notes the bootstrap shows, and in what order.
@@ -67,41 +68,27 @@ const FOREIGN_FLOOR_PER_TERM = 3.5;
 /** How many note owners to consider. Well past any cap; the floor does the cutting. */
 const SEARCH_DEPTH = 300;
 
-/**
- * Words that match everything and therefore rank nothing.
- *
- * The subject is a title rather than a deliberate query, and the FTS default
- * ORs every token — so `or`, `the` and `with` pull in the whole corpus and BM25
- * ends up ranking on document length. Dropping them is what makes a title
- * usable as a query at all.
- */
-const STOP_WORDS = new Set(
-  (
-    'a an and are as at be but by for from in into is it of on or the to with via than then that ' +
-    'this these those over under new old add fix use using not no all any each per'
-  ).split(' '),
-);
-
-/** Distinct, meaningful tokens of the subject. */
+/** Distinct, meaningful tokens of the subject. Task ids stay whole (TP-86). */
 export function subjectTerms(subject: string): string[] {
-  const tokens = subject.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
-  return [...new Set(tokens.filter((token) => token.length > 2 && !STOP_WORDS.has(token)))];
+  return meaningfulTerms(subject);
 }
 
 /**
  * What this session is about, in the words the corpus would use.
  *
- * The top task's title plus the brief's: the two sentences that already
- * describe the work, neither of which the operator has to write. `about`
- * overrides both, for a session that is not about the top task.
+ * The top task's id and title plus the brief's title: the sentences that
+ * already describe the work, none of which the operator has to write. The id
+ * leads because notes cite tasks by id far more often than by title. `about`
+ * overrides all of it, for a session that is not about the top task.
  */
 export function subjectOf(input: {
   about?: string;
   briefTitle?: string;
+  topTaskId?: string;
   topTaskTitle?: string;
 }): string {
   if (input.about !== undefined && input.about.trim().length > 0) return input.about.trim();
-  return [input.topTaskTitle, input.briefTitle].filter(Boolean).join(' ').trim();
+  return [input.topTaskId, input.topTaskTitle, input.briefTitle].filter(Boolean).join(' ').trim();
 }
 
 /** One note the query matched: its ref, BM25 normalised by query length, and its title. */
@@ -125,7 +112,7 @@ export function graphNoteRelevance(dbPath?: string): NoteRelevance {
   return (terms) => {
     const graph = openGraph(dbPath ?? defaultGraphPath());
     try {
-      const expression = terms.map((term) => `"${term}"`).join(' OR ');
+      const expression = orExpression(terms);
       const titleOf = graph.db.prepare('SELECT title FROM note WHERE note_ref = ? LIMIT 1');
       const seen = new Set<string>();
       const hits: NoteHit[] = [];
