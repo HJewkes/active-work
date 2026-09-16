@@ -55,6 +55,7 @@ import sourceList from './source-list.js';
 // Worktree / cross-initiative reads
 import audit from './audit.js';
 import contextGraph from './context-graph.js';
+import contextRelated from './context-related.js';
 import search from './search.js';
 import list from './list.js';
 import worktreeSet from './worktree-set.js';
@@ -142,6 +143,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   audit,
   list,
   contextGraph,
+  contextRelated,
   search,
   // discover / triage
   discover,
