@@ -8,11 +8,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import type { DaemonHandle } from '@titan-design/daemon';
+import { silentLogger, type DaemonHandle } from '@titan-design/daemon';
 import { fetchInitiatives } from '../../src/dashboard/utils/api.js';
 import { startActiveWorkDaemon } from '../../src/server/daemon.js';
 import { probeHealth } from '../../src/server/lifecycle.js';
-import { getStateRoot } from '../../src/utils/paths.js';
 import { assertSafeToRemove, withEmptyActiveRoot } from '../setup/test-helpers.js';
 
 interface RawResponse {
@@ -84,11 +83,9 @@ function browserAt(origin: string): typeof fetch {
 async function withDaemon(fn: (port: number) => Promise<void>): Promise<void> {
   await withEmptyActiveRoot(async () => {
     const stateDir = mkdtempSync(path.join(os.tmpdir(), 'aw-test-'));
-    // The logger writes under the state root; it must be the sandboxed home, never the operator's.
-    expect(getStateRoot().startsWith(os.tmpdir())).toBe(true);
     let handle: DaemonHandle | null = null;
     try {
-      handle = await startActiveWorkDaemon({ port: 0, stateDir });
+      handle = await startActiveWorkDaemon({ port: 0, stateDir, logger: silentLogger });
       expect(handle.port).not.toBe(7400);
       await fn(handle.port);
     } finally {

@@ -7,7 +7,12 @@
  * after `/health` is answerable and be closed — awaited — before the socket
  * does, because a refresh may be mid-transaction.
  */
-import { DaemonAlreadyRunningError, startDaemon, type DaemonHandle } from '@titan-design/daemon';
+import {
+  DaemonAlreadyRunningError,
+  startDaemon,
+  type DaemonHandle,
+  type Logger,
+} from '@titan-design/daemon';
 import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
 import type { SchedulerStatus } from '../session-index/scheduler.js';
@@ -44,6 +49,7 @@ function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexSta
 export interface ActiveWorkDaemonSetup {
   port: number;
   stateDir: string;
+  logger: Logger;
   health?: () => Record<string, unknown>;
 }
 
@@ -59,7 +65,7 @@ export async function startActiveWorkDaemon(setup: ActiveWorkDaemonSetup): Promi
     port: setup.port,
     watchRoot: getActiveRoot(),
     version: BUILD_VERSION,
-    logger: getLogger(),
+    logger: setup.logger,
     health: setup.health,
     mountRoutes: (app: Hono) => {
       app.get('/ui', (c) => handleDashboard(c));
@@ -81,6 +87,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   const handle = await startActiveWorkDaemon({
     stateDir: getStateRoot(),
     port: resolvePort(options),
+    logger: log,
     health: () => ({ index: toHealthIndexState(indexWatch?.status()) }),
   });
 
