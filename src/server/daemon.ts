@@ -7,7 +7,12 @@
  * after `/health` is answerable and be closed — awaited — before the socket
  * does, because a refresh may be mid-transaction.
  */
-import { DaemonAlreadyRunningError, startDaemon } from '@titan-design/daemon';
+import {
+  DaemonAlreadyRunningError,
+  startDaemon,
+  type DaemonHandle,
+  type Logger,
+} from '@titan-design/daemon';
 import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
 import type { SchedulerStatus } from '../session-index/scheduler.js';
@@ -41,19 +46,27 @@ function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexSta
   };
 }
 
-export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
-  const log = getLogger();
-  // Read through a closure: the watcher only starts once the port is bound.
-  let indexWatch: SessionIndexWatcher | null = null;
+export interface ActiveWorkDaemonSetup {
+  port: number;
+  stateDir: string;
+  logger: Logger;
+  health?: () => Record<string, unknown>;
+}
 
-  const handle = await startDaemon({
+/**
+ * Bind active-work's registry, MCP identity and dashboard onto the package
+ * daemon. The request guards stay on the package default: loopback Host and
+ * Origin in all three spellings, with and without the bound port.
+ */
+export async function startActiveWorkDaemon(setup: ActiveWorkDaemonSetup): Promise<DaemonHandle> {
+  return startDaemon({
     ...mcpOptions(),
-    stateDir: getStateRoot(),
-    port: resolvePort(options),
+    stateDir: setup.stateDir,
+    port: setup.port,
     watchRoot: getActiveRoot(),
     version: BUILD_VERSION,
-    logger: log,
-    health: () => ({ index: toHealthIndexState(indexWatch?.status()) }),
+    logger: setup.logger,
+    health: setup.health,
     mountRoutes: (app: Hono) => {
       app.get('/ui', (c) => handleDashboard(c));
       app.get('/ui/*', (c) => handleDashboard(c));
@@ -63,6 +76,19 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
     // catch DaemonError, so translate rather than leak a second error type.
     if (err instanceof DaemonAlreadyRunningError) throw new DaemonError(err.message);
     throw err;
+  });
+}
+
+export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
+  const log = getLogger();
+  // Read through a closure: the watcher only starts once the port is bound.
+  let indexWatch: SessionIndexWatcher | null = null;
+
+  const handle = await startActiveWorkDaemon({
+    stateDir: getStateRoot(),
+    port: resolvePort(options),
+    logger: log,
+    health: () => ({ index: toHealthIndexState(indexWatch?.status()) }),
   });
 
   indexWatch = startSessionIndexWatch(log);

@@ -11,6 +11,7 @@
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import os from 'node:os';
+import { ConfigError } from './errors.js';
 import { getActiveRoot } from './utils/paths.js';
 import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './server/lifecycle.js';
 import { getSupervisor } from './setup/supervision.js';
@@ -475,7 +476,10 @@ async function checkWorkspaceIndexRefs(deps: DoctorDeps): Promise<DoctorCheck> {
   let graph: WorkspaceGraph;
   try {
     graph = openGraph();
-  } catch {
+  } catch (err) {
+    // A graph from a newer active-work is a fault to report, not an index to rebuild.
+    if (err instanceof ConfigError)
+      return { name: 'workspace-index', status: 'fail', detail: err.message };
     return workspaceIndexCheck(null);
   }
   try {

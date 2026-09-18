@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import { promises as fs, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeAll, beforeEach, afterEach } from 'vitest';
 import envPaths from 'env-paths';
+import Database from 'better-sqlite3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -49,6 +51,18 @@ function usageLogPathFor(home: string, xdgState: string): string {
   } finally {
     process.env = original;
   }
+}
+
+/** A loopback port that was free a moment ago and has nothing listening on it now. */
+function closedPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as net.AddressInfo;
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
 }
 
 interface RunResult {
@@ -169,6 +183,32 @@ describe('cli integration', () => {
     expect(last.exit_code).toBe(0);
     expect(typeof last.ts).toBe('string');
     expect(typeof last.duration_ms).toBe('number');
+  });
+
+  it('refuses a session graph from a newer active-work with an upgrade message, not a stack', async () => {
+    const graphPath = path.join(activeRoot, '.miner', 'graph.sqlite3');
+    await fs.mkdir(path.dirname(graphPath), { recursive: true });
+    const db = new Database(graphPath);
+    db.exec(
+      'CREATE TABLE _migration (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT NOT NULL)',
+    );
+    db.prepare('INSERT INTO _migration VALUES (?, ?, ?)').run(
+      999,
+      'future',
+      new Date().toISOString(),
+    );
+    db.close();
+
+    // A closed port: were the open to succeed, miner status must not reach the operator's daemon.
+    const res = runCli(['miner', 'status'], {
+      ACTIVE_ROOT: activeRoot,
+      AW_PORT: String(await closedPort()),
+    });
+
+    expect(res.status).toBe(78);
+    expect(res.stderr).toContain(`error: session graph ${graphPath} records schema version 999`);
+    expect(res.stderr).toContain('Upgrade active-work');
+    expect(res.stderr).not.toMatch(/^\s+at /m);
   });
 
   it('reports the version of the build it is, not a constant', async () => {
