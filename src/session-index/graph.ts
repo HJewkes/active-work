@@ -1,7 +1,13 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { openSessionGraph, type SessionGraph } from '@titan-design/session-graph';
-import { runMigrations, WatermarkTable } from '@titan-design/store-sqlite';
+import {
+  openDatabase,
+  runMigrations,
+  SchemaTooNewError,
+  WatermarkTable,
+} from '@titan-design/store-sqlite';
 import path from 'node:path';
+import { ConfigError } from '../errors.js';
 import { getMinerRoot } from '../utils/paths.js';
 import { MIGRATIONS, WORKSPACE_KIT } from '../workspace-index/schema.js';
 
@@ -55,7 +61,9 @@ export function defaultGraphPath(): string {
  * skips them, so the package's are re-checked rather than re-run.
  */
 export function openGraph(dbPath: string = defaultGraphPath()): WorkspaceGraph {
-  const graph = openSessionGraph(dbPath);
+  const graph = refuseNewerSchema(dbPath, () =>
+    openSessionGraph(dbPath, { schemaVersion: SCHEMA_VERSION }),
+  );
   runMigrations(graph.db, MIGRATIONS);
   return {
     ...graph,
@@ -75,5 +83,25 @@ export function openGraph(dbPath: string = defaultGraphPath()): WorkspaceGraph {
  * very command was being written.
  */
 export function openGraphReadOnly(dbPath: string = defaultGraphPath()): Database.Database {
-  return new Database(dbPath, { readonly: true });
+  return refuseNewerSchema(dbPath, () =>
+    openDatabase(dbPath, { readonly: true, schemaVersion: SCHEMA_VERSION }),
+  );
+}
+
+/**
+ * A graph stamped past `SCHEMA_VERSION` was written by a newer active-work.
+ * Migrating or reading it would proceed into a schema this build does not
+ * know, so the open fails with the one remedy that works: upgrade.
+ */
+function refuseNewerSchema<T>(dbPath: string, open: () => T): T {
+  try {
+    return open();
+  } catch (err) {
+    if (!(err instanceof SchemaTooNewError)) throw err;
+    throw new ConfigError(
+      `session graph ${dbPath} records schema version ${err.storedVersion}, but this build of ` +
+        `active-work knows only up to ${err.knownVersion}. Upgrade active-work to open it.`,
+      { cause: err },
+    );
+  }
 }
