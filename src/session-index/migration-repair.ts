@@ -50,9 +50,11 @@ function renumber(db: Database.Database, name: string, version: number): boolean
   if (legacy.length === 0) return false;
 
   db.prepare('DELETE FROM _migration WHERE name = ? AND version < ?').run(name, BAND_FLOOR);
-  db.prepare(
-    'INSERT OR IGNORE INTO _migration (version, name, applied_at) VALUES (?, ?, ?)',
-  ).run(version, name, legacy[0].applied_at);
+  db.prepare('INSERT OR IGNORE INTO _migration (version, name, applied_at) VALUES (?, ?, ?)').run(
+    version,
+    name,
+    legacy[0].applied_at,
+  );
   return true;
 }
 

@@ -137,8 +137,6 @@ describe('openGraph on a graph with colliding migration numbers', () => {
 
     openGraphReadOnly(dbPath).close();
 
-    expect(migrationRows()).toEqual(
-      COLLIDED_ROWS.map(([version, name]) => ({ version, name })),
-    );
+    expect(migrationRows()).toEqual(COLLIDED_ROWS.map(([version, name]) => ({ version, name })));
   });
 });
