@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeAll, beforeEach, afterEach } from 'vitest';
 import envPaths from 'env-paths';
 import Database from 'better-sqlite3';
+import { SCHEMA_VERSION } from '../../src/session-index/graph.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -187,13 +188,14 @@ describe('cli integration', () => {
 
   it('refuses a session graph from a newer active-work with an upgrade message, not a stack', async () => {
     const graphPath = path.join(activeRoot, '.miner', 'graph.sqlite3');
+    const futureVersion = SCHEMA_VERSION + 1;
     await fs.mkdir(path.dirname(graphPath), { recursive: true });
     const db = new Database(graphPath);
     db.exec(
       'CREATE TABLE _migration (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT NOT NULL)',
     );
     db.prepare('INSERT INTO _migration VALUES (?, ?, ?)').run(
-      999,
+      futureVersion,
       'future',
       new Date().toISOString(),
     );
@@ -206,7 +208,9 @@ describe('cli integration', () => {
     });
 
     expect(res.status).toBe(78);
-    expect(res.stderr).toContain(`error: session graph ${graphPath} records schema version 999`);
+    expect(res.stderr).toContain(
+      `error: session graph ${graphPath} records schema version ${futureVersion}`,
+    );
     expect(res.stderr).toContain('Upgrade active-work');
     expect(res.stderr).not.toMatch(/^\s+at /m);
   });

@@ -143,10 +143,17 @@ export const WORKSPACE_TABLES = [
   'initiative',
 ] as const;
 
-/** TP-35: the version is derived from the chain it extends, never hand-declared. */
-function nextVersion(chain: readonly Migration[]): number {
-  return (chain[chain.length - 1]?.version ?? 0) + 1;
-}
+/**
+ * active-work's migrations live in a fixed band far above the chain they extend.
+ *
+ * They used to be numbered positionally off `SESSION_GRAPH_MIGRATIONS` (TP-35),
+ * which collided the moment session-graph 0.5.0 added its own version 3: the
+ * runner skips by number, so the normalized DDL never ran and every refresh
+ * died on `no such table: conversation` (TP-257). A band the package will never
+ * reach makes the two chains independent forever.
+ */
+export const WORKSPACE_MIGRATION_VERSION = 1001;
+export const PRESERVE_MIGRATION_VERSION = 1002;
 
 /**
  * The kit indexes `search_span` on `owner_ref` alone, and its UNIQUE index
@@ -163,7 +170,7 @@ const SPAN_SOURCE_INDEX = `
 
 export const WORKSPACE_MIGRATIONS: Migration[] = [
   {
-    version: nextVersion(SESSION_GRAPH_MIGRATIONS),
+    version: WORKSPACE_MIGRATION_VERSION,
     name: 'workspace index tables',
     up: (db) => {
       db.exec(kitDdl({ watermark: WORKSPACE_KIT.watermark }));
@@ -192,7 +199,7 @@ const PRESERVE_DDL = `
 `;
 
 const PRESERVE_MIGRATION: Migration = {
-  version: nextVersion([...SESSION_GRAPH_MIGRATIONS, ...WORKSPACE_MIGRATIONS]),
+  version: PRESERVE_MIGRATION_VERSION,
   name: 'preserved rows',
   up: (db) => db.exec(PRESERVE_DDL),
 };
