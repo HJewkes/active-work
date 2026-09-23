@@ -98,6 +98,17 @@ function toRelatedHit(hit: ResolvedHit): RelatedHit {
   return { ref, class: cls, initiative, title, path, excerpt, byteOffset, byteLength };
 }
 
+/**
+ * Handoff archives restate session records, which have their own class, and
+ * were served 15 times and opened 0 times in the week to 2026-09-23 (TP-331).
+ * `search` still finds them; only the unasked-for related block drops them.
+ */
+const NOT_SERVED_BY_RELATED = /(^|\/)sources\/handoff-archive[^/]*\.md$/;
+
+function servedByRelated(hit: ResolvedHit): boolean {
+  return hit.class !== 'sources' || hit.path === null || !NOT_SERVED_BY_RELATED.test(hit.path);
+}
+
 function openIndex(dbPath: string): WorkspaceGraph | RelatedDegradation {
   // Opening creates the file, and nothing on this path may write to the graph.
   if (!existsSync(dbPath)) {
@@ -125,7 +136,9 @@ async function searchOpenIndex(
     ...(input.initiative !== undefined ? { initiative: input.initiative } : {}),
     ...(input.activeRoot !== undefined ? { activeRoot: input.activeRoot } : {}),
   });
-  const kept = result.hits.filter((hit) => !exclude.has(hit.ref)).slice(0, limit);
+  const kept = result.hits
+    .filter((hit) => !exclude.has(hit.ref) && servedByRelated(hit))
+    .slice(0, limit);
   return {
     hits: withinBudget(
       kept.map(toRelatedHit),
