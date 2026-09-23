@@ -49,6 +49,10 @@ export function selectFacetLoops(
   return { loops: shown, hidden: loops.length - shown.length };
 }
 
+function plural(count: number, noun: string): string {
+  return count === 1 ? noun : `${noun}s`;
+}
+
 export function renderFacetSection(facet: BootstrapFacet): string {
   const tagList = facet.tags.join(', ');
   const scope = `_Tasks and loops below are filtered to the tags [${tagList}]._`;
@@ -65,10 +69,10 @@ export function renderFacetTaskNote(
     return `_No open tasks carry the facet tags [${tags.join(', ')}]; showing all._`;
   }
   if (selection.hidden === 0) return null;
-  return `(${selection.hidden} other open tasks outside this facet — \`active-work task list ${slug} --json\`)`;
+  return `(${selection.hidden} other open ${plural(selection.hidden, 'task')} outside this facet — \`active-work task list ${slug} --json\`)`;
 }
 
 export function renderHiddenLoopsNote(hidden: number, slug: string): string | null {
   if (hidden === 0) return null;
-  return `(${hidden} other open loops outside this facet — \`active-work loops ${slug}\`)`;
+  return `(${hidden} other open ${plural(hidden, 'loop')} outside this facet — \`active-work loops ${slug}\`)`;
 }

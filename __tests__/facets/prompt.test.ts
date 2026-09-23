@@ -104,7 +104,7 @@ describe('assembleBootstrap with a facet', () => {
       expect(prompt).toContain('loop OTHER-9');
       expect(prompt).toContain('loop prose');
       expect(prompt).toContain(
-        '(1 other open loops outside this facet — `active-work loops sample-initiative`)',
+        '(1 other open loop outside this facet — `active-work loops sample-initiative`)',
       );
     });
   });
