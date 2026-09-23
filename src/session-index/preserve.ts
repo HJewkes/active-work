@@ -145,6 +145,10 @@ const UNREACHABLE_SESSIONS = `
  * string; `identity` is what the replay matches against the live table, so it
  * must be columns that survive a rebuild. The two differ wherever the live
  * table's key is auto-assigned.
+ *
+ * Every table replays as `insert`, the audit rows included: a pruned transcript
+ * leaves no derived row for a `merge` to land on, and a transcript that comes
+ * back must win over the copy.
  */
 const SESSION_OWNED: { table: string; identity: string[]; key: (row: Row) => string }[] = [
   { table: 'session', identity: ['session_id'], key: (r) => String(r.session_id) },
@@ -169,6 +173,18 @@ const SESSION_OWNED: { table: string; identity: string[]; key: (row: Row) => str
     identity: ['session_id', 'file_path', 'ts'],
     key: (r) => `${r.session_id}:${r.file_path}:${r.ts}`,
   },
+  // `transcript_id` is stable here: `resetIndex` rewinds the transcript table and never deletes it.
+  {
+    table: 'request',
+    identity: ['transcript_id', 'request_id'],
+    key: (r) => `${r.transcript_id}:${r.request_id}`,
+  },
+  {
+    table: 'compaction',
+    identity: ['transcript_id', 'byte_offset'],
+    key: (r) => `${r.transcript_id}:${r.byte_offset}`,
+  },
+  { table: 'session_origin', identity: ['session_id'], key: (r) => String(r.session_id) },
 ];
 
 type Row = Record<string, string | number | null>;
