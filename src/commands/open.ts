@@ -12,9 +12,10 @@ import { archiveStaleTasks } from '../bootstrap/archive-tasks.js';
 import { mergeChannels } from '../launcher-args.js';
 import { resolveDefaultChannels } from '../utils/global-config.js';
 import { acquireLease } from '../sessions/lease.js';
+import type { LoadedFacet } from '../facets/facet-file.js';
 import {
   listInitiativeSlugs,
-  resolveSlug,
+  resolveSlugOrFacet,
   resolveSlugFromCwd,
   resolveCwdHint,
 } from './_open-helpers.js';
@@ -72,6 +73,10 @@ const OpenResultSchema = z.object({
     sibling_sessions: z.number().int().nonnegative().optional(),
     retrieval_degraded: z.array(z.string()).optional(),
   }),
+  // Present when the slug argument was a facet alias for this initiative (TP-326).
+  facet: z
+    .object({ name: z.string(), tags: z.array(z.string()), about: z.string().optional() })
+    .optional(),
   // How the initiative was selected: an explicit/prefix slug, or a match
   // between the caller's cwd and one of the initiative's worktrees.
   resolved_from: z.enum(['slug', 'cwd']).optional(),
@@ -153,6 +158,22 @@ async function claimOneshotLease(activeRoot: string, slug: string, cwd: string):
   }
 }
 
+function facetSummary(facet: LoadedFacet): { name: string; tags: string[]; about?: string } {
+  return {
+    name: facet.name,
+    tags: facet.tags,
+    ...(facet.about !== undefined ? { about: facet.about } : {}),
+  };
+}
+
+/** An explicit `--about` still outranks the facet's own (TP-26, TP-326). */
+export function sessionAbout(
+  explicit: string | undefined,
+  facet?: LoadedFacet,
+): string | undefined {
+  return explicit ?? facet?.about;
+}
+
 async function bootstrapInitiative(
   activeRoot: string,
   slug: string,
@@ -164,6 +185,7 @@ async function bootstrapInitiative(
     about?: string;
     detectSiblings?: boolean;
     deferLease?: boolean;
+    facet?: LoadedFacet;
   },
 ): Promise<OpenResult & { metadata: BootstrapMetadata }> {
   const briefPath = path.join(activeRoot, slug, 'brief.md');
@@ -176,13 +198,15 @@ async function bootstrapInitiative(
     now: new Date(),
   });
   const detectSiblings = opts.detectSiblings !== false;
+  const { facet } = opts;
+  const about = sessionAbout(opts.about, facet);
   const { prompt, metadata } = await assembleBootstrap({
     activeRoot,
     slug,
     includeLiveStatus: !opts.offline,
     archivedTaskIds,
     adhoc: opts.adhoc,
-    ...(opts.about !== undefined ? { about: opts.about } : {}),
+    ...(about !== undefined ? { about } : {}),
     detectSiblings,
     ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
   });
@@ -199,13 +223,14 @@ async function bootstrapInitiative(
     ...(brief.profile ? { profile: brief.profile } : {}),
     metadata,
     resolved_from: opts.resolvedFrom,
+    ...(facet ? { facet: facetSummary(facet) } : {}),
   };
 }
 
 const openCommand = defineCommand<OpenArgs, OpenResult>({
   name: 'open',
   description:
-    "Bootstrap a Claude session for an initiative. Without a slug, resolves the initiative whose worktree contains the caller's cwd; falls back to the picker list when nothing matches.",
+    "Bootstrap a Claude session for an initiative. The slug may be a facet alias, which opens its owning initiative. Without a slug, resolves the initiative whose worktree contains the caller's cwd; falls back to the picker list when nothing matches.",
   args: ArgsSchema,
   result: ResultSchema,
   cli: {
@@ -253,8 +278,9 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
     const deferLease = args.lease_mode === 'defer';
 
     if (args.slug) {
-      const slug = await resolveSlug(activeRoot, args.slug);
+      const { slug, facet } = await resolveSlugOrFacet(activeRoot, args.slug);
       return bootstrapInitiative(activeRoot, slug, {
+        ...(facet ? { facet } : {}),
         offline: args.offline,
         resolvedFrom: 'slug',
         adhoc: args.adhoc,

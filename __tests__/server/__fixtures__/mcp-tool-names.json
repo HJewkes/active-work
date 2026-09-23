@@ -13,6 +13,8 @@
   "active__doctor",
   "active__drop",
   "active__edit",
+  "active__facet__add",
+  "active__facet__list",
   "active__focus",
   "active__fold",
   "active__hooks__agent-chat-complete",
