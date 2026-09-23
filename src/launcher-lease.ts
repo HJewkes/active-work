@@ -25,8 +25,11 @@ import { acquireLease, releaseLease, releaseLeaseSync } from './sessions/lease.j
 /** Env var carrying this session's lease id into the spawned `claude`. */
 export const LEASE_ENV_VAR = 'AW_LEASE_ID';
 
+/** Env var naming the facet alias the session was opened through (TP-326). */
+export const FACET_ENV_VAR = 'AW_FACET';
+
 /**
- * The child's environment, with the lease id added.
+ * The child's environment, with the lease id and facet alias added.
  *
  * The child is the Claude session this lease describes, so any `open` /
  * `prompt` run *inside* it must exclude this lease rather than report the
@@ -35,9 +38,13 @@ export const LEASE_ENV_VAR = 'AW_LEASE_ID';
 export function buildLauncherEnv(
   base: NodeJS.ProcessEnv,
   leaseId: string | undefined,
+  facet?: string,
 ): NodeJS.ProcessEnv {
-  if (!leaseId) return { ...base };
-  return { ...base, [LEASE_ENV_VAR]: leaseId };
+  return {
+    ...base,
+    ...(leaseId ? { [LEASE_ENV_VAR]: leaseId } : {}),
+    ...(facet ? { [FACET_ENV_VAR]: facet } : {}),
+  };
 }
 
 // SIGHUP is what a closed terminal/iTerm pane sends the foreground process

@@ -72,6 +72,7 @@ const OpenResultSchema = z.object({
     bootstrap_at: z.string(),
     sibling_sessions: z.number().int().nonnegative().optional(),
     retrieval_degraded: z.array(z.string()).optional(),
+    facet: z.string().optional(),
   }),
   // Present when the slug argument was a facet alias for this initiative (TP-326).
   facet: z
@@ -207,6 +208,7 @@ async function bootstrapInitiative(
     archivedTaskIds,
     adhoc: opts.adhoc,
     ...(about !== undefined ? { about } : {}),
+    ...(facet ? { facet } : {}),
     detectSiblings,
     ...(process.env.AW_LEASE_ID ? { ownLeaseId: process.env.AW_LEASE_ID } : {}),
   });
@@ -230,7 +232,7 @@ async function bootstrapInitiative(
 const openCommand = defineCommand<OpenArgs, OpenResult>({
   name: 'open',
   description:
-    "Bootstrap a Claude session for an initiative. The slug may be a facet alias, which opens its owning initiative. Without a slug, resolves the initiative whose worktree contains the caller's cwd; falls back to the picker list when nothing matches.",
+    "Bootstrap a Claude session for an initiative. The slug may be a facet alias, which opens its owning initiative scoped to the facet's tags. Without a slug, resolves the initiative whose worktree contains the caller's cwd; falls back to the picker list when nothing matches.",
   args: ArgsSchema,
   result: ResultSchema,
   cli: {

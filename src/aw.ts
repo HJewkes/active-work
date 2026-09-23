@@ -40,6 +40,7 @@ interface OpenSuccess {
   channels?: string[];
   profile?: string;
   resolved_from?: 'slug' | 'cwd';
+  facet?: { name: string };
 }
 
 interface PickerResult {
@@ -99,24 +100,18 @@ async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string 
   return String(choice);
 }
 
-function spawnClaude(
-  prompt: string,
-  cwd: string,
-  channels?: string[],
-  leaseId?: string,
-  profile?: string,
-): Promise<number> {
-  const { env: profileEnv, warning } = applyProfileEnv(process.env, profile, (dir) =>
+function spawnClaude(opened: OpenSuccess, cwd: string, leaseId?: string): Promise<number> {
+  const { env: profileEnv, warning } = applyProfileEnv(process.env, opened.profile, (dir) =>
     existsSync(dir),
   );
   if (warning) process.stderr.write(color.yellow(`warning: ${warning}\n`));
   return new Promise((resolve) => {
-    const child = spawn('claude', buildClaudeArgs(prompt, channels), {
+    const child = spawn('claude', buildClaudeArgs(opened.prompt, opened.channels), {
       cwd,
       stdio: 'inherit',
       // Explicit env (the default is an implicit `process.env`) so the session
       // can recognize its own lease and not warn about itself.
-      env: buildLauncherEnv(profileEnv, leaseId),
+      env: buildLauncherEnv(profileEnv, leaseId, opened.facet?.name),
     });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
@@ -211,6 +206,8 @@ function printHelp(): void {
       '',
       'Usage:',
       '  aw [slug]      Bootstrap and launch a Claude session for <slug>.',
+      '                 <slug> may be a facet alias (`active-work facet list`):',
+      '                 it opens the owning initiative scoped to the facet.',
       '                 Omit slug to resolve the initiative from the current',
       '                 directory, falling back to an interactive picker.',
       '  aw --pick      Skip cwd resolution and always show the picker.',
@@ -276,6 +273,9 @@ export async function main(argv: string[]): Promise<void> {
       }
     } else {
       opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
+      if (opened.facet) {
+        process.stderr.write(color.dim(`Opening ${opened.slug} (facet ${opened.facet.name})\n`));
+      }
     }
     // Not `opened.cwd_hint`: that is the dispatch answer (a registered
     // worktree, for agents that must commit). An operator's session belongs in
@@ -288,7 +288,7 @@ export async function main(argv: string[]): Promise<void> {
         slug: opened.slug,
         cwd: launchCwd,
       },
-      (leaseId) => spawnClaude(opened.prompt, launchCwd, opened.channels, leaseId, opened.profile),
+      (leaseId) => spawnClaude(opened, launchCwd, leaseId),
     );
     process.exit(code);
   } catch (err) {

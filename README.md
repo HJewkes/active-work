@@ -75,6 +75,8 @@ The skill's "wrap up" / "I'm done" trigger phrases prompt Claude to do this for 
 
 **Sessions.** `sessions/<YYYY-MM-DD-HHMM>-<session-id>.md` — frontmatter (session_id, started, ended, track) + prose body. The `track: canonical` summaries are what the bootstrap prompt pulls.
 
+**Facets.** `facets/<alias>.md` — an alias for a sub-area or a retired initiative folded into this one. Frontmatter carries `tags` (required) and an optional `about`; the body is free markdown. `aw <alias>` opens the owning initiative, renders the body after the brief excerpt, ranks notes against `about` (an explicit `--about` still wins), and filters top tasks and task-targeted open loops to the facet's tags. An initiative directory with the same name shadows the alias.
+
 **Artifacts.** `artifacts.yml` — tracked PRs, branches, and stashes. `active-work artifact check <slug>` shells out to `gh` to refresh PR statuses.
 
 **Where data lives.** Everything sits under `$XDG_DATA_HOME/active-work/<slug>/` (typically `~/Library/Application Support/active-work/` on macOS, `~/.local/share/active-work/` on Linux). The active root is overridable via the `ACTIVE_ROOT` env var. A small amount of runtime state (daemon PID file, logs) sits under `$XDG_STATE_HOME/active-work/`.

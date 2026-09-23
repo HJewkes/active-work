@@ -11,7 +11,9 @@ function makeCtx(activeRoot: string): CommandContext {
 
 interface OpenEnvelope {
   slug: string;
+  prompt: string;
   facet?: { name: string; tags: string[]; about?: string };
+  metadata: { facet?: string };
 }
 
 async function openAlias(activeRoot: string, about?: string): Promise<OpenEnvelope> {
@@ -38,6 +40,8 @@ describe('open through a facet alias', () => {
         tags: ['example'],
         about: 'the widget area',
       });
+      expect(result.metadata.facet).toBe('widgets');
+      expect(result.prompt).toContain('# Facet: widgets\nWidgets body.');
     });
   });
 });

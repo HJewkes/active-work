@@ -39,6 +39,14 @@ import {
 } from '../utils/git-gh.js';
 import { today, nowIso } from '../utils/today.js';
 import { NotFoundError } from '../errors.js';
+import {
+  renderFacetSection,
+  renderFacetTaskNote,
+  renderHiddenLoopsNote,
+  selectFacetLoops,
+  selectFacetTasks,
+  type BootstrapFacet,
+} from './facet.js';
 import YAML from 'yaml';
 import type { ZodType } from 'zod';
 
@@ -140,6 +148,8 @@ export interface BootstrapInput {
   loopRetriever?: LoopRetriever;
   /** Optional hit log (DI). Defaults to `retrieval-hits.jsonl` in the state dir. */
   hitLog?: HitLogWriter;
+  /** Facet alias the session opened through; scopes tasks and loops to its tags (TP-326). */
+  facet?: BootstrapFacet;
 }
 
 export interface BootstrapMetadata {
@@ -155,6 +165,8 @@ export interface BootstrapMetadata {
   sibling_sessions?: number;
   /** Why retrieval showed less than it might have; absent when nothing degraded. */
   retrieval_degraded?: string[];
+  /** Facet alias the session opened through; absent for a plain slug. */
+  facet?: string;
 }
 
 export interface BootstrapOutput {
@@ -419,16 +431,17 @@ function renderTopTasks(
   tasks: Task[],
   topN: number,
   slug: string,
+  facetTags?: string[],
 ): { body: string; count: number } {
   const openTasks = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority);
   if (openTasks.length === 0) {
     return { body: '_No open tasks._', count: 0 };
   }
-  const shown = openTasks.slice(0, topN);
-  return {
-    body: shown.map((task, i) => renderTaskLine(i + 1, task, slug)).join('\n'),
-    count: openTasks.length,
-  };
+  const selection = selectFacetTasks(openTasks, facetTags);
+  const lines = selection.tasks.slice(0, topN).map((task, i) => renderTaskLine(i + 1, task, slug));
+  const facetNote = facetTags ? renderFacetTaskNote(selection, facetTags, slug) : null;
+  if (facetNote) lines.push(facetNote);
+  return { body: lines.join('\n'), count: openTasks.length };
 }
 
 /**
@@ -612,6 +625,29 @@ function renderOpenLoops(
   });
   const oldest = loops[0]!.ageDays;
   return `# Open loops (${loops.length} hanging, oldest ${oldest}d)${note}\n${lines.join('\n')}`;
+}
+
+/** `renderOpenLoops`, plus a pointer to the loops a facet hid. */
+function renderFacetedLoops(
+  loops: OpenLoop[],
+  hidden: number,
+  malformed: MalformedSession[],
+  newestSession: LoadedSession | undefined,
+  related: LoopRelated,
+): string {
+  const hiddenNote = renderHiddenLoopsNote(hidden, related.slug);
+  if (hiddenNote === null) return renderOpenLoops(loops, malformed, newestSession, related);
+  const body =
+    loops.length === 0
+      ? `# Open loops${malformedNote(malformed)}\nNo open loops in this facet.`
+      : renderOpenLoops(loops, malformed, newestSession, related);
+  return `${body}\n${hiddenNote}`;
+}
+
+/** How the header names what the session opened on. */
+function sessionTarget(slug: string, title: string, facet: BootstrapFacet | undefined): string {
+  const base = `\`${slug}\` (${title})`;
+  return facet ? `${base}, scoped to facet \`${facet.name}\`` : base;
 }
 
 const WRAP_DIRECTIVE =
@@ -1183,6 +1219,7 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     noteRelevance,
     loopRetriever,
     hitLog = fileHitLog(),
+    facet,
   } = input;
 
   const initiativeDir = path.join(activeRoot, slug);
@@ -1213,7 +1250,12 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   const briefExcerpt =
     truncateLines(briefBody, BRIEF_BODY_MAX_LINES, path.join(initiativeDir, 'brief.md')) ||
     '_(no brief body)_';
-  const { body: tasksBody, count: openTaskCount } = renderTopTasks(tasks, topNTasks, slug);
+  const { body: tasksBody, count: openTaskCount } = renderTopTasks(
+    tasks,
+    topNTasks,
+    slug,
+    facet?.tags,
+  );
   const { body: recentlyDoneBody, count: recentlyDoneCount } = renderRecentlyDone(
     tasks,
     recentlyDoneDays,
@@ -1254,7 +1296,8 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
       siblings = [];
     }
   }
-  const topTask = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority)[0];
+  const openSorted = tasks.filter((t) => t.status === 'open').sort(compareTasksByPriority);
+  const topTask = selectFacetTasks(openSorted, facet?.tags).tasks[0];
   const topTaskTitle = topTask?.title;
 
   // Ranked against what this session is about, rather than by date (TP-26).
@@ -1272,33 +1315,42 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     ...(noteRelevance ? { relevance: noteRelevance } : {}),
   });
 
+  const { loops: shownLoops, hidden: hiddenLoops } = selectFacetLoops(
+    openLoops,
+    tasks,
+    facet?.tags,
+  );
   // Fails open like the ranking above: no index or no match renders the loops as before.
-  const loopLabels = openLoops.map(loopLabel);
+  const loopLabels = shownLoops.map(loopLabel);
   const loopContext = await relatedForLoops({
-    loops: openLoops,
+    loops: shownLoops,
     labels: loopLabels,
     slug,
     shown: shownNoteRefs(noteRanking, slug),
     ...(loopRetriever ? { retriever: loopRetriever } : {}),
   });
   const retrievalDegraded = await retrievalDegradations(
-    { slug, loops: openLoops, labels: loopLabels, loopContext, noteRanking, subject },
+    { slug, loops: shownLoops, labels: loopLabels, loopContext, noteRanking, subject },
     hitLog,
   );
 
   const sections: string[] = [];
   sections.push(
     adhoc
-      ? `Starting an ad-hoc session on \`${slug}\` (${brief.title}). This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
-      : `Starting a session on \`${slug}\` (${brief.title}).`,
+      ? `Starting an ad-hoc session on ${sessionTarget(slug, brief.title, facet)}. This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
+      : `Starting a session on ${sessionTarget(slug, brief.title, facet)}.`,
   );
   const siblingBody = renderSiblingSessions(siblings, brief, topTaskTitle, now);
   if (siblingBody) sections.push(siblingBody);
   const stateBody = renderBriefState(brief, now);
   if (stateBody) sections.push(stateBody);
   sections.push(`# Why we're doing this\n${briefExcerpt}`);
+  if (facet) sections.push(renderFacetSection(facet));
   sections.push(
-    renderOpenLoops(openLoops, malformed, sessions[0], { slug, hits: loopContext.hits }),
+    renderFacetedLoops(shownLoops, hiddenLoops, malformed, sessions[0], {
+      slug,
+      hits: loopContext.hits,
+    }),
   );
 
   const abandonedBody = renderAbandonedLoops(resolvedLoops, recentlyDoneDays);
@@ -1364,7 +1416,7 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   sections.push(
     adhoc
       ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
-      : renderClosingInstruction(openLoops),
+      : renderClosingInstruction(shownLoops),
   );
 
   const prompt = sections.join('\n\n') + '\n';
@@ -1392,6 +1444,7 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   if (retrievalDegraded.length > 0) {
     metadata.retrieval_degraded = retrievalDegraded;
   }
+  if (facet) metadata.facet = facet.name;
 
   return { prompt, metadata };
 }
