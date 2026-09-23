@@ -9,6 +9,7 @@ import {
   forgetPreserved,
   listPreserved,
   preserveRow,
+  preserveUnreachable,
   replayPreserved,
 } from '../../src/session-index/preserve.js';
 import { runRefresh } from '../../src/session-index/refresh.js';
@@ -235,5 +236,123 @@ describe('preserved rows', () => {
     resetWorkspaceIndex(graph);
 
     expect(listPreserved(graph)).toHaveLength(1);
+  });
+});
+
+/**
+ * TP-276: the audit rows a pruned transcript leaves behind.
+ *
+ * The owner decided on 2026-09-23 that per-request rows outlive their
+ * transcript, so the audit window stays reproducible after Claude Code prunes.
+ */
+describe('preserved audit rows', () => {
+  const REQUEST = {
+    request_id: 'req_pruned_1',
+    byte_offset: 0,
+    session_id: 'pruned',
+    ts: '2026-06-01T10:00:01Z',
+    model: 'claude-opus-5-5',
+    output_tokens: 120,
+  };
+
+  function seedPrunedSession(): number {
+    graph.db
+      .prepare("INSERT INTO transcript (source_key, status) VALUES ('~/gone.jsonl', 'missing')")
+      .run();
+    const { source_id } = graph.db.prepare('SELECT source_id FROM transcript').get() as {
+      source_id: number;
+    };
+    graph.db
+      .prepare('INSERT INTO session (session_id, started_at, turn_count) VALUES (?, ?, ?)')
+      .run('pruned', '2026-06-01T10:00:00Z', 3);
+    graph.db
+      .prepare(
+        `INSERT INTO fact (transcript_id, byte_offset, byte_length, event_type, ts, seq, session_id)
+         VALUES (?, 0, 10, 'prompt', '2026-06-01T10:00:00Z', 0, 'pruned')`,
+      )
+      .run(source_id);
+    graph.db
+      .prepare(
+        `INSERT INTO request (transcript_id, request_id, byte_offset, session_id, ts, model, output_tokens)
+         VALUES (@transcript_id, @request_id, @byte_offset, @session_id, @ts, @model, @output_tokens)`,
+      )
+      .run({ ...REQUEST, transcript_id: source_id });
+    graph.db
+      .prepare(
+        `INSERT INTO compaction (transcript_id, byte_offset, session_id, ts, pre_tokens)
+         VALUES (?, 500, 'pruned', '2026-06-01T10:05:00Z', 150000)`,
+      )
+      .run(source_id);
+    graph.db
+      .prepare(
+        `INSERT INTO session_origin (session_id, origin_system, agent_name, resolved_at)
+         VALUES ('pruned', 'agent-chat', 'sm-t19', '2026-06-01T10:00:00Z')`,
+      )
+      .run();
+    return source_id;
+  }
+
+  const count = (table: string): number =>
+    (graph.db.prepare(`SELECT COUNT(*) c FROM "${table}"`).get() as { c: number }).c;
+
+  it('a --full rebuild keeps request, compaction and session_origin rows for a session whose transcript is gone', async () => {
+    const transcriptId = seedPrunedSession();
+    const corpus = path.join(dir, 'projects');
+    mkdirSync(corpus, { recursive: true });
+
+    await runRefresh({ graph, root: corpus, full: true, activeRoot: path.join(dir, 'active') });
+
+    expect(
+      graph.db.prepare('SELECT transcript_id, request_id, output_tokens FROM request').all(),
+    ).toEqual([
+      { transcript_id: transcriptId, request_id: REQUEST.request_id, output_tokens: 120 },
+    ]);
+    expect(graph.db.prepare('SELECT byte_offset, pre_tokens FROM compaction').all()).toEqual([
+      { byte_offset: 500, pre_tokens: 150000 },
+    ]);
+    expect(graph.db.prepare('SELECT session_id, agent_name FROM session_origin').all()).toEqual([
+      { session_id: 'pruned', agent_name: 'sm-t19' },
+    ]);
+  });
+
+  it('a transcript that comes back wins over the preserved rows', () => {
+    const transcriptId = seedPrunedSession();
+    preserveUnreachable(graph, 'test');
+    resetIndex(graph);
+    graph.db
+      .prepare(
+        `INSERT INTO request (transcript_id, request_id, byte_offset, session_id, ts, model, output_tokens)
+         VALUES (@transcript_id, @request_id, @byte_offset, @session_id, @ts, @model, 999)`,
+      )
+      .run({ ...REQUEST, transcript_id: transcriptId });
+    graph.db
+      .prepare(
+        `INSERT INTO session_origin (session_id, origin_system, agent_name, resolved_at)
+         VALUES ('pruned', 'agent-chat', 'resolved-again', '2026-09-23T00:00:00Z')`,
+      )
+      .run();
+
+    replayPreserved(graph);
+
+    expect(graph.db.prepare('SELECT output_tokens FROM request').all()).toEqual([
+      { output_tokens: 999 },
+    ]);
+    expect(graph.db.prepare('SELECT agent_name FROM session_origin').all()).toEqual([
+      { agent_name: 'resolved-again' },
+    ]);
+  });
+
+  it('replay is idempotent for request rows', () => {
+    seedPrunedSession();
+    preserveUnreachable(graph, 'test');
+    resetIndex(graph);
+
+    replayPreserved(graph);
+    replayPreserved(graph);
+
+    expect(count('request')).toBe(1);
+    expect(listPreserved(graph).filter((row) => row.table === 'request')).toEqual([
+      expect.objectContaining({ identity: ['transcript_id', 'request_id'] }),
+    ]);
   });
 });
