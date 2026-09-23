@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   delete process.env.AW_INDEX_WATCH;
   rmSync(home, { recursive: true, force: true });
 });
@@ -54,5 +55,19 @@ describe('startSessionIndexWatch', () => {
     expect(watcher!.status()).toMatchObject({ running: true });
     await watcher!.close();
     expect(watcher!.status()).toMatchObject({ running: false, pending: false });
+  });
+
+  it('watches every discovered root', async () => {
+    const roots = ['.claude', 'agents'].map((name) => path.join(home, name, 'projects'));
+    for (const root of roots) mkdirSync(root, { recursive: true });
+    vi.stubEnv('CLAUDE_CONFIG_DIRS', roots.map((root) => path.dirname(root)).join(path.delimiter));
+
+    const watcher = startSessionIndexWatch(log);
+    await watcher!.close();
+
+    const watched = log.info.mock.calls
+      .filter(([, msg]) => msg === 'watching transcripts for session indexing')
+      .map(([obj]) => (obj as { root: string }).root);
+    expect(watched).toEqual(roots);
   });
 });

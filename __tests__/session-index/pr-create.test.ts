@@ -162,6 +162,7 @@ async function index(lines: Record<string, unknown>[]): Promise<void> {
     absolutePath,
     displayPath: '~/demo/session.jsonl',
     subagentId: null,
+    account: null,
   });
   reconcile(graph);
 }

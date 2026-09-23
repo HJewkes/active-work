@@ -3,7 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { applyDelta, reconcile, resetIndex } from '@titan-design/session-graph';
+import {
+  allSessionIds,
+  applyDelta,
+  reconcile,
+  resetIndex,
+  rollupSessions,
+} from '@titan-design/session-graph';
 import { extractTranscript } from '@titan-design/session-read';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import { FIXTURE_LINES, SESSION, offsetAfterLine, renderTranscript } from './fixture.js';
@@ -109,20 +115,24 @@ describe('applyDelta', () => {
     graph.db.close();
   });
 
-  it('accumulates token deltas rather than overwriting the bucket', async () => {
+  it('recomputes usage from requests, so a replayed delta does not double it', async () => {
     const { graph, transcriptId } = freshGraph('usage');
+    const withRequestIds = FIXTURE_LINES.map((line, i) =>
+      line.type === 'assistant' ? { ...line, requestId: `req-${i}` } : line,
+    );
+    writeFileSync(transcript, renderTranscript(withRequestIds), 'utf8');
     const result = await extractTranscript(transcript);
+    const usage = (): unknown =>
+      graph.db.prepare('SELECT input_tokens, request_count FROM session_model_usage').get();
 
     applyDelta(graph, transcriptId, result);
+    rollupSessions(graph, allSessionIds(graph));
+    const once = usage();
     applyDelta(graph, transcriptId, result);
+    rollupSessions(graph, allSessionIds(graph));
 
-    const usage = graph.db
-      .prepare<
-        [],
-        { input_tokens: number; request_count: number }
-      >('SELECT input_tokens, request_count FROM session_model_usage')
-      .get();
-    expect(usage).toEqual({ input_tokens: 180, request_count: 18 });
+    expect(once).toEqual({ input_tokens: 90, request_count: 9 });
+    expect(usage()).toEqual(once);
     graph.db.close();
   });
 

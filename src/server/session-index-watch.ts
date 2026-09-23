@@ -8,7 +8,7 @@
  * serve` from serving.
  */
 import { existsSync } from 'node:fs';
-import { transcriptsRoot } from '@titan-design/session-read';
+import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
@@ -50,6 +50,30 @@ function disabled(): boolean {
   return process.env.AW_INDEX_WATCH === '0';
 }
 
+/**
+ * One watcher per Claude config dir, since each keeps its own transcripts. A
+ * machine that has never run Claude Code under a dir has no root there. That is
+ * an ordinary state, not a fault: skip it and let the poll pick it up if it
+ * ever appears.
+ */
+function watchRoot(root: string, onChange: () => void, log: WatchLogger): TreeWatcher | null {
+  if (!existsSync(root)) {
+    log.info({ root }, 'no transcripts root yet; session indexing will poll for one');
+    return null;
+  }
+  try {
+    const watcher = watchTree(root, onChange, {
+      debounceMs: envInt('AW_INDEX_DEBOUNCE_MS', DEFAULT_DEBOUNCE_MS),
+      onError: (err) => log.warn({ err, root }, 'session index watcher error'),
+    });
+    log.info({ root }, 'watching transcripts for session indexing');
+    return watcher;
+  } catch (err) {
+    log.warn({ err, root }, 'transcript watcher unavailable; falling back to polling');
+    return null;
+  }
+}
+
 export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | null {
   if (disabled()) {
     log.info({}, 'session index watch disabled by AW_INDEX_WATCH=0');
@@ -68,24 +92,10 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     onError: (err) => log.warn({ err }, 'session index refresh failed'),
   });
 
-  const root = transcriptsRoot();
-  let watcher: TreeWatcher | null = null;
-  // A machine that has never run Claude Code has no transcripts root. That is
-  // an ordinary state, not a fault: skip the watcher and let the poll pick the
-  // directory up if it ever appears.
-  if (existsSync(root)) {
-    try {
-      watcher = watchTree(root, () => scheduler.trigger(), {
-        debounceMs: envInt('AW_INDEX_DEBOUNCE_MS', DEFAULT_DEBOUNCE_MS),
-        onError: (err) => log.warn({ err }, 'session index watcher error'),
-      });
-      log.info({ root }, 'watching transcripts for session indexing');
-    } catch (err) {
-      log.warn({ err, root }, 'transcript watcher unavailable; falling back to polling');
-    }
-  } else {
-    log.info({ root }, 'no transcripts root yet; session indexing will poll for one');
-  }
+  const watchers = claudeTranscriptRoots().flatMap(({ root }) => {
+    const watcher = watchRoot(root, () => scheduler.trigger(), log);
+    return watcher ? [watcher] : [];
+  });
 
   const poll = setInterval(() => scheduler.trigger(), envInt('AW_INDEX_POLL_MS', DEFAULT_POLL_MS));
   poll.unref();
@@ -98,7 +108,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     status: () => scheduler.status(),
     async close(): Promise<void> {
       clearInterval(poll);
-      watcher?.close();
+      for (const watcher of watchers) watcher.close();
       await scheduler.close();
       graph.db.close();
     },

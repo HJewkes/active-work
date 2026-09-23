@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import lockfile from 'proper-lockfile';
-import { discoverTranscripts, transcriptsRoot } from '@titan-design/session-read';
+import { discoverAllTranscripts, discoverTranscripts } from '@titan-design/session-read';
 import { refreshCorpus, resetIndex } from '@titan-design/session-graph';
 import { defaultGraphPath, openGraph, type WorkspaceGraph } from './graph.js';
 import { taskResolver } from './tasks.js';
@@ -31,8 +31,13 @@ export interface RefreshOptions {
   limit?: number;
   /** Stream a whole-file sha256 per transcript; defaults to `full`. */
   verifyHashes?: boolean;
-  /** Transcript corpus root; overridable for tests. */
+  /**
+   * One transcript root instead of every Claude config dir; for tests. Its
+   * transcripts carry no account.
+   */
   root?: string;
+  /** Stale audit facets re-extracted this pass; `Infinity` clears the backlog. */
+  facetLimit?: number;
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
   /**
@@ -61,6 +66,10 @@ export interface RefreshSummary {
   missing: number;
   /** Rows marked `missing` because their file was already gone (AW-105). */
   reconciledMissing: number;
+  /** Indexed transcripts whose audit facet this pass re-extracted. */
+  facetsBackfilled: number;
+  /** Transcripts whose audit facet is still stale after this pass. */
+  facetBacklog: number;
   factsAdded: number;
   turnsRolledUp: number;
   /** Task ids handed to the resolver, and rows it wrote. */
@@ -136,7 +145,9 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       resetIndex(graph);
       resetWorkspaceIndex(graph);
     }
-    const discovered = await discoverTranscripts(options.root ?? transcriptsRoot());
+    const discovered = await (options.root
+      ? discoverTranscripts(options.root)
+      : discoverAllTranscripts());
     const visiting = discovered.slice(0, options.limit ?? discovered.length);
     const verify = options.verifyHashes ?? options.full ?? false;
 
@@ -145,6 +156,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       verifyHash: verify,
       withContentHash: verify,
       resolveTasks: taskResolver(options.taskRoot),
+      facetLimit: options.facetLimit,
     });
 
     // After the transcripts, so `mentions` and the task join see the rows the
@@ -172,6 +184,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       quarantined: summary.quarantined,
       missing: summary.missing,
       reconciledMissing: summary.markedMissing,
+      facetsBackfilled: summary.facetsBackfilled,
+      facetBacklog: summary.facetBacklog,
       factsAdded: summary.facts,
       turnsRolledUp: summary.turnsRolledUp,
       tasksRequested: summary.tasks.requested,

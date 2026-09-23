@@ -1,5 +1,8 @@
 import { existsSync, statSync } from 'node:fs';
+import os from 'node:os';
 import type Database from 'better-sqlite3';
+import { claudeTranscriptRoots, EXTRACT_VERSION } from '@titan-design/session-read';
+import { AUDIT_FACET, FACET_TABLE } from '@titan-design/session-graph';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { defaultGraphPath, openGraphReadOnly, SCHEMA_VERSION } from '../session-index/graph.js';
@@ -34,7 +37,11 @@ const ResultSchema = z.object({
     ok: z.number(),
     quarantined: z.number(),
     missing: z.number(),
+    /** Keyed by the Claude config dir a transcript lives under; `unknown` when none matches. */
+    byAccount: z.record(z.string(), z.number()),
   }),
+  /** Indexed transcripts whose audit facet predates this build's extractor. */
+  facetBacklog: z.number(),
   watermark: z.object({
     lastIndexedAt: z.string().nullable(),
     behindBytes: z.number(),
@@ -87,6 +94,42 @@ function ftsState(db: Database.Database): Result['fts'] {
   return { rows, orphanRows, needsFullRebuild: rows > 0 && orphanRows / rows > ORPHAN_WARN_RATIO };
 }
 
+const UNKNOWN_ACCOUNT = 'unknown';
+
+/** `~/`-relative, the form `transcript.source_key` stores. */
+function displayPrefix(root: string): string {
+  const home = os.homedir();
+  const shown = root.startsWith(`${home}/`) ? `~${root.slice(home.length)}` : root;
+  return `${shown}/`;
+}
+
+/**
+ * From the path rather than `session.account`: sessions indexed before the
+ * column existed keep it null until their transcript grows again.
+ */
+function transcriptsByAccount(db: Database.Database): Record<string, number> {
+  const roots = claudeTranscriptRoots().map(({ root, account }) => ({
+    prefix: displayPrefix(root),
+    account,
+  }));
+  const counts: Record<string, number> = {};
+  const keys = db.prepare<[], { key: string }>('SELECT source_key AS key FROM transcript').all();
+  for (const { key } of keys) {
+    const account = roots.find(({ prefix }) => key.startsWith(prefix))?.account ?? UNKNOWN_ACCOUNT;
+    counts[account] = (counts[account] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function facetBacklog(db: Database.Database): number {
+  return scalar(
+    db,
+    `SELECT COUNT(*) AS n FROM transcript t
+       LEFT JOIN ${FACET_TABLE} f ON f.transcript_id = t.source_id AND f.facet = '${AUDIT_FACET}'
+      WHERE t.status = 'ok' AND COALESCE(f.version, -1) < ${EXTRACT_VERSION}`,
+  );
+}
+
 async function daemonState(): Promise<Result['daemon']> {
   const health = await probeHealth(resolveDaemonPort());
   return health?.index ?? null;
@@ -104,7 +147,8 @@ async function emptyStatus(dbPath: string): Promise<Result> {
     schemaVersion: SCHEMA_VERSION,
     sizeBytes: 0,
     counts: { transcripts: 0, sessions: 0, facts: 0, turns: 0, edges: 0, spans: 0 },
-    transcripts: { ok: 0, quarantined: 0, missing: 0 },
+    transcripts: { ok: 0, quarantined: 0, missing: 0, byAccount: {} },
+    facetBacklog: 0,
     watermark: { lastIndexedAt: null, behindBytes: 0 },
     fts: { rows: 0, orphanRows: 0, needsFullRebuild: false },
     daemon: await daemonState(),
@@ -146,7 +190,9 @@ export default defineCommand<Args, Result>({
           ok: statusCount('ok'),
           quarantined: statusCount('quarantined'),
           missing: statusCount('missing'),
+          byAccount: transcriptsByAccount(db),
         },
+        facetBacklog: facetBacklog(db),
         watermark: {
           lastIndexedAt:
             db

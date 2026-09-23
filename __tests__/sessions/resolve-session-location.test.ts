@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { resolveSessionLocation } from '../../src/sessions/resolve-session-location.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
 
@@ -14,6 +14,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(projectsRoot, { recursive: true, force: true });
   if (originalEnv === undefined) delete process.env.CLAUDE_PROJECTS_ROOT;
   else process.env.CLAUDE_PROJECTS_ROOT = originalEnv;
@@ -106,6 +107,24 @@ describe('resolveSessionLocation', () => {
       await writeTranscript('-Users-alice-tracked', 'shared-id', '/Users/alice/projects/tracked');
       const result = await resolveSessionLocation(activeRoot, 'shared-id');
       expect(result?.source).toBe('active-work');
+    });
+  });
+
+  it('resolves a session that lives under a profile root', async () => {
+    const configDirs = ['.claude', 'agents'].map((name) => path.join(projectsRoot, name));
+    const profileProject = path.join(configDirs[1]!, 'projects', '-Users-alice-agent');
+    await fs.mkdir(path.join(configDirs[0]!, 'projects'), { recursive: true });
+    await fs.mkdir(profileProject, { recursive: true });
+    await fs.writeFile(
+      path.join(profileProject, 'prof-ile-id.jsonl'),
+      `${JSON.stringify({ type: 'user', cwd: '/Users/alice/agent', sessionId: 'prof-ile-id' })}\n`,
+    );
+    vi.stubEnv('CLAUDE_PROJECTS_ROOT', '');
+    vi.stubEnv('CLAUDE_CONFIG_DIRS', configDirs.join(path.delimiter));
+
+    await withEmptyActiveRoot(async (activeRoot) => {
+      const result = await resolveSessionLocation(activeRoot, 'prof-ile-id');
+      expect(result).toEqual({ cwd: '/Users/alice/agent', source: 'claude-projects' });
     });
   });
 

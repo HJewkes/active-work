@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
+import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { listInitiativeSlugs, resolveLaunchCwd } from '../commands/_open-helpers.js';
 
 export interface ResolvedSessionLocation {
@@ -46,9 +46,10 @@ async function findInActiveWork(
   return null;
 }
 
-/** Root of Claude Code's per-project transcript store. Honors `CLAUDE_PROJECTS_ROOT` for tests. */
-function transcriptsRoot(): string {
-  return process.env.CLAUDE_PROJECTS_ROOT ?? path.join(os.homedir(), '.claude', 'projects');
+/** Every Claude config dir's transcript store. `CLAUDE_PROJECTS_ROOT` narrows it to one for tests. */
+function transcriptRoots(): string[] {
+  const override = process.env.CLAUDE_PROJECTS_ROOT;
+  return override ? [override] : claudeTranscriptRoots().map(({ root }) => root);
 }
 
 /** The first `cwd` field found in a transcript's JSONL lines, if any. */
@@ -76,7 +77,14 @@ async function extractCwd(filePath: string): Promise<string | null> {
  * match across project dirs rather than a scan of every transcript's content.
  */
 async function findInClaudeProjects(sessionId: string): Promise<string | null> {
-  const root = transcriptsRoot();
+  for (const root of transcriptRoots()) {
+    const cwd = await findInRoot(root, sessionId);
+    if (cwd) return cwd;
+  }
+  return null;
+}
+
+async function findInRoot(root: string, sessionId: string): Promise<string | null> {
   let projectDirs: string[];
   try {
     projectDirs = await fs.readdir(root);
@@ -100,7 +108,7 @@ async function findInClaudeProjects(sessionId: string): Promise<string | null> {
 /**
  * Resolve the working directory a session id belongs to: active-work's own
  * session log first (giving the initiative's directory, where `aw` launches
- * every session), then a direct filename match under `~/.claude/projects` for
+ * every session), then a direct filename match under every config dir's `projects` for
  * sessions active-work never tracked — there the transcript's recorded `cwd`
  * is the answer, since such a session may have run anywhere.
  */
