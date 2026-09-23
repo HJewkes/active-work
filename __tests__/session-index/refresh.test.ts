@@ -36,7 +36,7 @@ describe('runRefresh', () => {
   it('indexes the corpus and rolls up the sessions it touched', async () => {
     writeTranscript('a.jsonl');
 
-    const summary = await runRefresh({ graph, root });
+    const summary = await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(summary).toMatchObject({
       transcripts: 1,
@@ -57,9 +57,9 @@ describe('runRefresh', () => {
 
   it('reports an unchanged corpus without re-reading it', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
-    const second = await runRefresh({ graph, root });
+    const second = await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(second).toMatchObject({ indexed: 0, unchanged: 1, factsAdded: 0 });
   });
@@ -68,10 +68,10 @@ describe('runRefresh', () => {
     writeTranscript('a.jsonl');
     writeFileSync(path.join(root, 'demo', 'b.jsonl'), 'not json\n', 'utf8');
 
-    const limited = await runRefresh({ graph, root, limit: 1 });
+    const limited = await runRefresh({ skipPrOutcomes: true, graph, root, limit: 1 });
     expect(limited).toMatchObject({ transcripts: 2, scanned: 1 });
 
-    const all = await runRefresh({ graph, root });
+    const all = await runRefresh({ skipPrOutcomes: true, graph, root });
     expect(all.quarantined).toBe(1);
     expect(all.errors).toHaveLength(1);
     expect(all.errors[0]).toMatch(/quarantined: .*b\.jsonl/);
@@ -79,10 +79,10 @@ describe('runRefresh', () => {
 
   it('marks a transcript missing once its file is deleted (AW-105)', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
     rmSync(path.join(root, 'demo', 'a.jsonl'));
 
-    const summary = await runRefresh({ graph, root });
+    const summary = await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(summary.reconciledMissing).toBe(1);
     expect(statusOf('a.jsonl')).toBe('missing');
@@ -90,11 +90,11 @@ describe('runRefresh', () => {
 
   it('keeps what a deleted transcript taught the index', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
     const mined = counts();
     rmSync(path.join(root, 'demo', 'a.jsonl'));
 
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(counts()).toEqual(mined);
   });
@@ -102,9 +102,9 @@ describe('runRefresh', () => {
   it('leaves an indexed transcript alone when --limit skips visiting it', async () => {
     writeTranscript('a.jsonl');
     writeTranscript('b.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
-    const summary = await runRefresh({ graph, root, limit: 1 });
+    const summary = await runRefresh({ skipPrOutcomes: true, graph, root, limit: 1 });
 
     expect(summary).toMatchObject({ scanned: 1, reconciledMissing: 0 });
     expect(statusOf('b.jsonl')).toBe('ok');
@@ -112,12 +112,12 @@ describe('runRefresh', () => {
 
   it('restores a transcript to ok when its file comes back', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
     rmSync(path.join(root, 'demo', 'a.jsonl'));
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(statusOf('a.jsonl')).toBe('ok');
   });
@@ -132,7 +132,7 @@ describe('runRefresh', () => {
     });
     vi.stubEnv('CLAUDE_CONFIG_DIRS', configDirs.join(path.delimiter));
 
-    const summary = await runRefresh({ graph, skipWorkspace: true });
+    const summary = await runRefresh({ skipPrOutcomes: true, graph, skipWorkspace: true });
 
     expect(summary).toMatchObject({ transcripts: 2, indexed: 2 });
     const rows = graph.db
@@ -148,16 +148,16 @@ describe('runRefresh', () => {
 
   it('a full refresh converges on the same row counts as an incremental one', async () => {
     writeTranscript('a.jsonl');
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
     const incremental = counts();
 
-    await runRefresh({ graph, root, full: true });
+    await runRefresh({ skipPrOutcomes: true, graph, root, full: true });
 
     expect(counts()).toEqual(incremental);
   });
 
   it('loads the price table before the pass', async () => {
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
     const priced = graph.db
       .prepare('SELECT COUNT(*) AS n, MIN(table_version) AS version FROM price')
@@ -169,7 +169,7 @@ describe('runRefresh', () => {
     writeTranscript('a.jsonl');
     writeSpawnRow(SESSION);
 
-    await runRefresh({ graph, root });
+    await runRefresh({ skipPrOutcomes: true, graph, root });
 
     expect(graph.db.prepare('SELECT origin_system, agent_name FROM session_origin').all()).toEqual([
       { origin_system: 'agent-chat', agent_name: 'worker-1' },

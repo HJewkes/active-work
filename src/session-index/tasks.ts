@@ -12,7 +12,7 @@ import { readYaml } from '../utils/yaml-io.js';
  * This is the one thing the index reads that is not a transcript, and it is a
  * deliberate exception rather than drift. A transcript states only the id a
  * command acted on — `aw task done active-work AW-104` — so a task's present
- * title, initiative and status exist nowhere in the corpus. The alternative was
+ * title, initiative, status and estimate exist nowhere in the corpus. The alternative was
  * to drop the columns; the call was to fill them.
  *
  * `@titan-design/session-graph` takes this as its `TaskResolver` (TP-22) and
@@ -63,7 +63,15 @@ async function readInitiative(root: string, slug: string): Promise<[string, Reso
     // read-only observer of this store and has no standing to reject it.
     try {
       const task = await readYaml(path.join(dir, file), TaskSchema);
-      found.push([task.id, { initiative: slug, title: task.title, status: task.status }]);
+      found.push([
+        task.id,
+        {
+          initiative: slug,
+          title: task.title,
+          status: task.status,
+          estimate: task.estimate ?? null,
+        },
+      ]);
     } catch {
       continue;
     }
