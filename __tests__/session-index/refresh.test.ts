@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import { runRefresh, type RefreshSummary } from '../../src/session-index/refresh.js';
 import { RefreshScheduler } from '../../src/session-index/scheduler.js';
-import { FIXTURE_LINES, renderTranscript } from './fixture.js';
+import { FIXTURE_LINES, SESSION, renderTranscript } from './fixture.js';
 
 let dir: string;
 let root: string;
@@ -20,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   graph.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -116,6 +117,30 @@ describe('runRefresh', () => {
     await runRefresh({ graph, root });
 
     expect(statusOf('a.jsonl')).toBe('ok');
+  });
+
+  it('indexes transcripts from two roots and stores their account', async () => {
+    const configDirs = ['.claude', 'agents'].map((name) => path.join(dir, name));
+    configDirs.forEach((configDir, i) => {
+      const project = path.join(configDir, 'projects', 'demo');
+      mkdirSync(project, { recursive: true });
+      const body = renderTranscript(FIXTURE_LINES).replaceAll(SESSION, `sess-root-${i}`);
+      writeFileSync(path.join(project, 'a.jsonl'), body, 'utf8');
+    });
+    vi.stubEnv('CLAUDE_CONFIG_DIRS', configDirs.join(path.delimiter));
+
+    const summary = await runRefresh({ graph, skipWorkspace: true });
+
+    expect(summary).toMatchObject({ transcripts: 2, indexed: 2 });
+    const rows = graph.db
+      .prepare(
+        "SELECT session_id, account FROM session WHERE session_id LIKE 'sess-root-%' ORDER BY 1",
+      )
+      .all();
+    expect(rows).toEqual([
+      { session_id: 'sess-root-0', account: 'default' },
+      { session_id: 'sess-root-1', account: 'agents' },
+    ]);
   });
 
   it('a full refresh converges on the same row counts as an incremental one', async () => {

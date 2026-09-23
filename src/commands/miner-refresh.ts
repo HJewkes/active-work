@@ -4,7 +4,7 @@ import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
 
 /**
  * `active-work miner refresh` — bring the session-signal index up to date with
- * `~/.claude/projects`.
+ * the transcripts under every Claude config dir.
  *
  * Shares one code path with the daemon's watcher and
  * `tools/build-session-index.mjs`. The refresh lock is cross-process and this
@@ -17,6 +17,7 @@ const ArgsSchema = z.object({
   full: z.boolean().optional(),
   limit: z.coerce.number().int().positive().optional(),
   verify_hashes: z.boolean().optional(),
+  backfill_all: z.boolean().optional(),
 });
 type Args = z.infer<typeof ArgsSchema>;
 
@@ -49,6 +50,8 @@ const ResultSchema = z.object({
   quarantined: z.number(),
   missing: z.number(),
   reconciledMissing: z.number(),
+  facetsBackfilled: z.number(),
+  facetBacklog: z.number(),
   factsAdded: z.number(),
   turnsRolledUp: z.number(),
   tasksRequested: z.number(),
@@ -78,11 +81,20 @@ export default defineCommand<Args, Result>({
         long: '--verify-hashes',
         description: 'Re-hash every transcript to detect source drift (slow; implied by --full).',
       },
+      backfill_all: {
+        long: '--backfill-all',
+        description: 'Re-extract every stale audit facet this pass instead of a bounded batch.',
+      },
     },
   },
   async run(args) {
     return withRefreshLock(() =>
-      runRefresh({ full: args.full, limit: args.limit, verifyHashes: args.verify_hashes }),
+      runRefresh({
+        full: args.full,
+        limit: args.limit,
+        verifyHashes: args.verify_hashes,
+        facetLimit: args.backfill_all ? Infinity : undefined,
+      }),
     );
   },
 });
