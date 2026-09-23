@@ -91,7 +91,7 @@
     "@titan-design/registry": "^0.1.0",
     "@titan-design/retrieval": "0.3.0",
     "@titan-design/session-analytics": "^0.2.0",
-    "@titan-design/session-graph": "^0.8.0",
+    "@titan-design/session-graph": "^0.8.1",
     "@titan-design/session-read": "^0.5.0",
     "@titan-design/store-sqlite": "^0.3.1",
     "better-sqlite3": "^13.0.2",

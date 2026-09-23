@@ -12,6 +12,7 @@ import type { RunCommand } from '../discover/run-command.js';
 import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
+import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
@@ -43,6 +44,8 @@ export interface RefreshOptions {
   root?: string;
   /** Stale audit facets re-extracted this pass; `Infinity` clears the backlog. */
   facetLimit?: number;
+  /** Backlogged sessions segmented into episodes this pass; `Infinity` clears the backlog. */
+  episodeLimit?: number;
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
   /**
@@ -79,6 +82,10 @@ export interface RefreshSummary {
   facetsBackfilled: number;
   /** Transcripts whose audit facet is still stale after this pass. */
   facetBacklog: number;
+  /** Sessions whose episodes this pass rewrote (TP-342). */
+  episodesWritten: number;
+  /** Sessions whose episodes are still stale after this pass. */
+  episodeBacklog: number;
   factsAdded: number;
   turnsRolledUp: number;
   /** Task ids handed to the resolver, and rows it wrote. */
@@ -161,6 +168,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     const verify = options.verifyHashes ?? options.full ?? false;
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
+    const offsetsBefore = snapshotOffsets(graph);
     const prErrors: string[] = [];
     const summary = await refreshCorpus(graph, visiting, {
       full: options.full,
@@ -173,6 +181,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),
       facetLimit: options.facetLimit,
     });
+    // After the rollup, because segmentation reads the wake causes it derives.
+    const episodes = refreshEpisodes(graph, offsetsBefore, options.episodeLimit);
 
     // After the transcripts, so `mentions` and the task join see the rows the
     // transcript pass just wrote.
@@ -201,6 +211,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       reconciledMissing: summary.markedMissing,
       facetsBackfilled: summary.facetsBackfilled,
       facetBacklog: summary.facetBacklog,
+      ...episodes,
       factsAdded: summary.facts,
       turnsRolledUp: summary.turnsRolledUp,
       tasksRequested: summary.tasks.requested,

@@ -6,6 +6,7 @@ import { AUDIT_FACET, FACET_TABLE } from '@titan-design/session-graph';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { defaultGraphPath, openGraphReadOnly, SCHEMA_VERSION } from '../session-index/graph.js';
+import { staleEpisodeSessions } from '../session-index/episodes.js';
 import { probeHealth, resolveDaemonPort } from '../server/lifecycle.js';
 
 /**
@@ -42,6 +43,8 @@ const ResultSchema = z.object({
   }),
   /** Indexed transcripts whose audit facet predates this build's extractor. */
   facetBacklog: z.number(),
+  /** Sessions whose episodes are missing or end before their last request. */
+  episodeBacklog: z.number(),
   watermark: z.object({
     lastIndexedAt: z.string().nullable(),
     behindBytes: z.number(),
@@ -149,6 +152,7 @@ async function emptyStatus(dbPath: string): Promise<Result> {
     counts: { transcripts: 0, sessions: 0, facts: 0, turns: 0, edges: 0, spans: 0 },
     transcripts: { ok: 0, quarantined: 0, missing: 0, byAccount: {} },
     facetBacklog: 0,
+    episodeBacklog: 0,
     watermark: { lastIndexedAt: null, behindBytes: 0 },
     fts: { rows: 0, orphanRows: 0, needsFullRebuild: false },
     daemon: await daemonState(),
@@ -193,6 +197,7 @@ export default defineCommand<Args, Result>({
           byAccount: transcriptsByAccount(db),
         },
         facetBacklog: facetBacklog(db),
+        episodeBacklog: staleEpisodeSessions(db).length,
         watermark: {
           lastIndexedAt:
             db

@@ -27,13 +27,18 @@ afterEach(() => {
 });
 
 /** One config dir per account, holding `count` transcripts each. */
+/** Request ids carry the session id, so the per-transcript rename keeps them unique. */
+const BILLED_LINES = FIXTURE_LINES.map((line, i) =>
+  line.type === 'assistant' ? { ...line, requestId: `req-${SESSION}-${i}` } : line,
+);
+
 function writeCorpus(accounts: Record<string, number>): void {
   const configDirs = Object.entries(accounts).map(([name, count]) => {
     const configDir = path.join(configRoot, name);
     const project = path.join(configDir, 'projects', 'demo');
     mkdirSync(project, { recursive: true });
     for (let i = 0; i < count; i += 1) {
-      const body = renderTranscript(FIXTURE_LINES).replaceAll(SESSION, `${name}-${i}`);
+      const body = renderTranscript(BILLED_LINES).replaceAll(SESSION, `${name}-${i}`);
       writeFileSync(path.join(project, `${i}.jsonl`), body, 'utf8');
     }
     return configDir;
@@ -55,6 +60,21 @@ describe('miner status', () => {
 
       expect(result.transcripts.byAccount).toEqual({ default: 1, agents: 2 });
       expect(result.facetBacklog).toBe(0);
+      expect(result.episodeBacklog).toBe(0);
+    });
+  });
+
+  it('counts sessions with no episodes as episode backlog', async () => {
+    await withEmptyActiveRoot(async () => {
+      writeCorpus({ '.claude': 2 });
+      await runRefresh({ skipPrOutcomes: true, skipWorkspace: true });
+      const db = new Database(defaultGraphPath());
+      db.prepare('DELETE FROM episode').run();
+      db.close();
+
+      const result = await status();
+
+      expect(result.episodeBacklog).toBe(2);
     });
   });
 
