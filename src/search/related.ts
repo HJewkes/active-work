@@ -37,7 +37,7 @@ export const RELATED_DEFAULT_CLASSES = ['notes', 'sources', 'tasks', 'sessions']
 
 export type RelatedHit = Pick<
   ResolvedHit,
-  'ref' | 'class' | 'initiative' | 'title' | 'path' | 'excerpt'
+  'ref' | 'class' | 'initiative' | 'title' | 'path' | 'excerpt' | 'byteOffset' | 'byteLength'
 >;
 
 export interface RelatedDegradation {
@@ -94,8 +94,8 @@ export function withinBudget<T>(hits: T[], budget: number, render: (hit: T) => s
 }
 
 function toRelatedHit(hit: ResolvedHit): RelatedHit {
-  const { ref, class: cls, initiative, title, path, excerpt } = hit;
-  return { ref, class: cls, initiative, title, path, excerpt };
+  const { ref, class: cls, initiative, title, path, excerpt, byteOffset, byteLength } = hit;
+  return { ref, class: cls, initiative, title, path, excerpt, byteOffset, byteLength };
 }
 
 function openIndex(dbPath: string): WorkspaceGraph | RelatedDegradation {

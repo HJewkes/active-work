@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -77,6 +77,16 @@ describe('relatedContext', () => {
     const result = await related({ text: 'lesson', render: () => 'x'.repeat(40), budget: 100 });
 
     expect(result.hits).toHaveLength(2);
+  });
+
+  it('carries the winning span as a byte range into the file', async () => {
+    const result = await related({ text: 'the alpha lesson', initiative: 'alpha' });
+    const [top] = result.hits;
+    const file = readFileSync(path.join(root, top!.path!));
+
+    expect(top!.byteOffset).toBeGreaterThanOrEqual(0);
+    expect(top!.byteLength).toBeGreaterThan(0);
+    expect(top!.byteOffset! + top!.byteLength!).toBeLessThanOrEqual(file.length);
   });
 
   it('degrades to no hits when the index is missing, without creating it', async () => {
