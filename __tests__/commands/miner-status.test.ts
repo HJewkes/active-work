@@ -49,7 +49,7 @@ describe('miner status', () => {
   it('miner status reports per-account counts', async () => {
     await withEmptyActiveRoot(async () => {
       writeCorpus({ '.claude': 1, agents: 2 });
-      await runRefresh({ skipWorkspace: true });
+      await runRefresh({ skipPrOutcomes: true, skipWorkspace: true });
 
       const result = await status();
 
@@ -61,7 +61,7 @@ describe('miner status', () => {
   it('counts indexed transcripts whose audit facet is stale as backlog', async () => {
     await withEmptyActiveRoot(async () => {
       writeCorpus({ '.claude': 2 });
-      await runRefresh({ skipWorkspace: true });
+      await runRefresh({ skipPrOutcomes: true, skipWorkspace: true });
       const db = new Database(defaultGraphPath());
       db.prepare('UPDATE transcript_facet SET version = 0').run();
       db.close();

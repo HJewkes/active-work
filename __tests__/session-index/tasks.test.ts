@@ -37,7 +37,13 @@ afterEach(() => {
 function writeTask(
   slug: string,
   id: string,
-  fields: Partial<{ title: string; status: string; created: string; done_at: string }> = {},
+  fields: Partial<{
+    title: string;
+    status: string;
+    created: string;
+    done_at: string;
+    estimate: number;
+  }> = {},
 ): void {
   const tasks = path.join(storeRoot, slug, 'tasks');
   mkdirSync(tasks, { recursive: true });
@@ -49,6 +55,7 @@ function writeTask(
     `created: ${fields.created ?? '2026-08-01'}`,
     `updated: ${fields.created ?? '2026-08-01'}`,
     `done_at: ${fields.done_at ?? 'null'}`,
+    ...(fields.estimate === undefined ? [] : [`estimate: ${fields.estimate}`]),
   ].join('\n');
   writeFileSync(path.join(tasks, `${id}.yml`), body + '\n', 'utf8');
 }
@@ -123,6 +130,15 @@ describe('the task resolver', () => {
       status: 'done',
       estimate: null,
     });
+  });
+
+  it('task estimate reaches the graph', async () => {
+    writeTask('alpha', 'A-1', { estimate: 3 });
+    addRef('A-1');
+
+    await enrich();
+
+    expect(rowFor('A-1')).toMatchObject({ estimate: 3 });
   });
 
   // TP-20 derives a status from the command a transcript witnessed. The store

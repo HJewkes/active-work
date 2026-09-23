@@ -119,7 +119,13 @@ function query(graph: SessionGraph) {
 
 async function refreshAndRead(dbName: string): Promise<ReturnType<typeof query>> {
   const dbPath = path.join(dir, `${dbName}.sqlite3`);
-  await runRefresh({ dbPath, root: path.join(dir, 'projects'), full: true, taskRoot: dir });
+  await runRefresh({
+    skipPrOutcomes: true,
+    dbPath,
+    root: path.join(dir, 'projects'),
+    full: true,
+    taskRoot: dir,
+  });
   const graph = openGraph(dbPath);
   try {
     return query(graph);
@@ -215,7 +221,7 @@ describe('order-independent index state', () => {
       for (const [name, body] of Object.entries(stage)) {
         writeFileSync(path.join(root, name), body, 'utf8');
       }
-      await runRefresh({ dbPath: staged, root: projects, taskRoot: dir });
+      await runRefresh({ skipPrOutcomes: true, dbPath: staged, root: projects, taskRoot: dir });
     }
 
     const graph = openGraph(staged);

@@ -6,14 +6,17 @@ import { refreshCorpus, resetIndex, syncPrices } from '@titan-design/session-gra
 import { PRICE_TABLE, PRICE_TABLE_VERSION } from '@titan-design/session-analytics';
 import { defaultGraphPath, openGraph, type WorkspaceGraph } from './graph.js';
 import { taskResolver } from './tasks.js';
+import { ghPrResolver } from './pr-outcomes.js';
 import { agentChatOriginResolver } from './origin-agent-chat.js';
+import type { RunCommand } from '../discover/run-command.js';
 import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
- * transcript -> roll up -> reconcile -> enrich tasks from the active-work store.
+ * transcript -> roll up -> reconcile -> enrich tasks from the active-work store
+ * and PR outcomes from `gh`.
  *
  * The pass itself is `@titan-design/session-graph`; what lives here is what the
  * package must not know — where the corpus is, where the graph file is, the
@@ -50,6 +53,10 @@ export interface RefreshOptions {
   activeRoot?: string;
   /** Skip the workspace half of the pass. For tests that only care about transcripts. */
   skipWorkspace?: boolean;
+  /** Skip PR outcomes from `gh`. For tests that must not reach the network. */
+  skipPrOutcomes?: boolean;
+  /** Runs `gh` for PR outcomes; tests replace it so the real binary never runs. */
+  runGh?: RunCommand;
 }
 
 export interface RefreshSummary {
@@ -154,12 +161,16 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     const verify = options.verifyHashes ?? options.full ?? false;
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
+    const prErrors: string[] = [];
     const summary = await refreshCorpus(graph, visiting, {
       full: options.full,
       verifyHash: verify,
       withContentHash: verify,
       resolveTasks: taskResolver(options.taskRoot),
       resolveOrigins: agentChatOriginResolver(),
+      resolvePrs: options.skipPrOutcomes
+        ? undefined
+        : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),
       facetLimit: options.facetLimit,
     });
 
@@ -201,6 +212,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         ...(summary.origins.failed
           ? [`origins: ${summary.origins.error ?? 'resolver failed'}`]
           : []),
+        ...(summary.prs.failed ? [`prs: ${summary.prs.error ?? 'resolver failed'}`] : []),
+        ...prErrors,
         ...quarantineErrors(graph),
         ...(workspace?.malformed ?? []).map(
           (entry) => `workspace: ${entry.path} — ${entry.reason}`,

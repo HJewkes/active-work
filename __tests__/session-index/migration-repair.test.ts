@@ -127,7 +127,7 @@ describe('openGraph on a graph with colliding migration numbers', () => {
 
     const graph = openGraph(dbPath);
     try {
-      const summary = await runRefresh({ graph, root });
+      const summary = await runRefresh({ skipPrOutcomes: true, graph, root });
       expect(summary).toMatchObject({ indexed: 1, errors: [] });
     } finally {
       graph.db.close();
