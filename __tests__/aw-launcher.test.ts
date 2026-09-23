@@ -214,6 +214,16 @@ describe('buildLauncherEnv', () => {
   it('omits the var entirely when no lease was acquired', () => {
     expect(buildLauncherEnv({ PATH: '/usr/bin' }, undefined)).not.toHaveProperty('AW_LEASE_ID');
   });
+
+  it('exports the facet alias a session opened through', () => {
+    const env = buildLauncherEnv({ PATH: '/usr/bin' }, 'abc123', 'active-work');
+    expect(env.AW_FACET).toBe('active-work');
+    expect(env.AW_LEASE_ID).toBe('abc123');
+  });
+
+  it('omits the facet var for a plain slug', () => {
+    expect(buildLauncherEnv({ PATH: '/usr/bin' }, 'abc123')).not.toHaveProperty('AW_FACET');
+  });
 });
 
 describe('withLauncherLease', () => {

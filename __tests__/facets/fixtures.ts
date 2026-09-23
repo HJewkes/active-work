@@ -24,3 +24,26 @@ export async function addInitiative(activeRoot: string, slug: string): Promise<v
   await fs.mkdir(path.join(dir, 'tasks'), { recursive: true });
   await fs.copyFile(path.join(activeRoot, SAMPLE_SLUG, 'brief.md'), path.join(dir, 'brief.md'));
 }
+
+export async function writeOpenTask(
+  activeRoot: string,
+  id: string,
+  priority: number,
+  tags: string[],
+): Promise<void> {
+  const tagLines = tags.length > 0 ? ['tags:', ...tags.map((tag) => `  - ${tag}`)] : [];
+  await fs.writeFile(
+    path.join(activeRoot, SAMPLE_SLUG, 'tasks', `${id}.yml`),
+    [
+      `id: ${id}`,
+      `title: Task ${id}`,
+      `priority: ${priority}`,
+      'status: open',
+      ...tagLines,
+      'created: 2026-05-09',
+      'updated: 2026-05-10',
+      'done_at: null',
+      '',
+    ].join('\n'),
+  );
+}
