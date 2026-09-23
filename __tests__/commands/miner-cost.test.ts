@@ -7,7 +7,12 @@ import {
   syncPrices,
   type DiscoveredTranscript,
 } from '@titan-design/session-graph';
-import { costReport, LIST_PRICE_CAVEAT, PRICE_TABLE, PRICE_TABLE_VERSION } from '@titan-design/session-analytics';
+import {
+  costReport,
+  LIST_PRICE_CAVEAT,
+  PRICE_TABLE,
+  PRICE_TABLE_VERSION,
+} from '@titan-design/session-analytics';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import minerCost from '../../src/commands/miner-cost.js';
 import type { CommandContext } from '../../src/registry/types.js';
@@ -36,12 +41,21 @@ function repo(root: string, name: string): string {
   return dir;
 }
 
-function line(sessionId: string, cwd: string, fields: Record<string, unknown>): Record<string, unknown> {
+function line(
+  sessionId: string,
+  cwd: string,
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
   return { sessionId, cwd, gitBranch: 'main', ...fields };
 }
 
 function userPrompt(sessionId: string, cwd: string, uuid: string, ts: string, text: string) {
-  return line(sessionId, cwd, { type: 'user', uuid, timestamp: ts, message: { role: 'user', content: text } });
+  return line(sessionId, cwd, {
+    type: 'user',
+    uuid,
+    timestamp: ts,
+    message: { role: 'user', content: text },
+  });
 }
 
 function channelPrompt(sessionId: string, cwd: string, ts: string) {
@@ -50,7 +64,8 @@ function channelPrompt(sessionId: string, cwd: string, ts: string) {
     timestamp: ts,
     message: {
       role: 'user',
-      content: '<channel source="plugin:agent-chat:agent-chat" from="peer-1" msg_id="m1">go</channel>',
+      content:
+        '<channel source="plugin:agent-chat:agent-chat" from="peer-1" msg_id="m1">go</channel>',
     },
   });
 }
@@ -67,7 +82,13 @@ function assistant(
     type: 'assistant',
     timestamp: ts,
     requestId,
-    message: { id: `msg-${requestId}`, role: 'assistant', model, usage, content: [{ type: 'text', text: 'ok' }] },
+    message: {
+      id: `msg-${requestId}`,
+      role: 'assistant',
+      model,
+      usage,
+      content: [{ type: 'text', text: 'ok' }],
+    },
   });
 }
 
@@ -120,17 +141,35 @@ async function seedGraph(dir: string): Promise<void> {
   function write(name: string, lines: unknown[]): DiscoveredTranscript {
     const absolutePath = path.join(dir, `${name}.jsonl`);
     writeFileSync(absolutePath, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
-    return { projectDir: name, absolutePath, displayPath: `~/demo/${name}.jsonl`, subagentId: null, account: null };
+    return {
+      projectDir: name,
+      absolutePath,
+      displayPath: `~/demo/${name}.jsonl`,
+      subagentId: null,
+      account: null,
+    };
   }
-  await refreshCorpus(graph, [write('adhoc', adhocLines), write('coord', coordLines), write('worker', workerLines)], {
-    resolveOrigins: (sessionIds) => ({
-      origins: Object.fromEntries(
-        sessionIds
-          .filter((id) => id === SESSION_WORKER)
-          .map((id) => [id, { originSystem: 'agent-chat', depth: 1, profile: 'implementer', originKind: 'spawned' }]),
-      ),
-    }),
-  });
+  await refreshCorpus(
+    graph,
+    [write('adhoc', adhocLines), write('coord', coordLines), write('worker', workerLines)],
+    {
+      resolveOrigins: (sessionIds) => ({
+        origins: Object.fromEntries(
+          sessionIds
+            .filter((id) => id === SESSION_WORKER)
+            .map((id) => [
+              id,
+              {
+                originSystem: 'agent-chat',
+                depth: 1,
+                profile: 'implementer',
+                originKind: 'spawned',
+              },
+            ]),
+        ),
+      }),
+    },
+  );
   rollupSessions(graph, allSessionIds(graph));
   syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
   graph.db.close();
@@ -156,8 +195,15 @@ describe('miner cost', () => {
 
       const result = await minerCost.run({}, ctx('human'));
 
-      expect(result.byClass.map((b) => b.key).sort()).toEqual(['agent_spawned', 'human_interactive']);
-      expect(result.byRole.map((b) => b.key).sort()).toEqual(['adhoc', 'coordinator', 'worker:implementer']);
+      expect(result.byClass.map((b) => b.key).sort()).toEqual([
+        'agent_spawned',
+        'human_interactive',
+      ]);
+      expect(result.byRole.map((b) => b.key).sort()).toEqual([
+        'adhoc',
+        'coordinator',
+        'worker:implementer',
+      ]);
       expect(result.byInitiative.map((b) => b.key).sort()).toEqual(['repo:alpha', 'repo:beta']);
       expect(result.byContextBand.map((b) => b.key).sort()).toEqual(['50-100k', '<50k']);
       expect(result.byWakeCause.map((b) => b.key).sort()).toEqual(['channel_message', 'human']);
@@ -166,7 +212,10 @@ describe('miner cost', () => {
         { wakeCause: 'human_typed', gapBand: '>60m', requests: 1, costUsd: expect.any(Number) },
       ]);
 
-      const text = vi.mocked(process.stderr.write).mock.calls.map((call) => call[0]).join('');
+      const text = vi
+        .mocked(process.stderr.write)
+        .mock.calls.map((call) => call[0])
+        .join('');
       expect(text).toContain('By class');
       expect(text).toContain('By role');
       expect(text).toContain('By initiative');
@@ -232,7 +281,10 @@ describe('miner cost', () => {
 
       await minerCost.run({}, ctx('human'));
 
-      const text = vi.mocked(process.stderr.write).mock.calls.map((call) => call[0]).join('');
+      const text = vi
+        .mocked(process.stderr.write)
+        .mock.calls.map((call) => call[0])
+        .join('');
       expect(text).toContain('3 transcripts indexed');
       expect(text).toContain(LIST_PRICE_CAVEAT);
     });
