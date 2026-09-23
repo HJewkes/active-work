@@ -6,6 +6,7 @@ import { expandTilde } from '../utils/paths.js';
 import { readRegisteredWorktrees, defaultWorktreePath } from '../utils/registered-worktrees.js';
 import { NotFoundError } from '../errors.js';
 import { readMarkdownWithSchema } from '../bootstrap/prompt.js';
+import { listFacets, type LoadedFacet } from '../facets/facet-file.js';
 
 /** List initiative slugs (immediate, non-dotfile subdirectories of the root). */
 export async function listInitiativeSlugs(activeRoot: string): Promise<string[]> {
@@ -28,6 +29,38 @@ export async function listInitiativeSlugs(activeRoot: string): Promise<string[]>
 export async function resolveSlug(activeRoot: string, input: string): Promise<string> {
   const slugs = await listInitiativeSlugs(activeRoot);
   if (slugs.includes(input)) return input;
+  return matchSlugPrefix(activeRoot, slugs, input, []);
+}
+
+export interface SlugResolution {
+  slug: string;
+  facet?: LoadedFacet;
+}
+
+/**
+ * `resolveSlug`, plus facet aliases (TP-326). Order: an initiative directory,
+ * then an exact facet alias, then a slug prefix. An alias equal to an
+ * initiative slug is therefore shadowed; `facet list` flags it.
+ */
+export async function resolveSlugOrFacet(
+  activeRoot: string,
+  input: string,
+): Promise<SlugResolution> {
+  const slugs = await listInitiativeSlugs(activeRoot);
+  if (slugs.includes(input)) return { slug: input };
+  const { facets } = await listFacets(activeRoot, slugs);
+  const facet = facets.find((f) => f.name === input);
+  if (facet) return { slug: facet.owner, facet };
+  const aliases = facets.map((f) => `${f.name} (${f.owner})`);
+  return { slug: matchSlugPrefix(activeRoot, slugs, input, aliases) };
+}
+
+function matchSlugPrefix(
+  activeRoot: string,
+  slugs: string[],
+  input: string,
+  aliases: string[],
+): string {
   const matches = slugs.filter((s) => s.startsWith(input));
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
@@ -36,7 +69,10 @@ export async function resolveSlug(activeRoot: string, input: string): Promise<st
   if (slugs.length === 0) {
     throw new NotFoundError(`No initiatives found under ${activeRoot}`);
   }
-  throw new NotFoundError(`No initiative matches '${input}'. Known: ${slugs.join(', ')}`);
+  const facetList = aliases.length > 0 ? `. Facets: ${aliases.join(', ')}` : '';
+  throw new NotFoundError(
+    `No initiative matches '${input}'. Known: ${slugs.join(', ')}${facetList}`,
+  );
 }
 
 /**

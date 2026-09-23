@@ -121,6 +121,8 @@ The most-used surface, grouped by purpose. Run `active-work <command> --help` fo
 | Sessions | `active-work wrap <slug> ...` | End a session: summary + open-loop ledger + brief bump |
 | Sessions | `aw <slug>` | Launch Claude with the bootstrap prompt |
 | Sessions | `active-work open <slug>` | Print the bootstrap prompt to stdout (no claude spawn) |
+| Sessions | `active-work facet add <slug> <alias> --tags a,b [--about ...]` | Add a facet alias that `aw <alias>` opens |
+| Sessions | `active-work facet list [slug]` | List facet aliases, flagging shadowed ones |
 | Daemon | `active-work mcp serve [--detach]` | Start the HTTP + MCP daemon |
 | Daemon | `active-work mcp status` | Health-check the running daemon |
 | Daemon | `active-work mcp stop` | Stop the daemon |

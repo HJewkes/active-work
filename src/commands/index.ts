@@ -32,6 +32,8 @@ import taskReorder from './task-reorder.js';
 
 // Sessions
 import loops from './loops.js';
+import facetAdd from './facet-add.js';
+import facetList from './facet-list.js';
 import preflight from './preflight.js';
 import resume from './resume.js';
 import sessionList from './session-list.js';
@@ -112,6 +114,8 @@ const ALL_COMMANDS: AnyCommand[] = [
   unfocus,
   pause,
   unpause,
+  facetAdd,
+  facetList,
   // tasks
   taskAdd,
   taskDone,
