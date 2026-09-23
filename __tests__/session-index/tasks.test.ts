@@ -121,6 +121,7 @@ describe('the task resolver', () => {
       initiative: 'alpha',
       title: 'Wire the thing',
       status: 'done',
+      estimate: null,
     });
   });
 

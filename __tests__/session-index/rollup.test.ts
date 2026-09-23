@@ -43,6 +43,7 @@ async function build(): Promise<TurnRow[]> {
     absolutePath,
     displayPath: '~/demo/session.jsonl',
     subagentId: null,
+    account: null,
   });
   rollupSessions(graph, allSessionIds(graph));
   return turns();

@@ -29,6 +29,7 @@ function write(name: string, body: string): DiscoveredTranscript {
     absolutePath,
     displayPath: `~/projects/demo/${name}`,
     subagentId: null,
+    account: null,
   };
 }
 
@@ -69,6 +70,7 @@ describe('indexTranscript', () => {
       absolutePath: path.join(dir, 'gone.jsonl'),
       displayPath: '~/gone.jsonl',
       subagentId: null,
+      account: null,
     };
 
     const outcome = await indexTranscript(graph, gone);

@@ -29,6 +29,7 @@ async function index(): Promise<void> {
     absolutePath,
     displayPath: '~/demo/session.jsonl',
     subagentId: null,
+    account: null,
   });
 }
 

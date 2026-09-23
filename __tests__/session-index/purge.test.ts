@@ -37,6 +37,7 @@ const input = (): DiscoveredTranscript => ({
   absolutePath: absolutePath(),
   displayPath: '~/projects/demo/rotate.jsonl',
   subagentId: null,
+  account: null,
 });
 
 function write(body: string): void {
