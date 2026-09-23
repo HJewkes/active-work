@@ -1,6 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
+import { PRICE_TABLE, PRICE_TABLE_VERSION } from '@titan-design/session-analytics';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
@@ -17,6 +19,7 @@ beforeEach(() => {
   root = path.join(dir, 'projects');
   mkdirSync(path.join(root, 'demo'), { recursive: true });
   graph = openGraph(path.join(dir, 'graph.sqlite3'));
+  vi.stubEnv('AGENT_CHAT_HOME', path.join(dir, 'agent-chat'));
 });
 
 afterEach(() => {
@@ -152,7 +155,39 @@ describe('runRefresh', () => {
 
     expect(counts()).toEqual(incremental);
   });
+
+  it('loads the price table before the pass', async () => {
+    await runRefresh({ graph, root });
+
+    const priced = graph.db
+      .prepare('SELECT COUNT(*) AS n, MIN(table_version) AS version FROM price')
+      .get();
+    expect(priced).toEqual({ n: PRICE_TABLE.length, version: PRICE_TABLE_VERSION });
+  });
+
+  it('records the agent-chat origin of a spawned session', async () => {
+    writeTranscript('a.jsonl');
+    writeSpawnRow(SESSION);
+
+    await runRefresh({ graph, root });
+
+    expect(graph.db.prepare('SELECT origin_system, agent_name FROM session_origin').all()).toEqual([
+      { origin_system: 'agent-chat', agent_name: 'worker-1' },
+    ]);
+  });
 });
+
+function writeSpawnRow(sessionId: string): void {
+  mkdirSync(path.join(dir, 'agent-chat'), { recursive: true });
+  const db = new Database(path.join(dir, 'agent-chat', 'events.db'));
+  db.exec(
+    'CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, target TEXT, msg_id TEXT, ref TEXT, body TEXT, meta TEXT)',
+  );
+  db.prepare(
+    "INSERT INTO events (ts, kind, actor, meta) VALUES (1, 'agent_spawned', 'coord', ?)",
+  ).run(JSON.stringify({ name: 'worker-1', session_id: sessionId, depth: '1' }));
+  db.close();
+}
 
 function statusOf(name: string): string {
   const row = graph.db

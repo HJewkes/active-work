@@ -31,9 +31,12 @@ importers:
       '@titan-design/retrieval':
         specifier: 0.3.0
         version: 0.3.0
+      '@titan-design/session-analytics':
+        specifier: ^0.2.0
+        version: 0.2.0(zod@4.4.3)
       '@titan-design/session-graph':
-        specifier: ^0.7.0
-        version: 0.7.0
+        specifier: ^0.8.0
+        version: 0.8.0
       '@titan-design/session-read':
         specifier: ^0.5.0
         version: 0.5.0
@@ -1080,10 +1083,19 @@ packages:
       '@huggingface/transformers':
         optional: true
 
-  '@titan-design/session-graph@0.7.0':
+  '@titan-design/session-analytics@0.2.0':
     resolution:
       {
-        integrity: sha512-9flN0TDcBnruNPTUYor5FpDrZ2i+ClufAyu0NVW8Zg0FwlT5Llb7Solif1ae1/Tj7hgyCOlK8xmknvw58qSX4Q==,
+        integrity: sha512-jmQZWyr2K7hel4PvpFxplfMmiVtRuQwKbQgC0taezalNb4RfsnNmtFQVNxKraMe95oUp+5kLDjKkToECvg8LQA==,
+      }
+    engines: { node: '>=20' }
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@titan-design/session-graph@0.8.0':
+    resolution:
+      {
+        integrity: sha512-z8zExcsPUq/o5aNsLFzcy8HKmMXieI1NnYuW5HOlmhhnZmfVKyMbC+ubTCQ6KRHunUHQNr7v0vYuSgm9J/FG5Q==,
       }
     engines: { node: '>=20' }
 
@@ -4397,7 +4409,13 @@ snapshots:
       '@titan-design/embed': 0.2.0
       '@titan-design/store-sqlite': 0.3.1
 
-  '@titan-design/session-graph@0.7.0':
+  '@titan-design/session-analytics@0.2.0(zod@4.4.3)':
+    dependencies:
+      '@titan-design/session-graph': 0.8.0
+      '@titan-design/store-sqlite': 0.3.1
+      zod: 4.4.3
+
+  '@titan-design/session-graph@0.8.0':
     dependencies:
       '@titan-design/agent-protocol': 0.1.0
       '@titan-design/cluster': 0.1.2

@@ -2,9 +2,11 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import lockfile from 'proper-lockfile';
 import { discoverAllTranscripts, discoverTranscripts } from '@titan-design/session-read';
-import { refreshCorpus, resetIndex } from '@titan-design/session-graph';
+import { refreshCorpus, resetIndex, syncPrices } from '@titan-design/session-graph';
+import { PRICE_TABLE, PRICE_TABLE_VERSION } from '@titan-design/session-analytics';
 import { defaultGraphPath, openGraph, type WorkspaceGraph } from './graph.js';
 import { taskResolver } from './tasks.js';
+import { agentChatOriginResolver } from './origin-agent-chat.js';
 import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
@@ -151,11 +153,13 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     const visiting = discovered.slice(0, options.limit ?? discovered.length);
     const verify = options.verifyHashes ?? options.full ?? false;
 
+    syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
     const summary = await refreshCorpus(graph, visiting, {
       full: options.full,
       verifyHash: verify,
       withContentHash: verify,
       resolveTasks: taskResolver(options.taskRoot),
+      resolveOrigins: agentChatOriginResolver(),
       facetLimit: options.facetLimit,
     });
 
@@ -194,6 +198,9 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       preserved,
       errors: [
         ...(summary.tasks.failed ? [`tasks: ${summary.tasks.error ?? 'resolver failed'}`] : []),
+        ...(summary.origins.failed
+          ? [`origins: ${summary.origins.error ?? 'resolver failed'}`]
+          : []),
         ...quarantineErrors(graph),
         ...(workspace?.malformed ?? []).map(
           (entry) => `workspace: ${entry.path} — ${entry.reason}`,
