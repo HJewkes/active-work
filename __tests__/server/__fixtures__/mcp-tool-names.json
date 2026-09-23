@@ -25,6 +25,7 @@
   "active__mcp__status",
   "active__mcp__stop",
   "active__migrate",
+  "active__miner__cost",
   "active__miner__drain-ingest",
   "active__miner__liveness",
   "active__miner__refresh",
