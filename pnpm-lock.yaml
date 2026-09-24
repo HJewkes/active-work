@@ -35,8 +35,8 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0(zod@4.4.3)
       '@titan-design/session-graph':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: ^0.8.1
+        version: 0.8.1
       '@titan-design/session-read':
         specifier: ^0.5.0
         version: 0.5.0
@@ -1092,10 +1092,10 @@ packages:
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/session-graph@0.8.0':
+  '@titan-design/session-graph@0.8.1':
     resolution:
       {
-        integrity: sha512-z8zExcsPUq/o5aNsLFzcy8HKmMXieI1NnYuW5HOlmhhnZmfVKyMbC+ubTCQ6KRHunUHQNr7v0vYuSgm9J/FG5Q==,
+        integrity: sha512-RH7fGHekj4T1GkPxO217pwYKk0RArt3iSx6zzu9Si4cUWlmiRs5mnLMX9rLqk05GfbdwflyYVK8hhtMnLIShzA==,
       }
     engines: { node: '>=20' }
 
@@ -4411,11 +4411,11 @@ snapshots:
 
   '@titan-design/session-analytics@0.2.0(zod@4.4.3)':
     dependencies:
-      '@titan-design/session-graph': 0.8.0
+      '@titan-design/session-graph': 0.8.1
       '@titan-design/store-sqlite': 0.3.1
       zod: 4.4.3
 
-  '@titan-design/session-graph@0.8.0':
+  '@titan-design/session-graph@0.8.1':
     dependencies:
       '@titan-design/agent-protocol': 0.1.0
       '@titan-design/cluster': 0.1.2

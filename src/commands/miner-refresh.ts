@@ -52,6 +52,8 @@ const ResultSchema = z.object({
   reconciledMissing: z.number(),
   facetsBackfilled: z.number(),
   facetBacklog: z.number(),
+  episodesWritten: z.number(),
+  episodeBacklog: z.number(),
   factsAdded: z.number(),
   turnsRolledUp: z.number(),
   tasksRequested: z.number(),
@@ -83,7 +85,8 @@ export default defineCommand<Args, Result>({
       },
       backfill_all: {
         long: '--backfill-all',
-        description: 'Re-extract every stale audit facet this pass instead of a bounded batch.',
+        description:
+          'Re-extract every stale audit facet and segment every stale session this pass instead of bounded batches.',
       },
     },
   },
@@ -94,6 +97,7 @@ export default defineCommand<Args, Result>({
         limit: args.limit,
         verifyHashes: args.verify_hashes,
         facetLimit: args.backfill_all ? Infinity : undefined,
+        episodeLimit: args.backfill_all ? Infinity : undefined,
       }),
     );
   },
