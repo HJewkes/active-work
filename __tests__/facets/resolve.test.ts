@@ -65,6 +65,25 @@ describe('resolveSlugOrFacet', () => {
     });
   });
 
+  it('marks a miss as no_match so aw can offer to create it (TP-356)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const attempt = resolveSlugOrFacet(activeRoot, 'nope');
+
+      await expect(attempt).rejects.toMatchObject({ reason: 'no_match' });
+    });
+  });
+
+  it('leaves an ambiguous prefix without a no_match reason (TP-356)', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await addInitiative(activeRoot, 'sample-other');
+
+      const attempt = resolveSlugOrFacet(activeRoot, 'sample');
+
+      await expect(attempt).rejects.toThrow(/Ambiguous slug/);
+      await expect(attempt).rejects.toSatisfy((err: NotFoundError) => err.reason === undefined);
+    });
+  });
+
   it('skips an unreadable facet file rather than failing resolution', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       await writeFacet(activeRoot, SAMPLE_SLUG, 'broken', ['tags: []']);

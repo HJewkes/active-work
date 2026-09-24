@@ -15,14 +15,16 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import * as clackPrompts from '@clack/prompts';
+import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
 import { resolveLaunchCwd } from './commands/_open-helpers.js';
 import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { applyProfileEnv } from './launcher-profile.js';
+import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './launcher-init.js';
 import { getActiveRoot } from './utils/paths.js';
-import { formatError, EXIT } from './errors.js';
+import { formatError, EXIT, NotFoundError } from './errors.js';
 import { color } from './utils/color.js';
 import type { CommandContext } from './registry/index.js';
 
@@ -50,25 +52,63 @@ interface PickerResult {
 
 type OpenResult = OpenSuccess | PickerResult;
 
+function launcherContext(): CommandContext {
+  return { activeRoot: getActiveRoot(), warnings: [], format: 'json', cwd: process.cwd() };
+}
+
 async function runOpen(
-  opts: { slug?: string; pick?: boolean; adhoc?: boolean } = {},
+  opts: { slug?: string; pick?: boolean; adhoc?: boolean; init?: boolean } = {},
 ): Promise<OpenResult> {
-  const ctx: CommandContext = {
-    activeRoot: getActiveRoot(),
-    warnings: [],
-    format: 'json',
-    cwd: process.cwd(),
-  };
+  const ctx = launcherContext();
   const parsed = openCommand.args.parse({
     ...(opts.slug ? { slug: opts.slug } : {}),
     ...(opts.pick ? { pick: true } : {}),
     ...(opts.adhoc ? { adhoc: true } : {}),
+    ...(opts.init ? { init: true } : {}),
     // This launcher records a `launcher` lease of its own around the spawned
     // session, so `open` must not also file a `oneshot` one — two leases for
     // one session make it its own sibling on the next bootstrap.
     lease_mode: 'defer' as const,
   });
   return (await openCommand.run(parsed, ctx)) as OpenResult;
+}
+
+/**
+ * Open `slug`; when nothing matches and someone is at the terminal, offer to
+ * scaffold it and open an init session instead (TP-356).
+ */
+async function openSlugOrInit(slug: string, adhoc: boolean): Promise<OpenSuccess> {
+  try {
+    return (await runOpen({ slug, adhoc })) as OpenSuccess;
+  } catch (err) {
+    const isTTY = Boolean(process.stdin.isTTY);
+    if (shouldOfferInit({ error: err, slug, isTTY })) return initInitiative(slug, err);
+    if (isTTY && isInvalidSlugMiss({ error: err, slug })) {
+      throw new NotFoundError(
+        `${(err as Error).message}\nTo create it, use a lowercase kebab-case slug (e.g. my-new-thing).`,
+      );
+    }
+    throw err;
+  }
+}
+
+async function initInitiative(slug: string, notFound: unknown): Promise<OpenSuccess> {
+  process.stderr.write(color.dim(`${(notFound as Error).message}\n`));
+  const create = await clackPrompts.confirm({
+    message: `No initiative '${slug}'. Create it and start a session to set it up?`,
+    initialValue: true,
+  });
+  if (clackPrompts.isCancel(create) || !create) throw notFound;
+  const title = await clackPrompts.text({
+    message: 'Title',
+    initialValue: defaultTitleFromSlug(slug),
+    validate: (value) => (value?.trim() ? undefined : 'A title is required.'),
+  });
+  if (clackPrompts.isCancel(title)) process.exit(EXIT.OK);
+  const parsed = newCommand.args.parse({ slug, title: title.trim() });
+  const created = await newCommand.run(parsed, launcherContext());
+  process.stderr.write(color.dim(`Created ${slug} at ${created.dir}\n`));
+  return (await runOpen({ slug, init: true })) as OpenSuccess;
 }
 
 const STATE_LABEL: Record<InitiativeSummary['state'], string> = {
@@ -272,7 +312,7 @@ export async function main(argv: string[]): Promise<void> {
         process.stderr.write(color.dim(`Opening ${opened.slug} — matched current directory.\n`));
       }
     } else {
-      opened = (await runOpen({ slug: positional[0], adhoc })) as OpenSuccess;
+      opened = await openSlugOrInit(positional[0]!, adhoc);
       if (opened.facet) {
         process.stderr.write(color.dim(`Opening ${opened.slug} (facet ${opened.facet.name})\n`));
       }

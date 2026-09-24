@@ -67,11 +67,12 @@ function matchSlugPrefix(
     throw new NotFoundError(`Ambiguous slug '${input}'. Candidates: ${matches.join(', ')}`);
   }
   if (slugs.length === 0) {
-    throw new NotFoundError(`No initiatives found under ${activeRoot}`);
+    throw new NotFoundError(`No initiatives found under ${activeRoot}`, { reason: 'no_match' });
   }
   const facetList = aliases.length > 0 ? `. Facets: ${aliases.join(', ')}` : '';
   throw new NotFoundError(
     `No initiative matches '${input}'. Known: ${slugs.join(', ')}${facetList}`,
+    { reason: 'no_match' },
   );
 }
 

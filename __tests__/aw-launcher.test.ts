@@ -8,6 +8,8 @@ import {
   parseLauncherFlags,
 } from '../src/launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from '../src/launcher-lease.js';
+import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from '../src/launcher-init.js';
+import { NotFoundError, ValidationError } from '../src/errors.js';
 import { withTempActiveRoot } from './setup/test-helpers.js';
 
 const DEFAULTS = ['plugin:agent-chat@agent-chat-local'];
@@ -338,5 +340,49 @@ describe('withLauncherLease', () => {
       expect(code).toBe(7);
       expect(seen).toBeUndefined();
     });
+  });
+});
+
+describe('shouldOfferInit (TP-356)', () => {
+  const noMatch = new NotFoundError("No initiative matches 'new-thing'. Known: a, b", {
+    reason: 'no_match',
+  });
+
+  it('offers when nothing matched, a TTY is attached and the slug is valid', () => {
+    expect(shouldOfferInit({ error: noMatch, slug: 'new-thing', isTTY: true })).toBe(true);
+  });
+
+  it('does not offer for an ambiguous prefix', () => {
+    const ambiguous = new NotFoundError("Ambiguous slug 'a'. Candidates: ab, ac");
+    expect(shouldOfferInit({ error: ambiguous, slug: 'ab', isTTY: true })).toBe(false);
+  });
+
+  it('does not offer without a TTY', () => {
+    expect(shouldOfferInit({ error: noMatch, slug: 'new-thing', isTTY: false })).toBe(false);
+  });
+
+  it('does not offer for a slug that is not kebab-case', () => {
+    expect(shouldOfferInit({ error: noMatch, slug: 'New_Thing', isTTY: true })).toBe(false);
+    expect(isInvalidSlugMiss({ error: noMatch, slug: 'New_Thing' })).toBe(true);
+    expect(isInvalidSlugMiss({ error: noMatch, slug: 'new-thing' })).toBe(false);
+  });
+
+  it('does not offer for errors other than a not-found miss', () => {
+    const invalid = new ValidationError('bad brief');
+    expect(shouldOfferInit({ error: invalid, slug: 'new-thing', isTTY: true })).toBe(false);
+    expect(shouldOfferInit({ error: new Error('boom'), slug: 'new-thing', isTTY: true })).toBe(
+      false,
+    );
+  });
+});
+
+describe('defaultTitleFromSlug (TP-356)', () => {
+  it('title-cases each dash-separated word', () => {
+    expect(defaultTitleFromSlug('my-new-thing')).toBe('My New Thing');
+  });
+
+  it('keeps digits and single-word slugs intact', () => {
+    expect(defaultTitleFromSlug('v2-migration')).toBe('V2 Migration');
+    expect(defaultTitleFromSlug('inbox')).toBe('Inbox');
   });
 });
