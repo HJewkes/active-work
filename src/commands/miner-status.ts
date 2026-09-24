@@ -61,6 +61,8 @@ const ResultSchema = z.object({
       lastRunAt: z.string().nullable(),
       lastDurationMs: z.number().nullable(),
       consecutiveErrors: z.number(),
+      // Optional: a daemon from before TP-343 does not publish it.
+      lastMaxLoopStallMs: z.number().nullable().optional(),
     })
     .nullable(),
 });

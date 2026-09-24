@@ -54,7 +54,11 @@ describe('startSessionIndexWatch', () => {
     // daemon can bind its port before a cold corpus finishes indexing.
     expect(watcher!.status()).toMatchObject({ running: true });
     await watcher!.close();
-    expect(watcher!.status()).toMatchObject({ running: false, pending: false });
+    expect(watcher!.status()).toMatchObject({
+      running: false,
+      pending: false,
+      lastMaxLoopStallMs: expect.any(Number),
+    });
   });
 
   it('watches every discovered root', async () => {
