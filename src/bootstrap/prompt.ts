@@ -119,6 +119,12 @@ export interface BootstrapInput {
    */
   adhoc?: boolean;
   /**
+   * When `true`, frame the session as the first one on a just-scaffolded
+   * initiative: set it up with the user (brief, worktree, sources, tasks)
+   * before any other work (TP-356). Takes precedence over `adhoc`.
+   */
+  init?: boolean;
+  /**
    * When `true` (default), probe for other sessions holding a lease on this
    * initiative and warn about them at the top of the prompt (CC-9).
    */
@@ -648,6 +654,20 @@ function renderFacetedLoops(
 function sessionTarget(slug: string, title: string, facet: BootstrapFacet | undefined): string {
   const base = `\`${slug}\` (${title})`;
   return facet ? `${base}, scoped to facet \`${facet.name}\`` : base;
+}
+
+function renderInitOpening(slug: string, title: string): string {
+  return `Starting the first session on ${title} (\`${slug}\`). This initiative was just scaffolded and its brief is empty: the only thing on disk is a placeholder brief. Your job in this session is to set it up with the user before any other work.`;
+}
+
+/** Only verbs that exist in the CLI; `edit` opens the operator's editor, so the body is edited in place. */
+function renderInitClosing(slug: string, briefPath: string): string {
+  return [
+    `This is an init session. Start by asking the user what this initiative is and why it exists, then replace the placeholder body of ${briefPath} (below its frontmatter) with a \`Why\` section and what done looks like. Change frontmatter only through \`active-work set ${slug} <field> <value>\`, for example \`ship_target\` or \`owner\` if the user gives them.`,
+    `Ask whether a worktree, repo or project directory already exists for this work. In practice it often will not, since this is usually run from a fresh terminal at the start of new work. If one does, register it with \`active-work worktree set ${slug} <path>\`, and record a branch worth tracking with \`active-work artifact add-branch ${slug} --repo <repo> --name <branch>\`.`,
+    `If the user has documents or notes that belong with the initiative, file them with \`active-work source add ${slug} <file>\`. File the first tasks with \`active-work task add ${slug} --title <title>\`.`,
+    `Close out with \`active-work wrap ${slug}\`; the default \`canonical\` track is correct for a first session.`,
+  ].join(' ');
 }
 
 const WRAP_DIRECTIVE =
@@ -1216,6 +1236,7 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     liveStatusFetcher,
     archivedTaskIds,
     adhoc = false,
+    init = false,
     detectSiblings = true,
     siblingProbe = readLiveLeases,
     ownLeaseId,
@@ -1340,9 +1361,11 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
 
   const sections: string[] = [];
   sections.push(
-    adhoc
-      ? `Starting an ad-hoc session on ${sessionTarget(slug, brief.title, facet)}. This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
-      : `Starting a session on ${sessionTarget(slug, brief.title, facet)}.`,
+    init
+      ? renderInitOpening(slug, brief.title)
+      : adhoc
+        ? `Starting an ad-hoc session on ${sessionTarget(slug, brief.title, facet)}. This session is scoped to ad-hoc work related to this workstream — not necessarily its handoff or current top task. The context below is background so you're oriented; wait for the user to describe the specific ad-hoc task before acting.`
+        : `Starting a session on ${sessionTarget(slug, brief.title, facet)}.`,
   );
   const siblingBody = renderSiblingSessions(siblings, brief, topTaskTitle, now);
   if (siblingBody) sections.push(siblingBody);
@@ -1418,9 +1441,11 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
   sections.push(`# Context\n${contextLines.join('\n')}`);
 
   sections.push(
-    adhoc
-      ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
-      : renderClosingInstruction(shownLoops),
+    init
+      ? renderInitClosing(slug, path.join(initiativeDir, 'brief.md'))
+      : adhoc
+        ? `This is an ad-hoc session: treat the context above as background, not a directive. Do not assume we're continuing the top task or the handoff — the user will describe the specific ad-hoc task. Once they do, work it with the workstream context in mind. If it turns out to be substantive, still capture it via \`active-work task add\` / \`active-work wrap --track adhoc\`. The \`--track adhoc\` flag is required: this session runs alongside the mainline thread, and recording it as canonical would bury the real last session for the next bootstrap.`
+        : renderClosingInstruction(shownLoops),
   );
 
   const prompt = sections.join('\n\n') + '\n';

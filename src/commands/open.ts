@@ -35,6 +35,8 @@ const ArgsSchema = z.object({
   // Frame the bootstrap prompt as ad-hoc work related to the workstream rather
   // than a continuation of its handoff / top task.
   adhoc: z.boolean().optional(),
+  // Frame the prompt as the first session on a just-scaffolded initiative (TP-356).
+  init: z.boolean().optional(),
   about: z.string().min(1).optional(),
   // Skip the sibling-session probe (and the lease write that goes with it).
   no_sibling_check: z.boolean().optional(),
@@ -183,6 +185,7 @@ async function bootstrapInitiative(
     resolvedFrom: 'slug' | 'cwd';
     cwdHintOverride?: string;
     adhoc?: boolean;
+    init?: boolean;
     about?: string;
     detectSiblings?: boolean;
     deferLease?: boolean;
@@ -207,6 +210,7 @@ async function bootstrapInitiative(
     includeLiveStatus: !opts.offline,
     archivedTaskIds,
     adhoc: opts.adhoc,
+    init: opts.init,
     ...(about !== undefined ? { about } : {}),
     ...(facet ? { facet } : {}),
     detectSiblings,
@@ -262,6 +266,11 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         description:
           'Frame the prompt as ad-hoc work on the workstream (awaiting the user’s task), not a continuation of the handoff / top task.',
       },
+      init: {
+        long: '--init',
+        description:
+          'Frame the prompt as the first session on a just-scaffolded initiative: set up its brief, worktree, sources and tasks with the user.',
+      },
       no_sibling_check: {
         long: '--no-sibling-check',
         description:
@@ -269,7 +278,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
       },
     },
     usage:
-      'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc] [--about <text>] [--no-sibling-check]',
+      'active-work open [slug] [--offline] [--cwd <dir>] [--pick] [--adhoc] [--init] [--about <text>] [--no-sibling-check]',
   },
   async run(args, ctx) {
     const activeRoot = ctx.activeRoot ?? getActiveRoot();
@@ -286,6 +295,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
         offline: args.offline,
         resolvedFrom: 'slug',
         adhoc: args.adhoc,
+        init: args.init,
         ...(args.about !== undefined ? { about: args.about } : {}),
         detectSiblings,
         deferLease,
@@ -305,6 +315,7 @@ const openCommand = defineCommand<OpenArgs, OpenResult>({
           resolvedFrom: 'cwd',
           cwdHintOverride: matched.worktreePath,
           adhoc: args.adhoc,
+          init: args.init,
           ...(args.about !== undefined ? { about: args.about } : {}),
           detectSiblings,
           deferLease,
