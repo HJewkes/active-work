@@ -60,7 +60,14 @@ export interface RefreshOptions {
   skipPrOutcomes?: boolean;
   /** Runs `gh` for PR outcomes; tests replace it so the real binary never runs. */
   runGh?: RunCommand;
+  /**
+   * Awaited between the pass's synchronous chunks, so a daemon caller can hand
+   * the event loop to readers. Defaults to one `setImmediate` turn.
+   */
+  yieldPoint?: () => Promise<void>;
 }
+
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export interface RefreshSummary {
   startedAt: string;
@@ -149,6 +156,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
   const started = Date.now();
   const graph = options.graph ?? openGraph(options.dbPath ?? defaultGraphPath());
   const owned = options.graph === undefined;
+  const yieldPoint = options.yieldPoint ?? yieldToEventLoop;
 
   try {
     if (options.full) {
@@ -182,7 +190,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       facetLimit: options.facetLimit,
     });
     // After the rollup, because segmentation reads the wake causes it derives.
-    const episodes = refreshEpisodes(graph, offsetsBefore, options.episodeLimit);
+    const episodes = await refreshEpisodes(graph, offsetsBefore, options.episodeLimit, yieldPoint);
+    await yieldPoint();
 
     // After the transcripts, so `mentions` and the task join see the rows the
     // transcript pass just wrote.
@@ -196,6 +205,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // Last, and unconditionally: idempotent, one statement per preserved row,
     // and running it every pass means a partial or accidental delete heals
     // itself rather than waiting for someone to notice it.
+    await yieldPoint();
     const preserved = replayPreserved(graph);
 
     return {

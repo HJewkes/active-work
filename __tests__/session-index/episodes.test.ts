@@ -3,7 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { staleEpisodeSessions } from '../../src/session-index/episodes.js';
+import { writeEpisodes } from '@titan-design/session-analytics';
+
+import {
+  refreshEpisodes,
+  snapshotOffsets,
+  staleEpisodeSessions,
+} from '../../src/session-index/episodes.js';
 import { openGraph, type WorkspaceGraph } from '../../src/session-index/graph.js';
 import { runRefresh, type RefreshOptions } from '../../src/session-index/refresh.js';
 import { renderTranscript } from './fixture.js';
@@ -71,7 +77,50 @@ function lastEpisodeEnd(sessionId: string): string | undefined {
   );
 }
 
+function episodeRows(): unknown[] {
+  return graph.db
+    .prepare('SELECT * FROM episode ORDER BY session_id, heuristic, episode_index')
+    .all();
+}
+
+/** Three indexed sessions with no episodes; `sess-1`'s transcript reads as moved. */
+async function unsegmentedSessions(): Promise<Map<number, number>> {
+  for (const id of ['sess-1', 'sess-2', 'sess-3']) writeSession(id, '2026-07-01T00:00:00Z');
+  await refresh();
+  graph.db.prepare('DELETE FROM episode').run();
+  const before = snapshotOffsets(graph);
+  const moved = graph.transcripts.list().find((row) => row.sourceKey.includes('sess-1'));
+  before.delete(moved!.sourceId);
+  return before;
+}
+
+const noYield = (): Promise<void> => Promise.resolve();
+
 describe('episode refresh', () => {
+  it('refreshEpisodes yields to the event loop between sessions', async () => {
+    const before = await unsegmentedSessions();
+    const yieldPoint = vi.fn(noYield);
+
+    const pass = await refreshEpisodes(graph, before, Infinity, yieldPoint);
+
+    expect(yieldPoint).toHaveBeenCalledTimes(3);
+    expect(pass).toEqual({ episodesWritten: 3, episodeBacklog: 0 });
+    expect(staleEpisodeSessions(graph.db)).toEqual([]);
+  });
+
+  it('writing one session at a time leaves the same episodes as one batched call', async () => {
+    const before = await unsegmentedSessions();
+    writeEpisodes(graph, staleEpisodeSessions(graph.db));
+    const batched = episodeRows();
+    graph.db.prepare('DELETE FROM episode').run();
+
+    const pass = await refreshEpisodes(graph, before, 1, noYield);
+
+    expect(pass).toEqual({ episodesWritten: 2, episodeBacklog: 1 });
+    await refreshEpisodes(graph, before, Infinity, noYield);
+    expect(episodeRows()).toEqual(batched);
+  });
+
   it('a session with new requests gets its episodes rewritten', async () => {
     writeSession('sess-a', '2026-07-01T00:00:00Z');
     await refresh();
