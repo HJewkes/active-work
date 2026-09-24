@@ -8,9 +8,11 @@
  * serve` from serving.
  */
 import { existsSync } from 'node:fs';
+import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
+import { readerGate } from '../session-index/reader-gate.js';
 import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
 import { RefreshScheduler, type SchedulerStatus } from '../session-index/scheduler.js';
 
@@ -38,6 +40,15 @@ const DEFAULT_DEBOUNCE_MS = 2_000;
  * notification ever arrives.
  */
 const DEFAULT_POLL_MS = 60_000;
+
+/** The longest a pass waits on in-flight related requests before it resumes anyway. */
+export const IDLE_CAP_MS = 5_000;
+
+/** The daemon pass's yield point: let I/O in, then hold while a related request runs (TP-343). */
+export async function yieldToReaders(): Promise<void> {
+  await nextMacrotask();
+  await readerGate.idle(IDLE_CAP_MS);
+}
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -88,9 +99,10 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     return null;
   }
 
-  const scheduler = new RefreshScheduler(() => withRefreshLock(() => runRefresh({ graph })), {
-    onError: (err) => log.warn({ err }, 'session index refresh failed'),
-  });
+  const scheduler = new RefreshScheduler(
+    () => withRefreshLock(() => runRefresh({ graph, yieldPoint: yieldToReaders })),
+    { onError: (err) => log.warn({ err }, 'session index refresh failed') },
+  );
 
   const watchers = claudeTranscriptRoots().flatMap(({ root }) => {
     const watcher = watchRoot(root, () => scheduler.trigger(), log);
