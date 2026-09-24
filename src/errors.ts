@@ -34,12 +34,17 @@ export class ValidationError extends ActiveWorkError {
   }
 }
 
+/** Why a lookup failed; `no_match` means nothing matched, as opposed to several things. */
+export type NotFoundReason = 'no_match';
+
 export class NotFoundError extends ActiveWorkError {
   override readonly code: number = EXIT.NOINPUT;
+  readonly reason?: NotFoundReason;
 
-  constructor(message: string, options?: { cause?: unknown }) {
+  constructor(message: string, options?: { cause?: unknown; reason?: NotFoundReason }) {
     super(message, options);
     this.name = 'NotFoundError';
+    this.reason = options?.reason;
   }
 }
 

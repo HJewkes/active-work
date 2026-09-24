@@ -85,6 +85,8 @@ The brief excerpt is already in your context, so **do not re-read `brief.md`** a
 
 **Ad-hoc sessions** (`aw <slug> --adhoc`, also `open`/`prompt --adhoc`): the opening and closing directives change to say the session is scoped to ad-hoc work on the workstream — the context is background, *not* a directive. Do **not** offer to continue the top task; wait for the user to describe the specific ad-hoc task, then work it with the workstream context in mind. The bootstrap prompt itself carries this instruction, so follow whichever framing it renders.
 
+**Init sessions** (`aw <unknown-slug>` after the operator accepts the offer to create it, also `open --init`): the initiative was just scaffolded and its brief body is a placeholder. Set it up with the user before any other work: ask what it is and why it exists, write the brief body, ask whether a worktree or project directory already exists and register it with `active-work worktree set`, file sources and the first tasks, then `active-work wrap` on the default canonical track.
+
 ## Reference docs
 
 - [onboarding.md](references/onboarding.md) — first-time setup walkthrough

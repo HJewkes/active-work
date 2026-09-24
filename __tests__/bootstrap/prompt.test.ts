@@ -9,6 +9,7 @@ import {
   type SiblingProbe,
   type SiblingSession,
 } from '../../src/bootstrap/prompt.js';
+import newCommand from '../../src/commands/new.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SAMPLE_SLUG = 'sample-initiative';
@@ -560,6 +561,50 @@ describe('assembleBootstrap', () => {
         ...offlineOpts,
       });
       expect(prompt).toContain('active-work wrap --track adhoc');
+    });
+  });
+
+  describe('init framing for a just-scaffolded initiative (TP-356)', () => {
+    const INIT_SLUG = 'fresh-thing';
+    const INIT_OPENING =
+      'Starting the first session on Fresh Thing (`fresh-thing`). This initiative was just scaffolded and its brief is empty';
+
+    async function scaffoldAndBootstrap(activeRoot: string, flags: { adhoc?: boolean }) {
+      await newCommand.run(
+        { slug: INIT_SLUG, title: 'Fresh Thing' },
+        { activeRoot, warnings: [], format: 'json' },
+      );
+      return assembleBootstrap({
+        activeRoot,
+        slug: INIT_SLUG,
+        now: FIXTURE_NOW,
+        init: true,
+        ...flags,
+        ...offlineOpts,
+      });
+    }
+
+    it('opens and closes as a setup session instead of a continuation', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const { prompt } = await scaffoldAndBootstrap(activeRoot, {});
+        expect(prompt).toContain(INIT_OPENING);
+        expect(prompt).toContain('This is an init session.');
+        expect(prompt).toContain('active-work worktree set fresh-thing <path>');
+        expect(prompt).toContain('active-work task add fresh-thing --title <title>');
+        expect(prompt).toContain('active-work wrap fresh-thing');
+        expect(prompt).not.toContain('Work the top task unless redirected.');
+        expect(prompt).not.toContain('Starting an ad-hoc session');
+      });
+    });
+
+    it('wins over adhoc when both are set', async () => {
+      await withTempActiveRoot(async (activeRoot) => {
+        const { prompt } = await scaffoldAndBootstrap(activeRoot, { adhoc: true });
+        expect(prompt).toContain(INIT_OPENING);
+        expect(prompt).toContain('This is an init session.');
+        expect(prompt).not.toContain('Starting an ad-hoc session');
+        expect(prompt).not.toContain('active-work wrap --track adhoc');
+      });
     });
   });
 
