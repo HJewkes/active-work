@@ -8,7 +8,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import { runRefresh, type RefreshSummary } from '../../src/session-index/refresh.js';
 import { RefreshScheduler } from '../../src/session-index/scheduler.js';
+import type * as Preserve from '../../src/session-index/preserve.js';
+import type * as WorkspaceRefresh from '../../src/workspace-index/refresh.js';
 import { FIXTURE_LINES, SESSION, renderTranscript } from './fixture.js';
+
+const phases = vi.hoisted((): string[] => []);
+
+vi.mock('../../src/workspace-index/refresh.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof WorkspaceRefresh>();
+  return {
+    ...actual,
+    refreshWorkspace: (...args: Parameters<typeof actual.refreshWorkspace>) => {
+      phases.push('workspace');
+      return actual.refreshWorkspace(...args);
+    },
+  };
+});
+
+vi.mock('../../src/session-index/preserve.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof Preserve>();
+  return {
+    ...actual,
+    replayPreserved: (...args: Parameters<typeof actual.replayPreserved>) => {
+      phases.push('preserved');
+      return actual.replayPreserved(...args);
+    },
+  };
+});
 
 let dir: string;
 let root: string;
@@ -33,6 +59,18 @@ function writeTranscript(name: string, lines = FIXTURE_LINES): void {
 }
 
 describe('runRefresh', () => {
+  it('a pass yields before the workspace half and before replaying preserved rows', async () => {
+    writeTranscript('a.jsonl');
+    phases.length = 0;
+    const yieldPoint = vi.fn(async () => {
+      phases.push('yield');
+    });
+
+    await runRefresh({ skipPrOutcomes: true, graph, root, activeRoot: dir, yieldPoint });
+
+    expect(phases.slice(-4)).toEqual(['yield', 'workspace', 'yield', 'preserved']);
+  });
+
   it('indexes the corpus and rolls up the sessions it touched', async () => {
     writeTranscript('a.jsonl');
 

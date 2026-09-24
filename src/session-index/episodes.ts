@@ -137,19 +137,28 @@ function sessionsChangedSince(graph: WorkspaceGraph, before: Map<number, number>
 /**
  * Every stale session a moved transcript touched, plus up to `limit` more from
  * the backlog. `Infinity` clears it.
+ *
+ * One session per `writeEpisodes` call, yielding after each: a session costs
+ * about 450 ms on the live graph, so one batched call held the daemon's event
+ * loop for seconds and starved `context.related` (TP-343).
  */
-export function refreshEpisodes(
+export async function refreshEpisodes(
   graph: WorkspaceGraph,
   before: Map<number, number>,
   limit: number = DEFAULT_EPISODE_LIMIT,
-): EpisodePass {
+  yieldPoint: () => Promise<void>,
+): Promise<EpisodePass> {
   const stale = staleEpisodeSessions(graph.db);
   const changed = sessionsChangedSince(graph, before);
   const due = stale.filter((id) => changed.has(id));
   const batch = stale.filter((id) => !changed.has(id)).slice(0, limit);
-  const written = writeEpisodes(graph, [...due, ...batch]);
+  let written = 0;
+  for (const sessionId of [...due, ...batch]) {
+    written += writeEpisodes(graph, [sessionId]).length;
+    await yieldPoint();
+  }
   return {
-    episodesWritten: written.length,
+    episodesWritten: written,
     episodeBacklog: stale.length - due.length - batch.length,
   };
 }
