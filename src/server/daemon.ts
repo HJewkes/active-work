@@ -15,7 +15,6 @@ import {
 } from '@titan-design/daemon';
 import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
-import type { SchedulerStatus } from '../session-index/scheduler.js';
 import { getActiveRoot, getStateRoot } from '../utils/paths.js';
 import { handleDashboard } from './dashboard-routes.js';
 import { type HealthIndexState } from './health.js';
@@ -23,7 +22,11 @@ import { BUILD_VERSION } from '../version.js';
 import { resolveDaemonPort } from './lifecycle.js';
 import { getLogger } from './logger.js';
 import { mcpOptions } from './mcp.js';
-import { startSessionIndexWatch, type SessionIndexWatcher } from './session-index-watch.js';
+import {
+  startSessionIndexWatch,
+  type SessionIndexWatcher,
+  type WatcherStatus,
+} from './session-index-watch.js';
 
 export interface RunDaemonOptions {
   port?: number;
@@ -34,8 +37,8 @@ function resolvePort(options: RunDaemonOptions): number {
   return resolveDaemonPort();
 }
 
-/** Project the scheduler's snapshot onto the shape `/health` publishes. */
-function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexState | null {
+/** Project the watcher's snapshot onto the shape `/health` publishes. */
+export function toHealthIndexState(status: WatcherStatus | undefined): HealthIndexState | null {
   if (!status) return null;
   return {
     indexing: status.running,
@@ -43,6 +46,7 @@ function toHealthIndexState(status: SchedulerStatus | undefined): HealthIndexSta
     lastRunAt: status.last?.startedAt ?? null,
     lastDurationMs: status.last?.durationMs ?? null,
     consecutiveErrors: status.consecutiveErrors,
+    lastMaxLoopStallMs: status.lastMaxLoopStallMs,
   };
 }
 

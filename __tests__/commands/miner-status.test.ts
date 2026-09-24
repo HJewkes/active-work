@@ -78,6 +78,30 @@ describe('miner status', () => {
     });
   });
 
+  it('reports the daemon stall gauge and tolerates a daemon that predates it', async () => {
+    const index = {
+      indexing: true,
+      pending: false,
+      lastRunAt: '2026-09-24T00:00:00Z',
+      lastDurationMs: 1200,
+      consecutiveErrors: 0,
+    };
+    await withEmptyActiveRoot(async () => {
+      writeCorpus({ '.claude': 1 });
+      await runRefresh({ skipPrOutcomes: true, skipWorkspace: true });
+      const answer = (body: object) =>
+        vi.fn(async () => new Response(JSON.stringify({ ok: true, index: body })));
+
+      vi.stubGlobal('fetch', answer({ ...index, lastMaxLoopStallMs: 412 }));
+      const current = await status();
+      vi.stubGlobal('fetch', answer(index));
+      const older = await status();
+
+      expect(minerStatus.result.parse(current).daemon?.lastMaxLoopStallMs).toBe(412);
+      expect(minerStatus.result.parse(older).daemon).toMatchObject({ indexing: true });
+    });
+  });
+
   it('counts indexed transcripts whose audit facet is stale as backlog', async () => {
     await withEmptyActiveRoot(async () => {
       writeCorpus({ '.claude': 2 });
