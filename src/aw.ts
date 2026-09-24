@@ -250,6 +250,8 @@ function printHelp(): void {
       '                 it opens the owning initiative scoped to the facet.',
       '                 Omit slug to resolve the initiative from the current',
       '                 directory, falling back to an interactive picker.',
+      '                 An unknown slug offers to create the initiative and',
+      '                 start a session that sets it up with you.',
       '  aw --pick      Skip cwd resolution and always show the picker.',
       '  aw <slug> --adhoc',
       '                 Frame the session as ad-hoc work on the workstream',
