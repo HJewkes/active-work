@@ -21,6 +21,7 @@ import {
   relatedContext,
   type RelatedResult,
 } from '../search/related.js';
+import { readerGate } from '../session-index/reader-gate.js';
 import { nowIso } from '../utils/today.js';
 
 const CLASS_NAMES = SEARCH_CLASSES.map((cls) => cls.name);
@@ -83,18 +84,24 @@ export interface RelatedDeps {
 
 /** The command's body, with the index and hit log injectable so tests never touch the live ones. */
 export async function runRelated(args: Args, deps: RelatedDeps): Promise<RelatedResult> {
-  const result = await relatedContext({
-    text: args.for,
-    activeRoot: deps.activeRoot,
-    ...(deps.dbPath !== undefined ? { dbPath: deps.dbPath } : {}),
-    ...(args.initiative !== undefined ? { initiative: args.initiative } : {}),
-    ...(args.limit !== undefined ? { limit: args.limit } : {}),
-    ...(args.budget !== undefined ? { budget: args.budget } : {}),
-    ...(args.classes !== undefined ? { classes: args.classes } : {}),
-    ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
-  });
-  await logServed(args, result, deps.hitLog ?? fileHitLog());
-  return result;
+  // A daemon refresh pass holds off while this runs, so the request waits for one chunk at most.
+  const release = readerGate.enter();
+  try {
+    const result = await relatedContext({
+      text: args.for,
+      activeRoot: deps.activeRoot,
+      ...(deps.dbPath !== undefined ? { dbPath: deps.dbPath } : {}),
+      ...(args.initiative !== undefined ? { initiative: args.initiative } : {}),
+      ...(args.limit !== undefined ? { limit: args.limit } : {}),
+      ...(args.budget !== undefined ? { budget: args.budget } : {}),
+      ...(args.classes !== undefined ? { classes: args.classes } : {}),
+      ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
+    });
+    await logServed(args, result, deps.hitLog ?? fileHitLog());
+    return result;
+  } finally {
+    release();
+  }
 }
 
 export default defineCommand<Args, Result>({
