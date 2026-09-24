@@ -21,4 +21,6 @@ export interface HealthIndexState {
   lastRunAt: string | null;
   lastDurationMs: number | null;
   consecutiveErrors: number;
+  /** The longest the event loop stalled during the last pass (TP-343); null before one finishes. */
+  lastMaxLoopStallMs: number | null;
 }

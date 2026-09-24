@@ -8,6 +8,7 @@
  * serve` from serving.
  */
 import { existsSync } from 'node:fs';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
@@ -16,8 +17,13 @@ import { readerGate } from '../session-index/reader-gate.js';
 import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
 import { RefreshScheduler, type SchedulerStatus } from '../session-index/scheduler.js';
 
+export interface WatcherStatus extends SchedulerStatus {
+  /** The longest the event loop stalled during the last successful pass; null before one. */
+  lastMaxLoopStallMs: number | null;
+}
+
 export interface SessionIndexWatcher {
-  status(): SchedulerStatus;
+  status(): WatcherStatus;
   close(): Promise<void>;
 }
 
@@ -48,6 +54,26 @@ export const IDLE_CAP_MS = 5_000;
 export async function yieldToReaders(): Promise<void> {
   await nextMacrotask();
   await readerGate.idle(IDLE_CAP_MS);
+}
+
+/** Sampling interval for the stall gauge; a stall shorter than this does not register. */
+const STALL_RESOLUTION_MS = 10;
+
+/**
+ * Run `fn` and report the longest event-loop stall while it ran. A pass that
+ * stops yielding shows here long before agent-chat's related calls time out.
+ */
+export async function measureLoopStall<T>(
+  fn: () => Promise<T>,
+): Promise<{ result: T; maxStallMs: number }> {
+  const histogram = monitorEventLoopDelay({ resolution: STALL_RESOLUTION_MS });
+  histogram.enable();
+  try {
+    const result = await fn();
+    return { result, maxStallMs: Math.round(histogram.max / 1e6) };
+  } finally {
+    histogram.disable();
+  }
 }
 
 function envInt(name: string, fallback: number): number {
@@ -99,10 +125,17 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
     return null;
   }
 
-  const scheduler = new RefreshScheduler(
-    () => withRefreshLock(() => runRefresh({ graph, yieldPoint: yieldToReaders })),
-    { onError: (err) => log.warn({ err }, 'session index refresh failed') },
-  );
+  let lastMaxLoopStallMs: number | null = null;
+  const pass = async () => {
+    const measured = await measureLoopStall(() =>
+      runRefresh({ graph, yieldPoint: yieldToReaders }),
+    );
+    lastMaxLoopStallMs = measured.maxStallMs;
+    return measured.result;
+  };
+  const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
+    onError: (err) => log.warn({ err }, 'session index refresh failed'),
+  });
 
   const watchers = claudeTranscriptRoots().flatMap(({ root }) => {
     const watcher = watchRoot(root, () => scheduler.trigger(), log);
@@ -117,7 +150,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
   scheduler.trigger();
 
   return {
-    status: () => scheduler.status(),
+    status: () => ({ ...scheduler.status(), lastMaxLoopStallMs }),
     async close(): Promise<void> {
       clearInterval(poll);
       for (const watcher of watchers) watcher.close();
