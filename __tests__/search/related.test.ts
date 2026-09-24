@@ -1,11 +1,12 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { searchWorkspace } from '../../src/search/index.js';
 import { relatedContext, withinBudget, type RelatedInput } from '../../src/search/related.js';
-import { refreshInto, scaffold } from '../workspace-index/fixture.js';
+import { refreshInto, scaffold, writeFile } from '../workspace-index/fixture.js';
 
 /**
  * `context related` over the miniature active root.
@@ -77,6 +78,29 @@ describe('relatedContext', () => {
     const result = await related({ text: 'lesson', render: () => 'x'.repeat(40), budget: 100 });
 
     expect(result.hits).toHaveLength(2);
+  });
+
+  it('handoff archives are not served by related but remain searchable', async () => {
+    const archive = 'beta/sources/handoff-archive-2026-07.md';
+    writeFile(root, archive, '# Handoff archive\n\nThe zeppelin rollout stalled twice.\n');
+    const graph = await refreshInto(dbPath, root);
+    const searched = await searchWorkspace('zeppelin', { graph, activeRoot: root });
+    graph.db.close();
+
+    const result = await related({ text: 'zeppelin rollout', classes: ['sources'] });
+
+    expect(searched.hits.map((hit) => hit.path)).toContain(archive);
+    expect(result.hits.map((hit) => hit.path)).not.toContain(archive);
+  });
+
+  it('carries the winning span as a byte range into the file', async () => {
+    const result = await related({ text: 'the alpha lesson', initiative: 'alpha' });
+    const [top] = result.hits;
+    const file = readFileSync(path.join(root, top!.path!));
+
+    expect(top!.byteOffset).toBeGreaterThanOrEqual(0);
+    expect(top!.byteLength).toBeGreaterThan(0);
+    expect(top!.byteOffset! + top!.byteLength!).toBeLessThanOrEqual(file.length);
   });
 
   it('degrades to no hits when the index is missing, without creating it', async () => {

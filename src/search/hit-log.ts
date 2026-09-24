@@ -11,7 +11,9 @@ import { getStateRoot } from '../utils/paths.js';
  * was surfaced.
  */
 
-export type HitTrigger = 'bootstrap-loop' | 'bootstrap-foreign';
+export const HIT_TRIGGERS = ['bootstrap-loop', 'bootstrap-foreign', 'spawn'] as const;
+
+export type HitTrigger = (typeof HIT_TRIGGERS)[number];
 
 export interface HitLogEntry {
   ts: string;
@@ -22,6 +24,9 @@ export interface HitLogEntry {
   ref: string;
   /** 1-based, within the list the hit was rendered in. */
   rank: number;
+  /** The winning span's byte range in the hit's file; null when the hit carries no span. */
+  byteOffset: number | null;
+  byteLength: number | null;
 }
 
 /** Resolves to an error message when the append failed, null when it did not. */
@@ -43,4 +48,28 @@ export function fileHitLog(file: string = hitLogPath()): HitLogWriter {
       return err instanceof Error ? err.message : String(err);
     }
   };
+}
+
+export interface ServedHit {
+  ref: string;
+  byteOffset: number | null;
+  byteLength: number | null;
+}
+
+export interface ServedContext {
+  ts: string;
+  slug: string;
+  trigger: HitTrigger;
+  query: string;
+}
+
+/** One entry per served hit, ranked in the order served. */
+export function servedHitEntries(hits: ServedHit[], context: ServedContext): HitLogEntry[] {
+  return hits.map((hit, i) => ({
+    ...context,
+    ref: hit.ref,
+    rank: i + 1,
+    byteOffset: hit.byteOffset,
+    byteLength: hit.byteLength,
+  }));
 }

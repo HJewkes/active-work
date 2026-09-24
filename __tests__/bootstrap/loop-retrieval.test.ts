@@ -43,7 +43,16 @@ async function writeLoopSession(root: string): Promise<void> {
 }
 
 function hit(ref: string, initiative: string, title: string): RelatedHit {
-  return { ref, class: 'notes', initiative, title, path: null, excerpt: null };
+  return {
+    ref,
+    class: 'notes',
+    initiative,
+    title,
+    path: null,
+    excerpt: null,
+    byteOffset: 12,
+    byteLength: 34,
+  };
 }
 
 const fixed =
@@ -142,6 +151,8 @@ describe('bootstrap loop retrieval', () => {
           query: 'SI-1 Mint note refs',
           ref: 'note:sample-initiative/a.md',
           rank: 1,
+          byteOffset: 12,
+          byteLength: 34,
         },
         {
           slug: SLUG,
@@ -149,6 +160,8 @@ describe('bootstrap loop retrieval', () => {
           query: expect.stringContaining('SI-'),
           ref: 'note:relay/b.md',
           rank: 1,
+          byteOffset: null,
+          byteLength: null,
         },
       ]);
     });

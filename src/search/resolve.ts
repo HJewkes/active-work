@@ -21,6 +21,9 @@ export interface ResolvedHit {
   /** Path relative to the active root for workspace rows; absolute for transcripts. */
   path: string | null;
   excerpt: string | null;
+  /** The winning span's byte range in `path`, null when no span resolved. */
+  byteOffset: number | null;
+  byteLength: number | null;
   score: number;
   /** Which retrievers found it, so a result can be explained. */
   sources: string[];
@@ -153,6 +156,8 @@ export async function resolveHits(
         title: row?.title ?? null,
         path: row?.path ?? null,
         excerpt: await excerptFor(graph, payload, activeRoot, excerptWidth),
+        byteOffset: payload?.byteOffset ?? null,
+        byteLength: payload?.byteLength ?? null,
         score: result.score,
         sources: result.sources,
       };

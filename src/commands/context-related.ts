@@ -9,11 +9,19 @@ import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { SEARCH_CLASSES } from '../search/classes.js';
 import {
+  fileHitLog,
+  HIT_TRIGGERS,
+  servedHitEntries,
+  type HitLogWriter,
+} from '../search/hit-log.js';
+import {
   RELATED_DEFAULT_BUDGET,
   RELATED_DEFAULT_CLASSES,
   RELATED_DEFAULT_LIMIT,
   relatedContext,
+  type RelatedResult,
 } from '../search/related.js';
+import { nowIso } from '../utils/today.js';
 
 const CLASS_NAMES = SEARCH_CLASSES.map((cls) => cls.name);
 
@@ -29,6 +37,8 @@ const ArgsSchema = z.object({
     })
     .optional(),
   exclude: z.array(z.string()).optional(),
+  // Only a caller that renders the hits into a prompt names one; a human query logs nothing.
+  trigger: z.enum(HIT_TRIGGERS).optional(),
 });
 
 const HitSchema = z.object({
@@ -38,6 +48,8 @@ const HitSchema = z.object({
   title: z.string().nullable(),
   path: z.string().nullable(),
   excerpt: z.string().nullable(),
+  byteOffset: z.number().nullable(),
+  byteLength: z.number().nullable(),
 });
 
 const ResultSchema = z.object({
@@ -49,6 +61,41 @@ const ResultSchema = z.object({
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
+
+async function logServed(args: Args, result: RelatedResult, hitLog: HitLogWriter): Promise<void> {
+  if (args.trigger === undefined) return;
+  const context = {
+    ts: nowIso(),
+    slug: args.initiative ?? '',
+    trigger: args.trigger,
+    query: args.for,
+  };
+  const failure = await hitLog(servedHitEntries(result.hits, context));
+  if (failure !== null)
+    result.degraded.push({ source: 'hit-log', reason: 'error', message: failure });
+}
+
+export interface RelatedDeps {
+  activeRoot: string;
+  hitLog?: HitLogWriter;
+  dbPath?: string;
+}
+
+/** The command's body, with the index and hit log injectable so tests never touch the live ones. */
+export async function runRelated(args: Args, deps: RelatedDeps): Promise<RelatedResult> {
+  const result = await relatedContext({
+    text: args.for,
+    activeRoot: deps.activeRoot,
+    ...(deps.dbPath !== undefined ? { dbPath: deps.dbPath } : {}),
+    ...(args.initiative !== undefined ? { initiative: args.initiative } : {}),
+    ...(args.limit !== undefined ? { limit: args.limit } : {}),
+    ...(args.budget !== undefined ? { budget: args.budget } : {}),
+    ...(args.classes !== undefined ? { classes: args.classes } : {}),
+    ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
+  });
+  await logServed(args, result, deps.hitLog ?? fileHitLog());
+  return result;
+}
 
 export default defineCommand<Args, Result>({
   name: 'context.related',
@@ -79,19 +126,15 @@ export default defineCommand<Args, Result>({
         long: '--exclude',
         description: 'Comma-separated refs the caller already shows',
       },
+      trigger: {
+        long: '--trigger',
+        description: `Log the returned hits as served, under this trigger (${HIT_TRIGGERS.join(', ')})`,
+      },
     },
     usage:
-      'context related --for <text> [--initiative <slug>] [--limit 6] [--budget 1500] [--classes notes,sources,tasks,sessions] [--exclude <ref>,<ref>]',
+      'context related --for <text> [--initiative <slug>] [--limit 6] [--budget 1500] [--classes notes,sources,tasks,sessions] [--exclude <ref>,<ref>] [--trigger spawn]',
   },
   async run(args, ctx) {
-    return relatedContext({
-      text: args.for,
-      activeRoot: ctx.activeRoot,
-      ...(args.initiative !== undefined ? { initiative: args.initiative } : {}),
-      ...(args.limit !== undefined ? { limit: args.limit } : {}),
-      ...(args.budget !== undefined ? { budget: args.budget } : {}),
-      ...(args.classes !== undefined ? { classes: args.classes } : {}),
-      ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
-    });
+    return runRelated(args, { activeRoot: ctx.activeRoot });
   },
 });

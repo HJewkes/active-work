@@ -1171,6 +1171,8 @@ function hitLogEntries(input: RenderedHits, ts: string): HitLogEntry[] {
       query: input.labels[i]!,
       ref: hit.ref,
       rank: hit.rank,
+      byteOffset: hit.byteOffset,
+      byteLength: hit.byteLength,
     })),
   );
   const foreignEntries = input.noteRanking.foreign.map((note, i) => ({
@@ -1180,6 +1182,8 @@ function hitLogEntries(input: RenderedHits, ts: string): HitLogEntry[] {
     query: input.subject,
     ref: note.ref,
     rank: i + 1,
+    byteOffset: null,
+    byteLength: null,
   }));
   return [...loopEntries, ...foreignEntries];
 }

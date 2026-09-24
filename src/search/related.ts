@@ -37,7 +37,7 @@ export const RELATED_DEFAULT_CLASSES = ['notes', 'sources', 'tasks', 'sessions']
 
 export type RelatedHit = Pick<
   ResolvedHit,
-  'ref' | 'class' | 'initiative' | 'title' | 'path' | 'excerpt'
+  'ref' | 'class' | 'initiative' | 'title' | 'path' | 'excerpt' | 'byteOffset' | 'byteLength'
 >;
 
 export interface RelatedDegradation {
@@ -94,8 +94,19 @@ export function withinBudget<T>(hits: T[], budget: number, render: (hit: T) => s
 }
 
 function toRelatedHit(hit: ResolvedHit): RelatedHit {
-  const { ref, class: cls, initiative, title, path, excerpt } = hit;
-  return { ref, class: cls, initiative, title, path, excerpt };
+  const { ref, class: cls, initiative, title, path, excerpt, byteOffset, byteLength } = hit;
+  return { ref, class: cls, initiative, title, path, excerpt, byteOffset, byteLength };
+}
+
+/**
+ * Handoff archives restate session records, which have their own class, and
+ * were served 15 times and opened 0 times in the week to 2026-09-23 (TP-331).
+ * `search` still finds them; only the unasked-for related block drops them.
+ */
+const NOT_SERVED_BY_RELATED = /(^|\/)sources\/handoff-archive[^/]*\.md$/;
+
+function servedByRelated(hit: ResolvedHit): boolean {
+  return hit.class !== 'sources' || hit.path === null || !NOT_SERVED_BY_RELATED.test(hit.path);
 }
 
 function openIndex(dbPath: string): WorkspaceGraph | RelatedDegradation {
@@ -125,7 +136,9 @@ async function searchOpenIndex(
     ...(input.initiative !== undefined ? { initiative: input.initiative } : {}),
     ...(input.activeRoot !== undefined ? { activeRoot: input.activeRoot } : {}),
   });
-  const kept = result.hits.filter((hit) => !exclude.has(hit.ref)).slice(0, limit);
+  const kept = result.hits
+    .filter((hit) => !exclude.has(hit.ref) && servedByRelated(hit))
+    .slice(0, limit);
   return {
     hits: withinBudget(
       kept.map(toRelatedHit),
