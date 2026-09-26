@@ -59,6 +59,8 @@ import audit from './audit.js';
 import contextGraph from './context-graph.js';
 import contextRelated from './context-related.js';
 import search from './search.js';
+import precedentExtract from './precedent-extract.js';
+import precedentSearch from './precedent-search.js';
 import list from './list.js';
 import worktreeSet from './worktree-set.js';
 import worktreeSetDefault from './worktree-set-default.js';
@@ -150,6 +152,8 @@ const ALL_COMMANDS: AnyCommand[] = [
   contextGraph,
   contextRelated,
   search,
+  precedentExtract,
+  precedentSearch,
   // discover / triage
   discover,
   fold,
