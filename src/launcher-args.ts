@@ -46,13 +46,41 @@ export function buildChannelArgs(channels: string[] | undefined): string[] {
   ];
 }
 
+export interface ClaudeArgsOptions {
+  /** Start the session with Remote Control; defaults to true for `aw` primary sessions. */
+  remoteControl?: boolean;
+}
+
 /**
  * Assemble the full `claude` argv. The prompt always follows a `--` so the
  * variadic channel flags can never swallow it as a channel target — the bug
  * that made `aw <slug>` collide the channel name with the bootstrap prompt.
+ *
+ * `--remote-control` takes an optional name, so it sits directly before `--`
+ * where no following token can be read as that name.
  */
-export function buildClaudeArgs(prompt: string, channels?: string[]): string[] {
-  return [...buildChannelArgs(channels), '--', prompt];
+export function buildClaudeArgs(
+  prompt: string,
+  channels?: string[],
+  opts: ClaudeArgsOptions = {},
+): string[] {
+  const remoteControl = opts.remoteControl ?? true;
+  return [
+    ...buildChannelArgs(channels),
+    ...(remoteControl ? ['--remote-control'] : []),
+    '--',
+    prompt,
+  ];
+}
+
+/**
+ * Assemble the `claude --resume` argv for `aw resume`. A resumed session is a
+ * primary session, so it gets Remote Control on the same terms as a launch.
+ * The flag goes last, where no following token can be read as its name.
+ */
+export function buildResumeArgs(sessionId: string, opts: ClaudeArgsOptions = {}): string[] {
+  const remoteControl = opts.remoteControl ?? true;
+  return ['--resume', sessionId, ...(remoteControl ? ['--remote-control'] : [])];
 }
 
 /**
@@ -61,9 +89,14 @@ export function buildClaudeArgs(prompt: string, channels?: string[]): string[] {
  */
 export const ADHOC_FLAGS = ['--adhoc', '--ad-hoc'];
 
+/** Opt out of Remote Control for one launch; `--no-remote-control` is the long alias. */
+export const NO_RC_FLAGS = ['--no-rc', '--no-remote-control'];
+
 export interface LauncherFlags {
   pick: boolean;
   adhoc: boolean;
+  /** False when `--no-rc` (or `--no-remote-control`) was given. */
+  remoteControl: boolean;
   positional: string[];
   /** True when a positional looks like an unknown flag, or more than one slug was given. */
   usageError: boolean;
@@ -75,11 +108,12 @@ export interface LauncherFlags {
  * alias — is unit-testable without executing the launcher.
  */
 export function parseLauncherFlags(args: string[]): LauncherFlags {
-  const known = new Set(['--pick', ...ADHOC_FLAGS]);
+  const known = new Set(['--pick', ...ADHOC_FLAGS, ...NO_RC_FLAGS]);
   const positional = args.filter((a) => !known.has(a));
   return {
     pick: args.includes('--pick'),
     adhoc: args.some((a) => ADHOC_FLAGS.includes(a)),
+    remoteControl: !args.some((a) => NO_RC_FLAGS.includes(a)),
     positional,
     usageError: positional.some((a) => a.startsWith('-')) || positional.length > 1,
   };

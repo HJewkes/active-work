@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildChannelArgs,
   buildClaudeArgs,
+  buildResumeArgs,
   mergeChannels,
   parseLauncherFlags,
 } from '../src/launcher-args.js';
@@ -120,6 +121,7 @@ describe('buildClaudeArgs', () => {
     expect(args).toEqual([
       '--dangerously-load-development-channels',
       'server:voltras',
+      '--remote-control',
       '--',
       'the bootstrap prompt',
     ]);
@@ -137,6 +139,7 @@ describe('buildClaudeArgs', () => {
       'plugin:foo@market',
       '--dangerously-load-development-channels',
       'server:voltras',
+      '--remote-control',
       '--',
       'the bootstrap prompt',
     ]);
@@ -144,13 +147,37 @@ describe('buildClaudeArgs', () => {
   });
 
   it('still terminates with `--` when there are no channels', () => {
-    expect(buildClaudeArgs('hello')).toEqual(['--', 'hello']);
+    expect(buildClaudeArgs('hello')).toEqual(['--remote-control', '--', 'hello']);
   });
 
   it('keeps a prompt that starts with a dash from being parsed as a flag', () => {
     const args = buildClaudeArgs('-- not a flag', ['voltras']);
     expect(args.at(-2)).toBe('--');
     expect(args.at(-1)).toBe('-- not a flag');
+  });
+
+  // `--remote-control [name]` takes an optional name: anywhere but directly
+  // before `--` it would swallow a channel target or the prompt as that name.
+  it('enables Remote Control by default, directly before the `--` terminator', () => {
+    const args = buildClaudeArgs('the bootstrap prompt', ['voltras']);
+    expect(args.slice(-3)).toEqual(['--remote-control', '--', 'the bootstrap prompt']);
+  });
+
+  it('omits --remote-control when the caller opts out', () => {
+    const args = buildClaudeArgs('the bootstrap prompt', ['voltras'], { remoteControl: false });
+    expect(args).toEqual([
+      '--dangerously-load-development-channels',
+      'server:voltras',
+      '--',
+      'the bootstrap prompt',
+    ]);
+  });
+});
+
+describe('buildResumeArgs', () => {
+  it('resumes with Remote Control by default and drops it on opt-out', () => {
+    expect(buildResumeArgs('abc-123')).toEqual(['--resume', 'abc-123', '--remote-control']);
+    expect(buildResumeArgs('abc-123', { remoteControl: false })).toEqual(['--resume', 'abc-123']);
   });
 });
 
@@ -159,6 +186,7 @@ describe('parseLauncherFlags', () => {
     expect(parseLauncherFlags(['voltras-workspace'])).toEqual({
       pick: false,
       adhoc: false,
+      remoteControl: true,
       positional: ['voltras-workspace'],
       usageError: false,
     });
@@ -185,10 +213,22 @@ describe('parseLauncherFlags', () => {
     expect(f).toEqual({
       pick: true,
       adhoc: true,
+      remoteControl: true,
       positional: [],
       usageError: false,
     });
   });
+
+  it.each(['--no-rc', '--no-remote-control'])(
+    'accepts %s as a Remote Control opt-out, not a usage error',
+    (flag) => {
+      const f = parseLauncherFlags(['voltras-workspace', '--adhoc', flag]);
+      expect(f.remoteControl).toBe(false);
+      expect(f.adhoc).toBe(true);
+      expect(f.positional).toEqual(['voltras-workspace']);
+      expect(f.usageError).toBe(false);
+    },
+  );
 
   it('still flags a genuinely unknown flag as a usage error', () => {
     expect(parseLauncherFlags(['voltras', '--bogus']).usageError).toBe(true);

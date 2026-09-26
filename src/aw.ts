@@ -19,7 +19,12 @@ import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
 import { resolveLaunchCwd } from './commands/_open-helpers.js';
-import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
+import {
+  buildClaudeArgs,
+  buildResumeArgs,
+  NO_RC_FLAGS,
+  parseLauncherFlags,
+} from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { applyProfileEnv } from './launcher-profile.js';
 import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './launcher-init.js';
@@ -140,13 +145,19 @@ async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string 
   return String(choice);
 }
 
-function spawnClaude(opened: OpenSuccess, cwd: string, leaseId?: string): Promise<number> {
+function spawnClaude(
+  opened: OpenSuccess,
+  cwd: string,
+  remoteControl: boolean,
+  leaseId?: string,
+): Promise<number> {
   const { env: profileEnv, warning } = applyProfileEnv(process.env, opened.profile, (dir) =>
     existsSync(dir),
   );
   if (warning) process.stderr.write(color.yellow(`warning: ${warning}\n`));
+  const claudeArgs = buildClaudeArgs(opened.prompt, opened.channels, { remoteControl });
   return new Promise((resolve) => {
-    const child = spawn('claude', buildClaudeArgs(opened.prompt, opened.channels), {
+    const child = spawn('claude', claudeArgs, {
       cwd,
       stdio: 'inherit',
       // Explicit env (the default is an implicit `process.env`) so the session
@@ -178,9 +189,13 @@ function spawnClaude(opened: OpenSuccess, cwd: string, leaseId?: string): Promis
   });
 }
 
-function spawnClaudeResume(sessionId: string, cwd: string): Promise<number> {
+function spawnClaudeResume(
+  sessionId: string,
+  cwd: string,
+  remoteControl: boolean,
+): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn('claude', ['--resume', sessionId], {
+    const child = spawn('claude', buildResumeArgs(sessionId, { remoteControl }), {
       cwd,
       stdio: 'inherit',
       env: process.env,
@@ -212,9 +227,11 @@ function spawnClaudeResume(sessionId: string, cwd: string): Promise<number> {
  * doesn't need to already know or remember where the session ran.
  */
 async function runResume(argv: string[]): Promise<void> {
-  const rest = argv.slice(3);
+  const tail = argv.slice(3);
+  const remoteControl = !tail.some((a) => NO_RC_FLAGS.includes(a));
+  const rest = tail.filter((a) => !NO_RC_FLAGS.includes(a));
   if (rest.length !== 1 || rest[0]!.startsWith('-')) {
-    process.stderr.write(color.red('usage: aw resume <session_id>\n'));
+    process.stderr.write(color.red('usage: aw resume <session_id> [--no-rc]\n'));
     process.exit(EXIT.USAGE);
   }
   const sessionId = rest[0]!;
@@ -230,7 +247,7 @@ async function runResume(argv: string[]): Promise<void> {
     process.stderr.write(
       color.dim(`Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}).\n`),
     );
-    const code = await spawnClaudeResume(sessionId, resolved.cwd);
+    const code = await spawnClaudeResume(sessionId, resolved.cwd, remoteControl);
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);
@@ -257,7 +274,10 @@ function printHelp(): void {
       '                 Frame the session as ad-hoc work on the workstream',
       '                 (awaiting your task), not a handoff continuation.',
       '                 `--ad-hoc` is accepted as an alias.',
-      '  aw resume <session_id>',
+      '  aw <slug> --no-rc',
+      '                 Launch without Remote Control (on by default).',
+      '                 `--no-remote-control` is accepted as an alias.',
+      '  aw resume <session_id> [--no-rc]',
       "                 Find the directory a session id ran in (active-work's",
       '                 session log, then ~/.claude/projects) and resume it there.',
       '  aw --help      Show this message.',
@@ -284,8 +304,9 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   // `--pick` forces the interactive picker instead of resolving from cwd;
-  // `--adhoc` (alias `--ad-hoc`) reframes the prompt as ad-hoc work.
-  const { pick, adhoc, positional, usageError } = parseLauncherFlags(args);
+  // `--adhoc` (alias `--ad-hoc`) reframes the prompt as ad-hoc work;
+  // `--no-rc` launches without Remote Control.
+  const { pick, adhoc, remoteControl, positional, usageError } = parseLauncherFlags(args);
   if (usageError) {
     process.stderr.write(
       color.red(
@@ -330,7 +351,7 @@ export async function main(argv: string[]): Promise<void> {
         slug: opened.slug,
         cwd: launchCwd,
       },
-      (leaseId) => spawnClaude(opened, launchCwd, leaseId),
+      (leaseId) => spawnClaude(opened, launchCwd, remoteControl, leaseId),
     );
     process.exit(code);
   } catch (err) {
