@@ -53,7 +53,7 @@ const ResultSchema = z.object({
   facetsBackfilled: z.number(),
   facetBacklog: z.number(),
   episodesWritten: z.number(),
-  episodeBacklog: z.number(),
+  episodeBacklog: z.number().nullable(),
   factsAdded: z.number(),
   turnsRolledUp: z.number(),
   tasksRequested: z.number(),

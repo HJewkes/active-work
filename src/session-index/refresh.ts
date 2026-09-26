@@ -46,6 +46,11 @@ export interface RefreshOptions {
   facetLimit?: number;
   /** Backlogged sessions segmented into episodes this pass; `Infinity` clears the backlog. */
   episodeLimit?: number;
+  /**
+   * Check every session for a stale episode, not only those this pass touched.
+   * Defaults to true; the daemon sweeps only now and then (TP-343).
+   */
+  episodeSweep?: boolean;
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
   /**
@@ -91,8 +96,8 @@ export interface RefreshSummary {
   facetBacklog: number;
   /** Sessions whose episodes this pass rewrote (TP-342). */
   episodesWritten: number;
-  /** Sessions whose episodes are still stale after this pass. */
-  episodeBacklog: number;
+  /** Sessions whose episodes are still stale after this pass; null when it did not sweep. */
+  episodeBacklog: number | null;
   factsAdded: number;
   turnsRolledUp: number;
   /** Task ids handed to the resolver, and rows it wrote. */
@@ -190,7 +195,13 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       facetLimit: options.facetLimit,
     });
     // After the rollup, because segmentation reads the wake causes it derives.
-    const episodes = await refreshEpisodes(graph, offsetsBefore, options.episodeLimit, yieldPoint);
+    const episodes = await refreshEpisodes(
+      graph,
+      offsetsBefore,
+      options.episodeLimit,
+      yieldPoint,
+      options.episodeSweep,
+    );
     await yieldPoint();
 
     // After the transcripts, so `mentions` and the task join see the rows the

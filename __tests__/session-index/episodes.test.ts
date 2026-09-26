@@ -96,6 +96,12 @@ async function unsegmentedSessions(): Promise<Map<number, number>> {
 
 const noYield = (): Promise<void> => Promise.resolve();
 
+/** A billed request line from `from`'s transcript, copied verbatim into `into`'s under `into`'s session id. */
+function copiedRequest(from: string, into: string, ts: string): void {
+  const [, request] = exchange(from, ts);
+  appendFileSync(transcriptPath(into), renderTranscript([{ ...request, sessionId: into }]));
+}
+
 describe('episode refresh', () => {
   it('refreshEpisodes yields to the event loop between sessions', async () => {
     const before = await unsegmentedSessions();
@@ -172,5 +178,34 @@ describe('episode refresh', () => {
     const summary = await refresh({ episodeLimit: 0 });
 
     expect(summary).toMatchObject({ episodesWritten: 1, episodeBacklog: 0 });
+  });
+
+  it('a scoped stale check agrees with a full sweep for the sessions it names', async () => {
+    const ts = '2026-07-01T00:00:00Z';
+    writeSession('sess-1', ts);
+    writeSession('sess-2', ts);
+    await refresh();
+    // sess-3 holds only a copy of sess-1's request, indexed later, so the dedup gives it to sess-1.
+    copiedRequest('sess-1', 'sess-3', ts);
+    await refresh();
+    graph.db.prepare('DELETE FROM episode').run();
+
+    const full = staleEpisodeSessions(graph.db);
+    const scopes = [['sess-1'], ['sess-3'], ['sess-1', 'sess-3'], ['sess-2', 'sess-3'], []];
+    const scoped = scopes.map((ids) => staleEpisodeSessions(graph.db, ids));
+
+    expect(full).toEqual(['sess-1', 'sess-2']);
+    expect(scoped).toEqual(scopes.map((ids) => full.filter((id) => ids.includes(id))));
+  });
+
+  it('a pass that does not sweep still segments every session whose transcript moved, and reports no backlog count', async () => {
+    const before = await unsegmentedSessions();
+    const alsoMoved = graph.transcripts.list().find((row) => row.sourceKey.includes('sess-2'));
+    before.delete(alsoMoved!.sourceId);
+
+    const pass = await refreshEpisodes(graph, before, Infinity, noYield, false);
+
+    expect(pass).toEqual({ episodesWritten: 2, episodeBacklog: null });
+    expect(staleEpisodeSessions(graph.db)).toEqual(['sess-3']);
   });
 });
