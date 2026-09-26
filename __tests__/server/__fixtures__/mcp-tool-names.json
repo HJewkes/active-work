@@ -49,6 +49,7 @@
   "active__setup",
   "active__source__add",
   "active__source__list",
+  "active__source__read",
   "active__sync",
   "active__task__add",
   "active__task__delete",

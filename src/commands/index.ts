@@ -53,6 +53,7 @@ import artifactPrune from './artifact-prune.js';
 import artifactStatus from './artifact-status.js';
 import sourceAdd from './source-add.js';
 import sourceList from './source-list.js';
+import sourceRead from './source-read.js';
 
 // Worktree / cross-initiative reads
 import audit from './audit.js';
@@ -136,6 +137,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   // sources / artifacts
   sourceAdd,
   sourceList,
+  sourceRead,
   artifactAddBranch,
   artifactAddStash,
   artifactList,
