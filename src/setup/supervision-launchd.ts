@@ -72,6 +72,20 @@ export interface PlistOptions {
   nodeBin?: string;
 }
 
+const SYSTEM_PATH_DIRS = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+  '/usr/sbin',
+  '/sbin',
+];
+
+/** launchd starts jobs with a bare PATH; child tools such as `gh` need Homebrew's bin (TP-327). */
+function daemonPath(nodeBin: string): string {
+  return [...new Set([nodePath.dirname(nodeBin), ...SYSTEM_PATH_DIRS])].join(':');
+}
+
 /** Render the launchd plist for the daemon. */
 export function renderPlist(opts: PlistOptions): string {
   const node = opts.nodeBin ?? process.execPath;
@@ -94,12 +108,15 @@ export function renderPlist(opts: PlistOptions): string {
     '  <true/>',
     '  <key>KeepAlive</key>',
     '  <true/>',
+    // Background throttles CPU and I/O enough to stall related queries past agent-chat's budget (TP-343).
     '  <key>ProcessType</key>',
-    '  <string>Background</string>',
+    '  <string>Interactive</string>',
     '  <key>EnvironmentVariables</key>',
     '  <dict>',
     '    <key>NODE_ENV</key>',
     '    <string>production</string>',
+    '    <key>PATH</key>',
+    `    <string>${escapeXml(daemonPath(node))}</string>`,
     '  </dict>',
     '  <key>StandardOutPath</key>',
     `  <string>${escapeXml(nodePath.join(logDir, 'daemon.out.log'))}</string>`,
