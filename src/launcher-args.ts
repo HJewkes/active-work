@@ -74,6 +74,16 @@ export function buildClaudeArgs(
 }
 
 /**
+ * Assemble the `claude --resume` argv for `aw resume`. A resumed session is a
+ * primary session, so it gets Remote Control on the same terms as a launch.
+ * The flag goes last, where no following token can be read as its name.
+ */
+export function buildResumeArgs(sessionId: string, opts: ClaudeArgsOptions = {}): string[] {
+  const remoteControl = opts.remoteControl ?? true;
+  return ['--resume', sessionId, ...(remoteControl ? ['--remote-control'] : [])];
+}
+
+/**
  * `--adhoc` is the canonical spelling; `--ad-hoc` is accepted as an alias so
  * the natural hyphenated form doesn't trip the unknown-flag guard below.
  */

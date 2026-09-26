@@ -19,7 +19,12 @@ import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
 import { resolveLaunchCwd } from './commands/_open-helpers.js';
-import { buildClaudeArgs, parseLauncherFlags } from './launcher-args.js';
+import {
+  buildClaudeArgs,
+  buildResumeArgs,
+  NO_RC_FLAGS,
+  parseLauncherFlags,
+} from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
 import { applyProfileEnv } from './launcher-profile.js';
 import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './launcher-init.js';
@@ -184,9 +189,13 @@ function spawnClaude(
   });
 }
 
-function spawnClaudeResume(sessionId: string, cwd: string): Promise<number> {
+function spawnClaudeResume(
+  sessionId: string,
+  cwd: string,
+  remoteControl: boolean,
+): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn('claude', ['--resume', sessionId], {
+    const child = spawn('claude', buildResumeArgs(sessionId, { remoteControl }), {
       cwd,
       stdio: 'inherit',
       env: process.env,
@@ -218,9 +227,11 @@ function spawnClaudeResume(sessionId: string, cwd: string): Promise<number> {
  * doesn't need to already know or remember where the session ran.
  */
 async function runResume(argv: string[]): Promise<void> {
-  const rest = argv.slice(3);
+  const tail = argv.slice(3);
+  const remoteControl = !tail.some((a) => NO_RC_FLAGS.includes(a));
+  const rest = tail.filter((a) => !NO_RC_FLAGS.includes(a));
   if (rest.length !== 1 || rest[0]!.startsWith('-')) {
-    process.stderr.write(color.red('usage: aw resume <session_id>\n'));
+    process.stderr.write(color.red('usage: aw resume <session_id> [--no-rc]\n'));
     process.exit(EXIT.USAGE);
   }
   const sessionId = rest[0]!;
@@ -236,7 +247,7 @@ async function runResume(argv: string[]): Promise<void> {
     process.stderr.write(
       color.dim(`Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}).\n`),
     );
-    const code = await spawnClaudeResume(sessionId, resolved.cwd);
+    const code = await spawnClaudeResume(sessionId, resolved.cwd, remoteControl);
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);
@@ -266,7 +277,7 @@ function printHelp(): void {
       '  aw <slug> --no-rc',
       '                 Launch without Remote Control (on by default).',
       '                 `--no-remote-control` is accepted as an alias.',
-      '  aw resume <session_id>',
+      '  aw resume <session_id> [--no-rc]',
       "                 Find the directory a session id ran in (active-work's",
       '                 session log, then ~/.claude/projects) and resume it there.',
       '  aw --help      Show this message.',

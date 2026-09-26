@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildChannelArgs,
   buildClaudeArgs,
+  buildResumeArgs,
   mergeChannels,
   parseLauncherFlags,
 } from '../src/launcher-args.js';
@@ -170,6 +171,13 @@ describe('buildClaudeArgs', () => {
       '--',
       'the bootstrap prompt',
     ]);
+  });
+});
+
+describe('buildResumeArgs', () => {
+  it('resumes with Remote Control by default and drops it on opt-out', () => {
+    expect(buildResumeArgs('abc-123')).toEqual(['--resume', 'abc-123', '--remote-control']);
+    expect(buildResumeArgs('abc-123', { remoteControl: false })).toEqual(['--resume', 'abc-123']);
   });
 });
 
