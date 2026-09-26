@@ -13,7 +13,8 @@
  * invocations so the two surfaces stay distinct.
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as clackPrompts from '@clack/prompts';
 import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
@@ -77,7 +78,7 @@ async function runOpen(
  * Open `slug`; when nothing matches and someone is at the terminal, offer to
  * scaffold it and open an init session instead (TP-356).
  */
-async function openSlugOrInit(slug: string, adhoc: boolean): Promise<OpenSuccess> {
+export async function openSlugOrInit(slug: string, adhoc: boolean): Promise<OpenSuccess> {
   try {
     return (await runOpen({ slug, adhoc })) as OpenSuccess;
   } catch (err) {
@@ -340,4 +341,24 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-void main(process.argv);
+/**
+ * True when this module is the one Node was invoked to run directly (the
+ * `aw` bin), not merely imported (e.g. by a test exercising
+ * `openSlugOrInit` in isolation). `argv[1]` is the *bin* path — often a
+ * symlink (npm global installs, `~/.local/bin/aw`) — while `import.meta.url`
+ * is the real, resolved file, so the comparison has to go through
+ * `realpathSync` on both sides. A path that can't be resolved just means
+ * "not the entry point", not an error worth throwing over.
+ */
+function isEntryPoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  void main(process.argv);
+}
