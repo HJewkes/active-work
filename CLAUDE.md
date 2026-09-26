@@ -54,4 +54,4 @@ pnpm build           # tsup
 
 ## Reference
 
-Brain (`~/Documents/projects/brain`) is the closest sibling project in style. Use it as a reference for build patterns, MCP server layout, dashboard scaffolding, and postinstall behavior — but don't import from it.
+Brain (`~/projects/brain`) is the closest sibling project in style. Use it as a reference for build patterns, MCP server layout, dashboard scaffolding, and postinstall behavior — but don't import from it.
