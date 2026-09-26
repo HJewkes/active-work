@@ -14,6 +14,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as clackPrompts from '@clack/prompts';
 import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
@@ -77,7 +78,7 @@ async function runOpen(
  * Open `slug`; when nothing matches and someone is at the terminal, offer to
  * scaffold it and open an init session instead (TP-356).
  */
-async function openSlugOrInit(slug: string, adhoc: boolean): Promise<OpenSuccess> {
+export async function openSlugOrInit(slug: string, adhoc: boolean): Promise<OpenSuccess> {
   try {
     return (await runOpen({ slug, adhoc })) as OpenSuccess;
   } catch (err) {
@@ -340,4 +341,8 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
-void main(process.argv);
+// Only run as a side effect of executing this file directly (the `aw` bin) —
+// not when a test imports it to exercise `openSlugOrInit` in isolation.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  void main(process.argv);
+}
