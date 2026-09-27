@@ -38,6 +38,8 @@
   "active__open",
   "active__paths",
   "active__pause",
+  "active__precedent__extract",
+  "active__precedent__search",
   "active__preflight",
   "active__prompt",
   "active__rename",
