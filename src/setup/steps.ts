@@ -80,6 +80,7 @@ function resolveDeps(deps: SetupDeps): Required<
   update: boolean;
   repoRoot: string;
   cliEntry: string;
+  agentChatHome: string;
 } {
   const fs = deps.fs ?? fsp;
   const spawn = deps.spawn ?? nodeSpawn;
@@ -91,6 +92,13 @@ function resolveDeps(deps: SetupDeps): Required<
     configRoot: getConfigRoot(),
     homeDir,
   };
+  // `AGENT_CHAT_HOME` (matching agent-chat's own `home()` in `src/paths.ts`)
+  // only overrides the default, real home directory — once a caller injects
+  // `paths` (as every test does), it fully controls where agent-chat's home
+  // resolves to, regardless of what's exported in the real shell.
+  const agentChatHome = deps.paths
+    ? nodePath.join(homeDir, '.agent-chat')
+    : (process.env.AGENT_CHAT_HOME ?? nodePath.join(homeDir, '.agent-chat'));
   // The bundled skill lives at `<repoRoot>/skill`. Find it by walking up
   // from this module until we hit a directory containing `package.json`
   // — works both for source (`src/setup/steps.ts`) and bundled
@@ -102,6 +110,7 @@ function resolveDeps(deps: SetupDeps): Required<
     spawn,
     prompts,
     paths,
+    agentChatHome,
     yes: deps.yes ?? false,
     update: deps.update ?? false,
     repoRoot,
@@ -477,13 +486,11 @@ interface AgentChatHooksConfig {
 }
 
 /**
- * `~/.agent-chat/hooks.json` (honoring `AGENT_CHAT_HOME`, matching agent-chat's
- * own `home()` in `src/paths.ts`) — outside this build's control, so an
- * override or a missing home directory both have to degrade gracefully.
+ * `~/.agent-chat/hooks.json` — outside this build's control, so a missing
+ * home directory has to degrade gracefully.
  */
-function agentChatHooksPath(paths: StepPaths): string {
-  const home = process.env.AGENT_CHAT_HOME ?? nodePath.join(paths.homeDir, '.agent-chat');
-  return nodePath.join(home, 'hooks.json');
+function agentChatHooksPath(agentChatHome: string): string {
+  return nodePath.join(agentChatHome, 'hooks.json');
 }
 
 /**
@@ -496,9 +503,8 @@ function agentChatHooksPath(paths: StepPaths): string {
  * error — this build must not be what creates agent-chat's home directory.
  */
 export async function stepRegisterAgentChatHooks(deps: SetupDeps = {}): Promise<StepResult> {
-  const { fs, paths } = resolveDeps(deps);
-  const hooksPath = agentChatHooksPath(paths);
-  const agentChatHome = nodePath.dirname(hooksPath);
+  const { fs, agentChatHome } = resolveDeps(deps);
+  const hooksPath = agentChatHooksPath(agentChatHome);
 
   try {
     await fs.stat(agentChatHome);

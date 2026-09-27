@@ -245,6 +245,22 @@ describe('stepRegisterAgentChatHooks', () => {
     if (!result.ok) expect(result.error).toMatch(/not valid JSON/);
     expect(await fs.readFile(hooksPath(), 'utf8')).toBe('{ not json');
   });
+
+  it('resolves under the injected homeDir even when AGENT_CHAT_HOME points elsewhere', async () => {
+    vi.stubEnv('AGENT_CHAT_HOME', '/nonexistent/bogus/agent-chat-home');
+    try {
+      await fs.mkdir(path.join(paths.homeDir, '.agent-chat'), { recursive: true });
+
+      const result = await stepRegisterAgentChatHooks({ paths });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.done).toBe(true);
+
+      const config = JSON.parse(await fs.readFile(hooksPath(), 'utf8'));
+      expect(config.on_spawn).toEqual(['active-work hooks agent-chat-spawn']);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('stepInstallSkill', () => {
