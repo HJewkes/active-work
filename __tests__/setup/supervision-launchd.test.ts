@@ -117,6 +117,32 @@ describe('supervision-launchd', () => {
       expect(plist).toContain('<string>--port</string>');
       expect(plist).toContain('<string>7411</string>');
     });
+
+    it('the daemon plist asks launchd for an interactive process, not a background one', () => {
+      const plist = renderPlist({
+        cliEntry: '/cli.js',
+        homeDir: '/Users/tester',
+        nodeBin: '/node',
+      });
+
+      expect(plist).toMatch(/<key>ProcessType<\/key>\s*<string>Interactive<\/string>/);
+      expect(plist).not.toContain('Background');
+    });
+
+    it("the daemon plist carries a PATH that starts with the node binary's directory and includes /opt/homebrew/bin", () => {
+      const plist = renderPlist({
+        cliEntry: '/cli.js',
+        homeDir: '/Users/tester',
+        nodeBin: '/Users/tester/.nvm/versions/node/v22/bin/node',
+      });
+
+      const path = /<key>PATH<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1];
+      const dirs = path?.split(':') ?? [];
+      expect(dirs[0]).toBe('/Users/tester/.nvm/versions/node/v22/bin');
+      expect(dirs).toContain('/opt/homebrew/bin');
+      expect(dirs).toContain('/usr/bin');
+      expect(new Set(dirs).size).toBe(dirs.length);
+    });
   });
 
   describe('installLaunchAgent', () => {
