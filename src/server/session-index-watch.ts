@@ -56,6 +56,31 @@ export async function yieldToReaders(): Promise<void> {
   await readerGate.idle(IDLE_CAP_MS);
 }
 
+/** Every this many passes the daemon checks all sessions for stale episodes, not only touched ones. */
+const EPISODE_SWEEP_EVERY = 10;
+
+/**
+ * Decides which passes sweep the episode backlog: the first, every
+ * `EPISODE_SWEEP_EVERY`th, and any pass after one that failed or left a backlog.
+ */
+function episodeSweepPolicy(): {
+  next(): boolean;
+  settle(backlog: number | null): void;
+  failed(): void;
+} {
+  let passes = 0;
+  let backlogCleared = false;
+  return {
+    next: () => passes++ % EPISODE_SWEEP_EVERY === 0 || !backlogCleared,
+    settle: (backlog) => {
+      if (backlog !== null) backlogCleared = backlog === 0;
+    },
+    failed: () => {
+      backlogCleared = false;
+    },
+  };
+}
+
 /** Sampling interval for the stall gauge; a stall shorter than this does not register. */
 const STALL_RESOLUTION_MS = 10;
 
@@ -126,12 +151,19 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
   }
 
   let lastMaxLoopStallMs: number | null = null;
+  const sweep = episodeSweepPolicy();
   const pass = async () => {
-    const measured = await measureLoopStall(() =>
-      runRefresh({ graph, yieldPoint: yieldToReaders }),
-    );
-    lastMaxLoopStallMs = measured.maxStallMs;
-    return measured.result;
+    try {
+      const measured = await measureLoopStall(() =>
+        runRefresh({ graph, yieldPoint: yieldToReaders, episodeSweep: sweep.next() }),
+      );
+      lastMaxLoopStallMs = measured.maxStallMs;
+      sweep.settle(measured.result.episodeBacklog);
+      return measured.result;
+    } catch (err) {
+      sweep.failed();
+      throw err;
+    }
   };
   const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
     onError: (err) => log.warn({ err }, 'session index refresh failed'),
