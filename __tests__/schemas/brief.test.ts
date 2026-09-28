@@ -158,3 +158,63 @@ describe('BriefFrontmatterSchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('BriefFrontmatterSchema autonomy block', () => {
+  const autonomy = {
+    mode: 'burndown',
+    lanes: 2,
+    accounts: ['agents'],
+    grants: ['merge-on-green-approve', 'task-close-on-merged-pr'],
+    repo: '~/projects/agent-chat',
+  };
+
+  it('keeps every field the burndown tick reads', () => {
+    const result = BriefFrontmatterSchema.parse({ ...validBase, autonomy });
+    expect(result.autonomy).toEqual(autonomy);
+  });
+
+  it('accepts a bare opt-in without adding defaults', () => {
+    const result = BriefFrontmatterSchema.parse({ ...validBase, autonomy: { mode: 'burndown' } });
+    expect(result.autonomy).toEqual({ mode: 'burndown' });
+  });
+
+  it('rejects an unknown key inside autonomy instead of stripping it', () => {
+    const result = BriefFrontmatterSchema.safeParse({
+      ...validBase,
+      autonomy: { ...autonomy, grant: ['merge-on-green-approve'] },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]).toMatchObject({ code: 'unrecognized_keys', keys: ['grant'] });
+  });
+
+  it('rejects a grant the unlock table does not define, naming the valid ones', () => {
+    const result = BriefFrontmatterSchema.safeParse({
+      ...validBase,
+      autonomy: { mode: 'burndown', grants: ['merge-anything'] },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('merge-on-green-approve');
+  });
+
+  it('rejects any mode but burndown and says how to opt out', () => {
+    const result = BriefFrontmatterSchema.safeParse({ ...validBase, autonomy: { mode: 'manual' } });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toContain('remove the autonomy block');
+  });
+
+  it.each([0, -1, 1.5])('rejects lanes %j', (lanes) => {
+    const result = BriefFrontmatterSchema.safeParse({
+      ...validBase,
+      autonomy: { mode: 'burndown', lanes },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an account that could escape the profile root', () => {
+    const result = BriefFrontmatterSchema.safeParse({
+      ...validBase,
+      autonomy: { mode: 'burndown', accounts: ['../personal'] },
+    });
+    expect(result.success).toBe(false);
+  });
+});
