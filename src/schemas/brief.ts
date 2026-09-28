@@ -38,6 +38,44 @@ export const channelTarget = z
       'channel must be a target like "server:voltras", "plugin:name@marketplace", or a bare server name',
   });
 
+// Actions a brief may unlock for agent-chat's burndown tick (burndown design, section 5).
+export const AUTONOMY_GRANTS = [
+  'merge-on-green-approve',
+  'task-close-on-merged-pr',
+  'release-through-ci',
+] as const;
+
+const profileName = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9._-]+$/, {
+    message: 'profile must be a bare directory name (letters, digits, dot, dash, underscore)',
+  })
+  .refine((v) => v !== '.' && v !== '..', { message: 'profile must not be "." or ".."' });
+
+// Opt-in to unattended dispatch, read by agent-chat's `burndown` tick. Strict so
+// a misspelled key or grant fails loudly instead of silently granting nothing.
+// Defaults stay unset here: the tick applies them, so a rewrite never adds keys.
+export const AutonomySchema = z
+  .object({
+    mode: z.literal('burndown', {
+      error: 'autonomy.mode must be "burndown"; remove the autonomy block to opt out',
+    }),
+    lanes: positiveInt.optional(),
+    accounts: z.array(profileName).optional(),
+    grants: z
+      .array(
+        z.enum(AUTONOMY_GRANTS, {
+          error: `autonomy.grants entries must be one of: ${AUTONOMY_GRANTS.join(', ')}`,
+        }),
+      )
+      .optional(),
+    repo: z.string().min(1).optional(),
+  })
+  .strict();
+
+export type Autonomy = z.infer<typeof AutonomySchema>;
+
 export const BriefFrontmatterSchema = z
   .object({
     schema_version: positiveInt,
@@ -61,14 +99,7 @@ export const BriefFrontmatterSchema = z
     // usage budget without the caller remembering to switch first. Restricted
     // to a bare directory name — it is joined onto the profile root, so path
     // separators and traversal must not survive validation.
-    profile: z
-      .string()
-      .min(1)
-      .regex(/^[A-Za-z0-9._-]+$/, {
-        message: 'profile must be a bare directory name (letters, digits, dot, dash, underscore)',
-      })
-      .refine((v) => v !== '.' && v !== '..', { message: 'profile must not be "." or ".."' })
-      .optional(),
+    profile: profileName.optional(),
     // High-water mark for task ids: the largest numeric suffix ever issued
     // for this initiative's task_prefix. Optional so pre-existing brief.md
     // files (written before this field existed) keep validating; task.add
@@ -76,6 +107,7 @@ export const BriefFrontmatterSchema = z
     // task.delete writes this field (AW-94) — and only when removing the
     // current highest id — so task.add itself never rewrites brief.md.
     task_seq: TaskSeqSchema.optional(),
+    autonomy: AutonomySchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.state === 'focused' && value.rank === undefined) {
