@@ -456,12 +456,12 @@ describe('runDoctor', () => {
       '  - id: n1',
       '    text: cross-initiative reference',
       '    kind: task',
-      '    ref: VW-68',
+      '    ref: EX-68',
     ]);
     await fs.writeFile(
-      path.join(betaDir, 'tasks', 'VW-68.yml'),
+      path.join(betaDir, 'tasks', 'EX-68.yml'),
       [
-        'id: VW-68',
+        'id: EX-68',
         'title: Lives in beta, not alpha',
         'priority: 1',
         'status: open',
@@ -476,7 +476,7 @@ describe('runDoctor', () => {
     const check = report.checks.find((c) => c.name === 'task-refs')!;
     expect(check.status).toBe('warn');
     expect(check.detail).toContain('alpha/sessions/2026-07-01-s1.md');
-    expect(check.detail).toContain('VW-68');
+    expect(check.detail).toContain('EX-68');
   });
 });
 

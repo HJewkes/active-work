@@ -184,8 +184,8 @@ export function TasksView({ refreshToken }: ViewProps): React.JSX.Element {
     <div style={{ display: 'flex', flexDirection: 'column', gap: sp[10] }}>
       <h1 style={{ margin: 0, fontSize: 22, color: palette.textPrimary }}>Open tasks</h1>
       <p style={{ margin: 0, fontSize: 12, color: palette.textTertiary }}>
-        {tasks.length} open task(s) across {sections.length} initiative(s). Drag a row to reorder
-        within its initiative; use Done to complete a task.
+        {tasks.length} open task(s) across {sections.length} initiative(s). Drag a row to
+        reorder within its initiative; use Done to complete a task.
       </p>
       {sections.map(({ slug, tasks: sectionTasks }) => (
         <div key={slug} style={{ display: 'flex', flexDirection: 'column', gap: sp[4] }}>

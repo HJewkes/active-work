@@ -93,7 +93,7 @@ describe('bootstrap loop retrieval', () => {
       await writeLoopSession(root);
       const retriever = fixed([
         hit('note:sample-initiative/2026-05-01-refs.md', SLUG, 'Refs are minted at write'),
-        hit('note:relay/2026-04-01-ids.md', 'relay', 'Ids need a prefix'),
+        hit('note:example-app/2026-04-01-ids.md', 'example-app', 'Ids need a prefix'),
       ]);
 
       const { prompt } = await bootstrap(root, {
@@ -114,7 +114,7 @@ describe('bootstrap loop retrieval', () => {
       await writeLoopSession(root);
       const retriever = fixed([
         hit('note:sample-initiative/2026-05-01-refs.md', SLUG, 'Refs are minted at write'),
-        hit('note:relay/2026-04-01-ids.md', 'relay', 'Ids need a prefix'),
+        hit('note:example-app/2026-04-01-ids.md', 'example-app', 'Ids need a prefix'),
       ]);
 
       const { prompt } = await bootstrap(root, {
@@ -123,7 +123,7 @@ describe('bootstrap loop retrieval', () => {
       });
 
       expect(prompt).toMatch(
-        /ref 2026-05-11-0900-loop-session#s2\)\n {4}see: \[from `relay`\] note:relay\/2026-04-01-ids\.md "Ids need a prefix"\n/,
+        /ref 2026-05-11-0900-loop-session#s2\)\n {4}see: \[from `example-app`\] note:example-app\/2026-04-01-ids\.md "Ids need a prefix"\n/,
       );
     });
   });
@@ -140,7 +140,7 @@ describe('bootstrap loop retrieval', () => {
 
       await bootstrap(root, {
         loopRetriever: fixed([hit('note:sample-initiative/a.md', SLUG, 'A')]),
-        noteRelevance: () => [{ ref: 'note:relay/b.md', scorePerTerm: 9, title: 'B' }],
+        noteRelevance: () => [{ ref: 'note:example-app/b.md', scorePerTerm: 9, title: 'B' }],
         hitLog: log.writer,
       });
 
@@ -158,7 +158,7 @@ describe('bootstrap loop retrieval', () => {
           slug: SLUG,
           trigger: 'bootstrap-foreign',
           query: expect.stringContaining('SI-'),
-          ref: 'note:relay/b.md',
+          ref: 'note:example-app/b.md',
           rank: 1,
           byteOffset: null,
           byteLength: null,

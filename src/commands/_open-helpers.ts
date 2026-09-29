@@ -85,8 +85,8 @@ function matchSlugPrefix(
  * about where *dispatched agents* need to run (they must be in a git repo to
  * commit); it is not a request to move the operator's own sessions out of the
  * initiative's notes and state. Those two were one value until AW-115, so
- * `active-work worktree set relay ~/projects/relay` — run to fix relay's
- * dispatch — silently relocated every subsequent `aw relay` as well.
+ * `active-work worktree set example-app ~/projects/example` — run to fix
+ * dispatch — silently relocated every subsequent `aw example-app` as well.
  */
 export function resolveLaunchCwd(activeRoot: string, slug: string): string {
   return path.join(activeRoot, slug);
@@ -97,9 +97,9 @@ export function resolveLaunchCwd(activeRoot: string, slug: string): string {
  * when none is registered.
  *
  * This is the *dispatch* answer, surfaced as `cwd_hint` on `open`'s JSON
- * envelope and consumed by out-of-process callers that need a git checkout —
- * relay's daemon resolves a voice-dispatched item's working directory this way
- * (`daemon/src/initiative.ts`). The launcher deliberately does not use it; see
+ * envelope and consumed by out-of-process callers that need a git checkout,
+ * such as a dispatcher resolving an item's working directory. The launcher
+ * deliberately does not use it; see
  * `resolveLaunchCwd`.
  */
 export async function resolveCwdHint(activeRoot: string, slug: string): Promise<string> {

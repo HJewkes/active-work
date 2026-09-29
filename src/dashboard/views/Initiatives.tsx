@@ -27,7 +27,9 @@ export function InitiativesView({ refreshToken }: ViewProps): React.JSX.Element 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: sp[12] }}>
-      <h1 style={{ margin: 0, fontSize: 22, color: palette.textPrimary }}>Initiatives</h1>
+      <h1 style={{ margin: 0, fontSize: 22, color: palette.textPrimary }}>
+        Initiatives
+      </h1>
       {data.sections.map((section) => (
         <section
           key={section.heading}
@@ -97,7 +99,9 @@ export function InitiativesView({ refreshToken }: ViewProps): React.JSX.Element 
 }
 
 function LoadingBlock(): React.JSX.Element {
-  return <div style={{ color: palette.textTertiary, fontSize: 13 }}>Loading…</div>;
+  return (
+    <div style={{ color: palette.textTertiary, fontSize: 13 }}>Loading…</div>
+  );
 }
 
 function ErrorBlock({ message }: { message: string }): React.JSX.Element {

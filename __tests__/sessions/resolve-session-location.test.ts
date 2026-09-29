@@ -81,9 +81,14 @@ describe('resolveSessionLocation', () => {
     // move both, so a session that ran in the initiative dir resumed in a
     // repo it had never been opened in.
     await withEmptyActiveRoot(async (activeRoot) => {
-      await makeInitiativeWithSession(activeRoot, 'relay', 'ran-in-notes-dir', '/Users/alice/code');
+      await makeInitiativeWithSession(
+        activeRoot,
+        'example-app',
+        'ran-in-notes-dir',
+        '/Users/alice/code',
+      );
       const result = await resolveSessionLocation(activeRoot, 'ran-in-notes-dir');
-      expect(result?.cwd).toBe(path.join(activeRoot, 'relay'));
+      expect(result?.cwd).toBe(path.join(activeRoot, 'example-app'));
       expect(result?.cwd).not.toBe('/Users/alice/code');
     });
   });

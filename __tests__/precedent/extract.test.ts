@@ -215,7 +215,7 @@ describe('precedent extract', () => {
       writeNote(
         activeRoot,
         '2026-09-01-keep-it-private.md',
-        "kind: decision\ntitle: Keep relay private\ncreated: '2026-09-01'",
+        "kind: decision\ntitle: Keep example-app private\ncreated: '2026-09-01'",
         'Public is the human call.',
       );
       writeNote(
