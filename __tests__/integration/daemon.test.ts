@@ -121,6 +121,17 @@ async function waitForDaemonExit(pid: number, timeoutMs: number): Promise<void> 
   throw new Error(`daemon pid ${pid} still alive after ${timeoutMs}ms`);
 }
 
+/**
+ * SIGTERM the daemon itself. Signalling the `tsx` wrapper races: under load it
+ * can take the daemon down before its shutdown handler runs, leaving the PID
+ * file behind. The wrapper is only reaped afterwards.
+ */
+async function terminateDaemon(child: ChildProcess, daemonPid: number): Promise<void> {
+  process.kill(daemonPid, 'SIGTERM');
+  await waitForExit(child, 10_000);
+  await waitForDaemonExit(daemonPid, 10_000);
+}
+
 async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<void> {
   if (child.exitCode !== null) return;
   await Promise.race([
@@ -191,11 +202,8 @@ describe('integration: daemon over HTTP', () => {
       expect(Array.isArray(parsed.result?.tools)).toBe(true);
       expect(parsed.result!.tools!.length).toBeGreaterThanOrEqual(35);
     } finally {
-      child.kill('SIGTERM');
-      await waitForExit(child, 10_000).catch(() => {
-        child.kill('SIGKILL');
-      });
-      if (daemonPid > 0) await waitForDaemonExit(daemonPid, 10_000);
+      if (daemonPid > 0) await terminateDaemon(child, daemonPid);
+      else child.kill('SIGKILL');
       // The PID file should be cleaned up by the daemon's signal handler.
       // env-paths on Linux: <XDG_STATE_HOME>/active-work/daemon.pid
       // on macOS: ~/Library/Logs/active-work/daemon.pid (using HOME override)
@@ -226,9 +234,7 @@ describe('integration: daemon over HTTP', () => {
       // it — staged and renamed — so the stand-in cannot itself interleave.
       writeSuccessorPidFile(pidFile!);
 
-      child.kill('SIGTERM');
-      await waitForExit(child, 10_000);
-      await waitForDaemonExit(health.pid, 10_000);
+      await terminateDaemon(child, health.pid);
 
       expect(findDaemonPidFile(stateRoot)).toBe(pidFile);
       expect(readFileSync(pidFile!, 'utf8').trim()).toBe(String(SUCCESSOR_PID));
