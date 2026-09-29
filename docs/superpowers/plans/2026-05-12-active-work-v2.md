@@ -221,7 +221,7 @@ Sequential. One task. Must complete before any other wave.
 
 **Steps:**
 1. `gh repo create hjewkes/active-work --public --license mit --description "Durable workspace state for engineering work — CLI, MCP, and Claude skill for tracking initiatives across sessions"` — repo exists on GitHub
-2. `git clone git@github.com:hjewkes/active-work.git /Users/hjewkes/Documents/projects/active-work/repo` — local clone (note: existing empty dir is for plan only; actual repo clones to a sibling location, OR we git-init in place and link to remote)
+2. `git clone git@github.com:hjewkes/active-work.git ~/projects/example` — local clone (note: existing empty dir is for plan only; actual repo clones to a sibling location, OR we git-init in place and link to remote)
 3. Write `package.json` with deps + scripts (see appendix A for full content)
 4. Write `tsconfig.json` (strict, ES2022, Node16, src/ root, dist/ out, exclude dashboard + tests)
 5. Write `tsup.config.ts` (entry `src/cli.ts`, format esm, target node22)

@@ -380,12 +380,12 @@ describe('wrap', () => {
       await withTempActiveRoot(async (activeRoot) => {
         const result = await wrap.run(
           baseArgs({
-            session_id: '2026-07-26-book1-m4b-packaging',
+            session_id: '2026-05-12-example-packaging',
             no_loops: true,
           }),
           makeCtx(activeRoot),
         );
-        expect(result.filename).toBe('2026-05-12-0900-2026-07-26-book1-m4b-packaging.md');
+        expect(result.filename).toBe('2026-05-12-0900-2026-05-12-example-packaging.md');
       });
     });
   });

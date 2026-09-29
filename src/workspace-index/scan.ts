@@ -64,8 +64,8 @@ async function taskFiles(tasksDir: string): Promise<string[]> {
 
 /**
  * `sources/` top level only, matching `listSources`. `sources/notes/` is the
- * durable-notes store with its own class, and one `youtube/sources/` subtree
- * alone holds 7,753 ingested files that active-work has never called sources.
+ * durable-notes store with its own class, and one large `sources/` subtree
+ * alone holds thousands of ingested files that active-work has never called sources.
  */
 async function collectSlug(activeRoot: string, slug: string): Promise<[WorkspaceClass, string][]> {
   const dir = path.join(activeRoot, slug);

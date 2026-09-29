@@ -137,9 +137,9 @@ describe('relatedForLoops', () => {
 
 describe('renderSeeLine', () => {
   it('labels a foreign hit with its initiative, like the foreign notes section', () => {
-    expect(renderSeeLine(hit('note:relay/x.md', 'relay', 'Relay lesson'), 'alpha')).toBe(
-      '    see: [from `relay`] note:relay/x.md "Relay lesson"',
-    );
+    expect(
+      renderSeeLine(hit('note:example-app/x.md', 'example-app', 'Example lesson'), 'alpha'),
+    ).toBe('    see: [from `example-app`] note:example-app/x.md "Example lesson"');
     expect(renderSeeLine(hit('note:alpha/y.md', 'alpha', 'Local lesson'), 'alpha')).toBe(
       '    see: note:alpha/y.md "Local lesson"',
     );

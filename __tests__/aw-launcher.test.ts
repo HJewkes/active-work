@@ -183,28 +183,28 @@ describe('buildResumeArgs', () => {
 
 describe('parseLauncherFlags', () => {
   it('parses a bare slug with no flags', () => {
-    expect(parseLauncherFlags(['voltras-workspace'])).toEqual({
+    expect(parseLauncherFlags(['example-app'])).toEqual({
       pick: false,
       adhoc: false,
       remoteControl: true,
-      positional: ['voltras-workspace'],
+      positional: ['example-app'],
       usageError: false,
     });
   });
 
   it('accepts --adhoc (canonical spelling)', () => {
-    const f = parseLauncherFlags(['voltras-workspace', '--adhoc']);
+    const f = parseLauncherFlags(['example-app', '--adhoc']);
     expect(f.adhoc).toBe(true);
-    expect(f.positional).toEqual(['voltras-workspace']);
+    expect(f.positional).toEqual(['example-app']);
     expect(f.usageError).toBe(false);
   });
 
   // Regression: `aw <slug> --ad-hoc` used to fall through to the unknown-flag
   // guard and error with "aw only launches a Claude session for an initiative".
   it('accepts --ad-hoc as an alias for --adhoc', () => {
-    const f = parseLauncherFlags(['voltras-workspace', '--ad-hoc']);
+    const f = parseLauncherFlags(['example-app', '--ad-hoc']);
     expect(f.adhoc).toBe(true);
-    expect(f.positional).toEqual(['voltras-workspace']);
+    expect(f.positional).toEqual(['example-app']);
     expect(f.usageError).toBe(false);
   });
 
@@ -222,10 +222,10 @@ describe('parseLauncherFlags', () => {
   it.each(['--no-rc', '--no-remote-control'])(
     'accepts %s as a Remote Control opt-out, not a usage error',
     (flag) => {
-      const f = parseLauncherFlags(['voltras-workspace', '--adhoc', flag]);
+      const f = parseLauncherFlags(['example-app', '--adhoc', flag]);
       expect(f.remoteControl).toBe(false);
       expect(f.adhoc).toBe(true);
-      expect(f.positional).toEqual(['voltras-workspace']);
+      expect(f.positional).toEqual(['example-app']);
       expect(f.usageError).toBe(false);
     },
   );

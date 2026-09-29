@@ -246,17 +246,17 @@ describe('v2 -> v3 open-loops migration', () => {
   it('skips an uncovered initiative loudly but still archives its handoff', async () => {
     await withEmptyActiveRoot(async (root) => {
       await scaffold(root, 'alpha');
-      await scaffold(root, 'denver-rezzy');
+      await scaffold(root, 'uncovered-app');
       await writeProposal(root, [entry('alpha')]);
 
       const plan = await planV2ToV3(root);
-      const rezzy = plan.initiatives.find((i) => i.slug === 'denver-rezzy')!;
-      expect(rezzy.sessions).toEqual([]);
-      expect(rezzy.uncoveredReason).toMatch(/no entry in the migration proposal/);
+      const uncovered = plan.initiatives.find((i) => i.slug === 'uncovered-app')!;
+      expect(uncovered.sessions).toEqual([]);
+      expect(uncovered.uncoveredReason).toMatch(/no entry in the migration proposal/);
 
       await v2ToV3OpenLoops.run(root);
-      expect(await exists(path.join(root, 'denver-rezzy', 'sessions', `${STEM}.md`))).toBe(false);
-      expect(await exists(path.join(root, 'denver-rezzy', 'sources', 'handoff-archive.md'))).toBe(
+      expect(await exists(path.join(root, 'uncovered-app', 'sessions', `${STEM}.md`))).toBe(false);
+      expect(await exists(path.join(root, 'uncovered-app', 'sources', 'handoff-archive.md'))).toBe(
         true,
       );
     });
@@ -266,14 +266,11 @@ describe('v2 -> v3 open-loops migration', () => {
 describe('the bundled proposal', () => {
   it('validates against ProposalSchema and covers every live initiative', () => {
     const parsed = ProposalSchema.parse(V3_OPEN_LOOPS_PROPOSAL);
-    expect(parsed.initiatives).toHaveLength(17);
-    // 100 after AW-65's TWO refresh passes on 2026-07-29 (was 99). Further
-    // sessions kept moving relay and voltras-workspace the same day, so
-    // those entries were re-derived twice; see the data file's header.
+    expect(parsed.initiatives).toHaveLength(3);
     const totalLoops = parsed.initiatives.reduce((n, i) => n + i.next_steps.length, 0);
-    expect(totalLoops).toBe(100);
+    expect(totalLoops).toBe(5);
     // Slugs unique, ids unique within a session, session_ids kebab-case.
-    expect(new Set(parsed.initiatives.map((i) => i.slug)).size).toBe(17);
+    expect(new Set(parsed.initiatives.map((i) => i.slug)).size).toBe(3);
     for (const initiative of parsed.initiatives) {
       const ids = initiative.next_steps.map((n) => n.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -293,13 +290,13 @@ describe('the bundled proposal', () => {
     expect(prLoops).toEqual([]);
   });
 
-  it('marks herald as the one abandoned-on-arrival loop', () => {
+  it('marks demo-site as the one abandoned-on-arrival loop', () => {
     const parsed = ProposalSchema.parse(V3_OPEN_LOOPS_PROPOSAL);
     const abandoned = parsed.initiatives.flatMap((i) =>
       i.next_steps.filter((n) => n.abandoned !== undefined).map((n) => `${i.slug}#${n.id}`),
     );
-    expect(abandoned).toEqual(['herald#n1']);
-    expect(parsed.abandoned_at).toBe('2026-07-28T18:00:00Z');
+    expect(abandoned).toEqual(['demo-site#n1']);
+    expect(parsed.abandoned_at).toBe('2026-06-01T12:00:00Z');
   });
 
   it('rejects an abandoned marker without abandoned_at', () => {
@@ -321,14 +318,14 @@ describe('abandoned-on-arrival loops', () => {
   const ABANDON_STEM = '2026-07-28-1800-handoff-migration-abandonment';
 
   async function migrateWithAbandonment(root: string): Promise<void> {
-    await scaffold(root, 'herald');
+    await scaffold(root, 'demo-site');
     const file = path.join(root, 'proposal.json');
     await fs.writeFile(
       file,
       JSON.stringify({
         abandoned_at: ABANDONED_AT,
         initiatives: [
-          entry('herald', {
+          entry('demo-site', {
             next_steps: [
               { id: 'n1', text: 'Chase the lapsed credit', kind: 'prose', ...ABANDONED_STEP_EXTRA },
               { id: 'n2', text: 'Still live work', kind: 'prose' },
@@ -346,11 +343,11 @@ describe('abandoned-on-arrival loops', () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
 
-      const files = (await fs.readdir(path.join(root, 'herald', 'sessions'))).sort();
+      const files = (await fs.readdir(path.join(root, 'demo-site', 'sessions'))).sort();
       expect(files).toEqual([`${STEM}.md`, `${ABANDON_STEM}.md`].sort());
 
       const abandon = await fs.readFile(
-        path.join(root, 'herald', 'sessions', `${ABANDON_STEM}.md`),
+        path.join(root, 'demo-site', 'sessions', `${ABANDON_STEM}.md`),
         'utf8',
       );
       expect(abandon).toContain('track: sidecar');
@@ -370,14 +367,14 @@ describe('abandoned-on-arrival loops', () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
 
-      const loops = await deriveOpenLoops(path.join(root, 'herald'), {
+      const loops = await deriveOpenLoops(path.join(root, 'demo-site'), {
         now: new Date('2026-07-29T00:00:00Z'),
       });
       expect(loops.map((l) => l.ref)).toEqual([`${STEM}#n2`]);
 
       // The close landed cleanly — no ref pointing at nothing, nothing filed
       // by a session that is not strictly prior.
-      const dangling = await findDanglingResolves(path.join(root, 'herald'));
+      const dangling = await findDanglingResolves(path.join(root, 'demo-site'));
       expect(dangling).toEqual([]);
     });
   });
@@ -385,7 +382,10 @@ describe('abandoned-on-arrival loops', () => {
   it('does not leak the proposal-only `abandoned` key into the session file', async () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
-      const open = await fs.readFile(path.join(root, 'herald', 'sessions', `${STEM}.md`), 'utf8');
+      const open = await fs.readFile(
+        path.join(root, 'demo-site', 'sessions', `${STEM}.md`),
+        'utf8',
+      );
       expect(open).not.toContain('abandoned:');
     });
   });
@@ -393,13 +393,13 @@ describe('abandoned-on-arrival loops', () => {
   it('is idempotent with both sessions present', async () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
-      const before = (await fs.readdir(path.join(root, 'herald', 'sessions'))).sort();
+      const before = (await fs.readdir(path.join(root, 'demo-site', 'sessions'))).sort();
 
       await v2ToV3OpenLoops.run(root);
       await v2ToV3OpenLoops.run(root);
 
-      expect((await fs.readdir(path.join(root, 'herald', 'sessions'))).sort()).toEqual(before);
-      const loops = await deriveOpenLoops(path.join(root, 'herald'), {
+      expect((await fs.readdir(path.join(root, 'demo-site', 'sessions'))).sort()).toEqual(before);
+      const loops = await deriveOpenLoops(path.join(root, 'demo-site'), {
         now: new Date('2026-07-29T00:00:00Z'),
       });
       expect(loops.map((l) => l.ref)).toEqual([`${STEM}#n2`]);
@@ -410,12 +410,14 @@ describe('abandoned-on-arrival loops', () => {
     await withEmptyActiveRoot(async (root) => {
       await migrateWithAbandonment(root);
       // Simulate a crash after the opening session but before the closing one.
-      await fs.rm(path.join(root, 'herald', 'sessions', `${ABANDON_STEM}.md`));
+      await fs.rm(path.join(root, 'demo-site', 'sessions', `${ABANDON_STEM}.md`));
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await exists(path.join(root, 'herald', 'sessions', `${ABANDON_STEM}.md`))).toBe(true);
-      const loops = await deriveOpenLoops(path.join(root, 'herald'), {
+      expect(await exists(path.join(root, 'demo-site', 'sessions', `${ABANDON_STEM}.md`))).toBe(
+        true,
+      );
+      const loops = await deriveOpenLoops(path.join(root, 'demo-site'), {
         now: new Date('2026-07-29T00:00:00Z'),
       });
       expect(loops.map((l) => l.ref)).toEqual([`${STEM}#n2`]);
@@ -424,9 +426,9 @@ describe('abandoned-on-arrival loops', () => {
 });
 
 describe('brief field repairs', () => {
-  it("repairs health's out-of-enum state before the task_seq backfill", async () => {
+  it("repairs sample-lib's out-of-enum state before the task_seq backfill", async () => {
     await withEmptyActiveRoot(async (root) => {
-      await scaffold(root, 'health', { taskIds: ['XX-7'], state: 'active' });
+      await scaffold(root, 'sample-lib', { taskIds: ['XX-7'], state: 'active' });
       await writeProposal(root, []);
 
       const plan = await planV2ToV3(root);
@@ -438,7 +440,7 @@ describe('brief field repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      const brief = await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8');
+      const brief = await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8');
       expect(brief).toContain('state: focused');
       expect(brief).toContain('rank: 11');
       expect(brief).toContain('task_seq: 7');
@@ -448,16 +450,16 @@ describe('brief field repairs', () => {
 
   it('leaves a hand-fixed state alone and is a no-op on a re-run', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await scaffold(root, 'health', { taskIds: ['XX-7'], state: 'backburner' });
+      await scaffold(root, 'sample-lib', { taskIds: ['XX-7'], state: 'backburner' });
       await writeProposal(root, []);
 
       await v2ToV3OpenLoops.run(root);
-      const after = await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8');
+      const after = await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8');
       expect(after).toContain('state: backburner');
       expect(after).not.toContain('rank: 11');
 
       await v2ToV3OpenLoops.run(root);
-      expect(await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8')).toBe(after);
+      expect(await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8')).toBe(after);
     });
   });
 
@@ -522,33 +524,25 @@ describe('task_seq backfill', () => {
 });
 
 describe('known malformed-session repairs', () => {
-  const AUDIOBOOK = path.join(
-    'audiobook',
-    'sessions',
-    '2026-07-23-0549-2026-07-26-book1-m4b-packaging.md',
-  );
-  const ARCHIVED = path.join(
-    'voltras-workspace',
-    'sessions',
-    'ARCHIVED-handoff-through-2026-07-15.md',
-  );
+  const RETRACKED = path.join('demo-site', 'sessions', '2026-05-20-1000-example-retrack.md');
+  const ARCHIVED = path.join('example-app', 'sessions', 'ARCHIVED-handoff.md');
 
   async function scaffoldMalformed(root: string): Promise<void> {
-    await scaffold(root, 'audiobook');
-    await scaffold(root, 'voltras-workspace');
-    await fs.mkdir(path.join(root, 'audiobook', 'sessions'), { recursive: true });
-    await fs.mkdir(path.join(root, 'voltras-workspace', 'sessions'), { recursive: true });
+    await scaffold(root, 'demo-site');
+    await scaffold(root, 'example-app');
+    await fs.mkdir(path.join(root, 'demo-site', 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(root, 'example-app', 'sessions'), { recursive: true });
     await fs.writeFile(
-      path.join(root, AUDIOBOOK),
+      path.join(root, RETRACKED),
       [
         '---',
-        'session_id: book1-m4b-packaging',
-        "started: '2026-07-23T05:49:00Z'",
-        "ended: '2026-07-23T06:49:00Z'",
-        'track: feat/tts-quality',
+        'session_id: example-retrack',
+        "started: '2026-05-20T10:00:00Z'",
+        "ended: '2026-05-20T11:00:00Z'",
+        'track: feat/example-branch',
         '---',
         '',
-        'Packaged book 1.',
+        'Example session.',
         '',
       ].join('\n'),
       'utf8',
@@ -567,13 +561,11 @@ describe('known malformed-session repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toContain('track: adhoc');
+      expect(await fs.readFile(path.join(root, RETRACKED), 'utf8')).toContain('track: adhoc');
       expect(await exists(path.join(root, ARCHIVED))).toBe(false);
-      expect(
-        await exists(
-          path.join(root, 'voltras-workspace', 'sources', 'ARCHIVED-handoff-through-2026-07-15.md'),
-        ),
-      ).toBe(true);
+      expect(await exists(path.join(root, 'example-app', 'sources', 'ARCHIVED-handoff.md'))).toBe(
+        true,
+      );
     });
   });
 
@@ -584,7 +576,7 @@ describe('known malformed-session repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      for (const slug of ['audiobook', 'voltras-workspace']) {
+      for (const slug of ['demo-site', 'example-app']) {
         const issues = await findSessionIssues(path.join(root, slug));
         expect(issues.malformed).toEqual([]);
       }
@@ -597,11 +589,11 @@ describe('known malformed-session repairs', () => {
       await writeProposal(root, []);
 
       await v2ToV3OpenLoops.run(root);
-      const after = await fs.readFile(path.join(root, AUDIOBOOK), 'utf8');
+      const after = await fs.readFile(path.join(root, RETRACKED), 'utf8');
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toBe(after);
+      expect(await fs.readFile(path.join(root, RETRACKED), 'utf8')).toBe(after);
       const plan = await planV2ToV3(root);
       expect(plan.repairs.every((r) => r.action === 'skip')).toBe(true);
     });

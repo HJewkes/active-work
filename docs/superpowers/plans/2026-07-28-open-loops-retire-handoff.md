@@ -31,8 +31,8 @@ agent is explicitly told not to look at it — so it can be arbitrarily stale wi
 observable effect until a human opens it.
 
 **4. Staleness is unmeasurable.** `handoff.md` has no frontmatter and no timestamp.
-The only probe is mtime, which migrations corrupt: `home-assistant/sessions/*.md`
-show mtime 2026-07-13 but `ended: 2026-05-12`. `src/lint/handoff.ts` checks exactly
+The only probe is mtime, which migrations corrupt: some initiatives' `sessions/*.md`
+show a recent mtime but `ended: 2026-05-12`. `src/lint/handoff.ts` checks exactly
 one thing — body line count. `audit` and `doctor` check nothing.
 
 ### What the handoffs contain
@@ -41,8 +41,8 @@ one thing — body line count. `audit` and `doctor` check nothing.
 
 | Bucket | Weight | Existing home |
 |---|---|---|
-| HISTORY | dominant (~1,800 of codewatch's 2,198; 15–40% of the busy four) | `sessions/` — the stronger record wherever both exist |
-| DECISIONS + rationale | ~120 lines (dormant set), ~300–400 (codewatch) | `brief.md` — already near-verbatim in relay, brain, taxes |
+| HISTORY | dominant (~1,800 of sample-lib's 2,198; 15–40% of the busy four) | `sessions/` — the stronger record wherever both exist |
+| DECISIONS + rationale | ~120 lines (dormant set), ~300–400 (sample-lib) | `brief.md` — already near-verbatim in several initiatives |
 | OPERATIONAL | ~98 lines | `sources/` — nothing routes it there |
 | REFERENCE | ~30–50 lines | `sources/` |
 | **CURRENT_STATE** | ~96 lines (dormant), 20–40% of busy four | **none** |
@@ -54,26 +54,17 @@ Two buckets have no home. Everything else is duplication or misfiling.
 
 Operators independently hand-rolled the missing primitive twice:
 
-- `codewatch/handoff.md` invented `## TOP OF STACK`, `## NEXT SESSION PLAN`,
+- `sample-lib/handoff.md` invented `## TOP OF STACK`, `## NEXT SESSION PLAN`,
   `## Follow-ups surfaced (not yet done)` headings, appended reverse-chronologically.
   Two blocks (lines 686, 760) are labeled "superseded by the block above" and still
   carry their full bodies.
-- `voltras-workspace` invented `coordination/NEXT-SESSION-2026-07-27.md`.
+- Another invented a separate "next session" file outside the handoff.
 
 Both were ignored or went stale, because nothing reads them.
 
-`voltras-workspace/handoff.md:227-243` is the operator's own postmortem of a drift
-incident:
-
-> 1. **`handoff.md` was 12 days stale** and `brief.md`'s "in-flight efforts" was 22
->    days stale […]
-> 2. **The session-bootstrap task list is ordered by `priority`,** and VW-68 sat at p1
->    […] "Work the top task" then points at the wrong thing with full confidence.
-> 3. **`coordination/NEXT-SESSION-2026-07-27.md` — literally titled "start here" — was
->    never opened.**
->
-> Two of the four things the user actually cared about […] **had no VW-level task at
-> all, so they could not appear in a priority list however it was sorted.**
+One initiative's handoff carries the operator's own postmortem of a staleness
+incident: the handoff and brief had drifted, the task list was ordered so the wrong
+task sat on top, and a file titled "start here" was never opened.
 
 That last sentence is the load-bearing one: re-ranking cannot fix it. Work never
 filed as a task is structurally unreachable by the bootstrap.
@@ -123,7 +114,7 @@ resolves:
 is *not* unique within an initiative: `pickAvailableFilename` in
 `session-record.ts` appends `-1`/`-2` when one session records more than once,
 and the live data already has duplicates in five initiatives —
-voltras-workspace 12, codewatch 9, audiobook 3, claude-channels 3, relay 1.
+example-app 12, sample-lib 9, sample-media 3, sample-tool 3, another 1.
 `<session_id>#<id>` would be ambiguous. The filename stem is unique by
 construction.
 
@@ -216,7 +207,7 @@ Assisted part, one initiative at a time, Claude reviewing each:
 
 4. Split the archived handoff by bucket: DECISIONS → `brief.md`; OPERATIONAL and
    REFERENCE → purpose-named files in `sources/`; HISTORY → **dropped** where
-   `sessions/` already covers it (verified for codewatch: 58 session files back to
+   `sessions/` already covers it (verified for sample-lib: 58 session files back to
    2026-05-12 vs the handoff's oldest block at 2026-06-30).
 5. CURRENT_STATE and NEXT_ACTIONS → a synthetic migration session per initiative
    (`track: migration`) carrying them as `next_steps`, so they enter the ledger and
@@ -225,13 +216,12 @@ Assisted part, one initiative at a time, Claude reviewing each:
 
 ### Migration hazards
 
-- **`denver-rezzy`**: `tasks/` is empty. Its handoff is the sole record of all seven
+- **`example-notes`**: `tasks/` is empty. Its handoff is the sole record of all seven
   next-actions. Extract to tasks **before** anything else touches it.
-- **`computer-organization`**: per-directory triage calls (delete vs archive) exist
-  only in the handoff, in no `CO-*.yml`.
-- **`herald`**: blocker cites a "claim SDK credit ~June 8 (June 15 billing change)"
-  window, lapsed seven weeks. Migrate as an explicitly `abandoned` loop, not a live one.
-- **`codewatch`**: 2,198 lines, ~1,800 HISTORY. Highest-volume drop; review carefully.
+- **`sample-files`**: per-directory triage calls (delete vs archive) exist
+  only in the handoff, in no `SF-*.yml`.
+- **`demo-site`**: blocker cites a trial window that has since lapsed. Migrate as an explicitly `abandoned` loop, not a live one.
+- **`sample-lib`**: 2,198 lines, ~1,800 HISTORY. Highest-volume drop; review carefully.
 
 ### Unrelated cleanup
 
@@ -251,7 +241,7 @@ Correct regardless of the above; ship first:
 
 ## Risks
 
-- **Derivation cost.** `voltras-workspace` has 106 sessions. Bootstrap would read all
+- **Derivation cost.** `example-app` has 106 sessions. Bootstrap would read all
   session frontmatter each launch. Files are small; measure before optimizing. The
   eventual home is the AW-23 SQLite index.
 - **Concurrent resolution.** Two parallel sessions resolving the same loop: identical
@@ -275,5 +265,5 @@ Correct regardless of the above; ship first:
 - Do loop refs survive the migration? Synthetic migration sessions must produce
   stable refs, or every migrated loop dangles. Gate for AW-38.
 - Tie-breaking for "only a later session may resolve an earlier one" when two
-  sessions share an `ended` timestamp — `claude-channels` already has a pair, and
+  sessions share an `ended` timestamp — `sample-tool` already has a pair, and
   folded sessions share timestamps by construction.

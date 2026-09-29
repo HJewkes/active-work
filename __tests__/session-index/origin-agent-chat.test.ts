@@ -152,25 +152,30 @@ describe('agent-chat origin adapter', () => {
 
   it("resolves the parent session id from the parent's own spawn row", () => {
     const renamed: Row[] = [
-      ...adoptedCoordinator('titan-platform-6335', 'aaaa1111'),
-      { ts: T0 + 100, kind: 'agent_attached', actor: 'tp-wave3', ref: 'aaaa1111' },
+      ...adoptedCoordinator('example-coord-6335', 'aaaa1111'),
+      { ts: T0 + 100, kind: 'agent_attached', actor: 'example-wave3', ref: 'aaaa1111' },
     ];
     const legacySession = '33333333-0000-0000-0000-000000000000';
     const legacyChild: Row = {
       ts: T0 + 2_000,
       kind: 'agent_spawned',
-      actor: 'titan-platform-6335',
+      actor: 'example-coord-6335',
       target: 'legacy',
       meta: { name: 'legacy', session_id: legacySession, depth: '1' },
     };
     const readopted: Row = {
       ts: T0 + 3_000,
       kind: 'agent_spawned',
-      actor: 'titan-platform-6335',
-      target: 'titan-platform-6335',
-      meta: { name: 'titan-platform-6335', session_id: 'later-session', depth: '0' },
+      actor: 'example-coord-6335',
+      target: 'example-coord-6335',
+      meta: { name: 'example-coord-6335', session_id: 'later-session', depth: '0' },
     };
-    writeEvents([...renamed, ...spawnedWorker('tp-wave3', 'aaaa1111'), legacyChild, readopted]);
+    writeEvents([
+      ...renamed,
+      ...spawnedWorker('example-wave3', 'aaaa1111'),
+      legacyChild,
+      readopted,
+    ]);
 
     const { origins } = resolve([WORKER_SESSION, legacySession, 'later-session']);
 
