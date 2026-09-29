@@ -398,7 +398,7 @@ export const V3_OPEN_LOOPS_PROPOSAL: unknown = {
       slug: 'health',
       ended: '2026-07-27T22:59:00Z',
       session_id: 'handoff-migration',
-      body: "# Handoff state as of 2026-07-27\n\nScope decided and the first two builds shipped. `/Users/hjewkes/Documents/health` is live: TypeScript, 35 tests passing, typecheck and production build clean, three commits on branch `feat/macro-calculator` — unmerged, nothing pushed, there is no remote.\n\n**Macro planner** (src/core/) — a pure calculation chain ported from the weight-loss spreadsheet: composition → Katch-McArdle BMR → TDEE → deficit → macro split → projection, composed by buildPlan(). A golden test reproduces the spreadsheet's figures exactly. The projection bug is fixed: the sheet extrapolated a fixed daily loss, but the target is a percentage of current bodyweight, so the curve is exponential — the estimate moves from 110 days (Nov 14) to 117 days (Nov 21), and both are shown in the minimal web UI in src/ui/.\n\n**Instacart ingest** (src/ingest/instacart/) — parses order receipts out of Gmail into structured orders, plus a merge step repairing email-truncated item lists from the web receipt. 33 orders parsed; the last 20 Costco orders at full coverage (287 items, 2025-05 → 2026-07, $5,243).\n\nNext session was to be meal planning.",
+      body: '# Handoff state as of 2026-07-27\n\nSynthetic example handoff. The first two builds of a sample project shipped. `~/projects/example` holds a small TypeScript library with passing tests and a clean build.\n\nNext session was to be planning.',
       next_steps: [
         {
           id: 'n1',
