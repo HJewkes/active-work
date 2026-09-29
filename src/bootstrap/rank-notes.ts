@@ -60,7 +60,7 @@ const FOREIGN_CAP = 3;
  *
  * Known bias: a two-word subject inflates per-term score, since each term
  * carries more of the match. Left alone because the one case in this corpus
- * (`denver-rezzy` reaching a parked restaurant note) was correct.
+ * (one initiative reaching a parked note in another) was correct.
  */
 const FOREIGN_FLOOR_PER_TERM = 3.5;
 

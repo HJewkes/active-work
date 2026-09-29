@@ -11,13 +11,7 @@ body {
   padding: 0;
   background: #101010;
   color: #f3f4f6;
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    'Inter',
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   min-height: 100vh;
@@ -37,11 +31,5 @@ button {
 
 code,
 pre {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    'SF Mono',
-    Menlo,
-    Consolas,
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }

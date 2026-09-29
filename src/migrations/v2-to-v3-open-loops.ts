@@ -359,7 +359,8 @@ function assertProposalSlugsExist(proposal: Proposal, known: string[]): void {
   const missing = proposal.initiatives.filter((i) => !set.has(i.slug)).map((i) => i.slug);
   if (missing.length > 0) {
     throw new ValidationError(
-      `v2→v3 migration proposal names initiatives that do not exist: ${missing.join(', ')}`,
+      `v2→v3 migration proposal names initiatives that do not exist: ${missing.join(', ')}. ` +
+        'Supply a proposal for this root through $AW_V3_PROPOSAL.',
     );
   }
 }

@@ -31,8 +31,8 @@ agent is explicitly told not to look at it — so it can be arbitrarily stale wi
 observable effect until a human opens it.
 
 **4. Staleness is unmeasurable.** `handoff.md` has no frontmatter and no timestamp.
-The only probe is mtime, which migrations corrupt: `home-assistant/sessions/*.md`
-show mtime 2026-07-13 but `ended: 2026-05-12`. `src/lint/handoff.ts` checks exactly
+The only probe is mtime, which migrations corrupt: some initiatives' `sessions/*.md`
+show a recent mtime but `ended: 2026-05-12`. `src/lint/handoff.ts` checks exactly
 one thing — body line count. `audit` and `doctor` check nothing.
 
 ### What the handoffs contain
@@ -58,22 +58,13 @@ Operators independently hand-rolled the missing primitive twice:
   `## Follow-ups surfaced (not yet done)` headings, appended reverse-chronologically.
   Two blocks (lines 686, 760) are labeled "superseded by the block above" and still
   carry their full bodies.
-- `example-app` invented `coordination/NEXT-SESSION-2026-07-27.md`.
+- Another invented a separate "next session" file outside the handoff.
 
 Both were ignored or went stale, because nothing reads them.
 
-`example-app/handoff.md:227-243` is the operator's own postmortem of a drift
-incident:
-
-> 1. **`handoff.md` was 12 days stale** and `brief.md`'s "in-flight efforts" was 22
->    days stale […]
-> 2. **The session-bootstrap task list is ordered by `priority`,** and VW-68 sat at p1
->    […] "Work the top task" then points at the wrong thing with full confidence.
-> 3. **`coordination/NEXT-SESSION-2026-07-27.md` — literally titled "start here" — was
->    never opened.**
->
-> Two of the four things the user actually cared about […] **had no VW-level task at
-> all, so they could not appear in a priority list however it was sorted.**
+One initiative's handoff carries the operator's own postmortem of a staleness
+incident: the handoff and brief had drifted, the task list was ordered so the wrong
+task sat on top, and a file titled "start here" was never opened.
 
 That last sentence is the load-bearing one: re-ranking cannot fix it. Work never
 filed as a task is structurally unreachable by the bootstrap.

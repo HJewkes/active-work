@@ -88,10 +88,10 @@ describe('loadTaskStore', () => {
     expect(store.get('B-2')).toMatchObject({ initiative: 'beta' });
   });
 
-  // Real collision: `health` and `herald` both mint `H-<n>`.
+  // Two initiatives can mint the same `H-<n>` id.
   it('marks an id two initiatives both claim as unresolvable', async () => {
-    writeTask('health', 'H-1', { title: 'Swim' });
-    writeTask('herald', 'H-1', { title: 'Ship the digest' });
+    writeTask('example-app', 'H-1', { title: 'Add a settings screen' });
+    writeTask('demo-site', 'H-1', { title: 'Ship the release notes' });
 
     const store = await loadTaskStore(storeRoot);
 
@@ -153,8 +153,8 @@ describe('the task resolver', () => {
   });
 
   it('leaves an ambiguous ref alone rather than picking one', async () => {
-    writeTask('health', 'H-1', { title: 'Swim' });
-    writeTask('herald', 'H-1', { title: 'Ship the digest' });
+    writeTask('example-app', 'H-1', { title: 'Add a settings screen' });
+    writeTask('demo-site', 'H-1', { title: 'Ship the release notes' });
     addRef('H-1');
 
     await enrich();
