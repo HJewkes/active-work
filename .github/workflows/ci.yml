@@ -3,83 +3,33 @@ name: CI
 on:
   push:
     branches: [main]
+  # Unfiltered so `check` reports on every PR, whatever it targets; a filtered-out required check blocks the merge.
   pull_request:
-    branches: [main]
 
+# The whole grant. A called workflow can never hold more than its caller grants,
+# and node.yml asks for nothing beyond this.
+permissions:
+  contents: read
+
+# The shared standard (HJewkes/ci): `std` runs secrets (gitleaks), audit
+# (critical advisories only), and `pnpm verify`, which is format, lint,
+# typecheck, the mining-tools check, the CLI build, the tests under a sandboxed
+# HOME, the CLI-reference generator smoke, and the full build. No compat
+# matrix: the package ships CLI binaries, not a library, as before on Node 22 only.
 jobs:
+  std:
+    uses: HJewkes/ci/.github/workflows/node.yml@v1
+    with:
+      node-version: '22'
+      audit-level: critical
+
+  # The ruleset requires the context `check`, so the aggregator carries that name
+  # and no other job may. all-green also fails if a job here is missing from needs.
   check:
+    if: always()
+    needs: [std]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: HJewkes/ci/actions/all-green@v1
         with:
-          fetch-depth: 0 # full history so gitleaks can scan all commits
-
-      # Secret scanning — fail the build if a credential was ever committed.
-      - name: Scan for secrets (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      # Dependency audit — fail on any critical advisory (parity with brain).
-      - name: Security audit
-        run: pnpm audit --audit-level critical
-
-      # tools/ sits outside the linted/typechecked src surface, so guard the
-      # mining tooling with a syntax + pricing-table validity check. The full
-      # eval-miner run is a local pre-merge gate (it needs the operator's
-      # ~/.claude transcripts, which CI has no access to); its pure scoring math
-      # is covered by the unit suite below.
-      - name: Validate mining tools
-        run: pnpm check:tools
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Lint
-        run: pnpm lint
-
-      # Formatting is enforced in CI so prettier drift can't accumulate
-      # silently and then land as re-wrapping noise inside an unrelated PR.
-      - name: Format check
-        run: pnpm format:check
-
-      # Build the CLI before tests so the integration suite runs against a
-      # prebuilt dist/cli.js rather than transpiling src via tsx on every spawn
-      # (AW-12). This makes the runner deterministic — same code path as local
-      # runs — and removes cold-tsx variance that flaked the first CI run.
-      - name: Build CLI (for deterministic integration tests)
-        run: pnpm build:cli
-
-      # Run tests under a throwaway HOME so no test — including ones that spawn
-      # the CLI as a subprocess — can touch a real home/config dir (AW-9). The
-      # in-process sandbox lives in __tests__/setup/sandbox-home.ts; this is the
-      # OS-level backstop that also covers spawned child processes.
-      - name: Test (sandboxed HOME)
-        run: |
-          sandbox_home="$RUNNER_TEMP/aw-test-home"
-          mkdir -p "$sandbox_home"
-          HOME="$sandbox_home" XDG_CONFIG_HOME="$sandbox_home/.config" \
-            XDG_DATA_HOME="$sandbox_home/.local/share" \
-            XDG_STATE_HOME="$sandbox_home/.local/state" \
-            pnpm test
-
-      # The reference is generated at release, not committed (TP-34), so nothing
-      # else would exercise the generator until a tag is pushed. Run it here so a
-      # command that breaks it fails the PR that introduced it.
-      - name: Generate CLI reference (generator smoke check)
-        run: |
-          node scripts/gen-cli-reference.mjs
-          test -s docs/cli-reference.md || { echo "cli-reference.md missing or empty"; exit 1; }
-
-      - name: Build
-        run: pnpm build
+          needs: ${{ toJSON(needs) }}

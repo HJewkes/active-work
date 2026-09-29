@@ -47,6 +47,7 @@
     "postinstall": "node scripts/postinstall.js",
     "preuninstall": "node scripts/preuninstall.js",
     "test": "vitest run",
+    "test:sandboxed": "bash scripts/test-sandboxed.sh",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
@@ -54,7 +55,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src __tests__ --no-error-on-unmatched-pattern",
     "format": "prettier --write \"src/**/*.ts\" \"__tests__/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\"",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:tools && pnpm test:sandboxed && pnpm build"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

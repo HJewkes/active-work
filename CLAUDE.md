@@ -40,7 +40,20 @@ pnpm test:integration
 pnpm typecheck
 pnpm lint
 pnpm build           # tsup
+pnpm verify          # the full local gate; CI runs exactly this
 ```
+
+## Verify before opening a PR
+
+Before `gh pr create`, run `pnpm verify` in your worktree and report its last lines.
+The PR merges when the `check` context is green; if it is red, read `gh pr checks <n>`
+and the failing job's log, fix, and push to the same PR.
+
+`verify` runs format:check (fix with `pnpm format`), lint, typecheck, check:tools, then
+`scripts/test-sandboxed.sh` (build:cli, `vitest run` under a throwaway HOME, the
+CLI-reference generator smoke), then the full build. CI's `std / verify` job runs exactly
+this script. CI also runs gitleaks and `pnpm audit --audit-level=critical`, which `verify`
+does not. The eval-miner run stays a local, manual gate: it needs `~/.claude` transcripts.
 
 ## Conventions
 
