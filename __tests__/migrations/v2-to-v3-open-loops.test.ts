@@ -426,9 +426,9 @@ describe('abandoned-on-arrival loops', () => {
 });
 
 describe('brief field repairs', () => {
-  it("repairs health's out-of-enum state before the task_seq backfill", async () => {
+  it("repairs sample-lib's out-of-enum state before the task_seq backfill", async () => {
     await withEmptyActiveRoot(async (root) => {
-      await scaffold(root, 'health', { taskIds: ['XX-7'], state: 'active' });
+      await scaffold(root, 'sample-lib', { taskIds: ['XX-7'], state: 'active' });
       await writeProposal(root, []);
 
       const plan = await planV2ToV3(root);
@@ -440,7 +440,7 @@ describe('brief field repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      const brief = await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8');
+      const brief = await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8');
       expect(brief).toContain('state: focused');
       expect(brief).toContain('rank: 11');
       expect(brief).toContain('task_seq: 7');
@@ -450,16 +450,16 @@ describe('brief field repairs', () => {
 
   it('leaves a hand-fixed state alone and is a no-op on a re-run', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await scaffold(root, 'health', { taskIds: ['XX-7'], state: 'backburner' });
+      await scaffold(root, 'sample-lib', { taskIds: ['XX-7'], state: 'backburner' });
       await writeProposal(root, []);
 
       await v2ToV3OpenLoops.run(root);
-      const after = await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8');
+      const after = await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8');
       expect(after).toContain('state: backburner');
       expect(after).not.toContain('rank: 11');
 
       await v2ToV3OpenLoops.run(root);
-      expect(await fs.readFile(path.join(root, 'health', 'brief.md'), 'utf8')).toBe(after);
+      expect(await fs.readFile(path.join(root, 'sample-lib', 'brief.md'), 'utf8')).toBe(after);
     });
   });
 
@@ -524,33 +524,25 @@ describe('task_seq backfill', () => {
 });
 
 describe('known malformed-session repairs', () => {
-  const AUDIOBOOK = path.join(
-    'audiobook',
-    'sessions',
-    '2026-07-23-0549-2026-07-26-book1-m4b-packaging.md',
-  );
-  const ARCHIVED = path.join(
-    'voltras-workspace',
-    'sessions',
-    'ARCHIVED-handoff-through-2026-07-15.md',
-  );
+  const RETRACKED = path.join('demo-site', 'sessions', '2026-05-20-1000-example-retrack.md');
+  const ARCHIVED = path.join('example-app', 'sessions', 'ARCHIVED-handoff.md');
 
   async function scaffoldMalformed(root: string): Promise<void> {
-    await scaffold(root, 'audiobook');
-    await scaffold(root, 'voltras-workspace');
-    await fs.mkdir(path.join(root, 'audiobook', 'sessions'), { recursive: true });
-    await fs.mkdir(path.join(root, 'voltras-workspace', 'sessions'), { recursive: true });
+    await scaffold(root, 'demo-site');
+    await scaffold(root, 'example-app');
+    await fs.mkdir(path.join(root, 'demo-site', 'sessions'), { recursive: true });
+    await fs.mkdir(path.join(root, 'example-app', 'sessions'), { recursive: true });
     await fs.writeFile(
-      path.join(root, AUDIOBOOK),
+      path.join(root, RETRACKED),
       [
         '---',
-        'session_id: book1-m4b-packaging',
-        "started: '2026-07-23T05:49:00Z'",
-        "ended: '2026-07-23T06:49:00Z'",
-        'track: feat/tts-quality',
+        'session_id: example-retrack',
+        "started: '2026-05-20T10:00:00Z'",
+        "ended: '2026-05-20T11:00:00Z'",
+        'track: feat/example-branch',
         '---',
         '',
-        'Packaged book 1.',
+        'Example session.',
         '',
       ].join('\n'),
       'utf8',
@@ -569,13 +561,11 @@ describe('known malformed-session repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toContain('track: adhoc');
+      expect(await fs.readFile(path.join(root, RETRACKED), 'utf8')).toContain('track: adhoc');
       expect(await exists(path.join(root, ARCHIVED))).toBe(false);
-      expect(
-        await exists(
-          path.join(root, 'voltras-workspace', 'sources', 'ARCHIVED-handoff-through-2026-07-15.md'),
-        ),
-      ).toBe(true);
+      expect(await exists(path.join(root, 'example-app', 'sources', 'ARCHIVED-handoff.md'))).toBe(
+        true,
+      );
     });
   });
 
@@ -586,7 +576,7 @@ describe('known malformed-session repairs', () => {
 
       await v2ToV3OpenLoops.run(root);
 
-      for (const slug of ['audiobook', 'voltras-workspace']) {
+      for (const slug of ['demo-site', 'example-app']) {
         const issues = await findSessionIssues(path.join(root, slug));
         expect(issues.malformed).toEqual([]);
       }
@@ -599,11 +589,11 @@ describe('known malformed-session repairs', () => {
       await writeProposal(root, []);
 
       await v2ToV3OpenLoops.run(root);
-      const after = await fs.readFile(path.join(root, AUDIOBOOK), 'utf8');
+      const after = await fs.readFile(path.join(root, RETRACKED), 'utf8');
 
       await v2ToV3OpenLoops.run(root);
 
-      expect(await fs.readFile(path.join(root, AUDIOBOOK), 'utf8')).toBe(after);
+      expect(await fs.readFile(path.join(root, RETRACKED), 'utf8')).toBe(after);
       const plan = await planV2ToV3(root);
       expect(plan.repairs.every((r) => r.action === 'skip')).toBe(true);
     });

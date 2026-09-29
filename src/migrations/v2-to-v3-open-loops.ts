@@ -32,7 +32,7 @@ import type { Migration } from './types.js';
  *   session, stamped later, whose `resolves` closes it (see below);
  * - repair known-broken brief fields, then backfill `task_seq`;
  * - copy `handoff.md` to `sources/handoff-archive.md`, then delete it;
- * - repair the two known-malformed session files (see `v3-repairs.ts`).
+ * - repair the known-malformed session files (see `v3-repairs.ts`).
  *
  * **This module writes sessions via `writeSessionFile` directly rather than
  * through `wrap`, which `SKILL.md` otherwise names as the only session
@@ -179,8 +179,8 @@ async function nextTaskSeq(
 
 /**
  * The brief to write, or `null` when nothing changes. Field repairs run first
- * so an initiative whose brief is currently invalid — `health`, which carries
- * an out-of-enum `state` — stops being skipped by the backfill.
+ * so an initiative whose brief is currently invalid, for example one carrying
+ * an out-of-enum `state`, stops being skipped by the backfill.
  *
  * Spread-then-set preserves every other field, `updated` included: neither a
  * repair nor a backfill is a touch of the work.

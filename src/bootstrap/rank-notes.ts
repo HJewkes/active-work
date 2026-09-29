@@ -54,9 +54,8 @@ const FOREIGN_CAP = 3;
  *
  * Per-term BM25 with a floor of 3.5 fires for 5 of 25 initiatives, which is the
  * "most sessions see zero" the design asks for. Spot-checking those five, three
- * are the payoff the whole design exists for — `audiobook`'s XTTS-on-a-5090
- * task surfacing `basement-server`'s note that the 5090 needs torch>=2.7 while
- * Coqui TTS pins 2.5.1 — and two are merely same-genre. That is a good rate for
+ * are the payoff the whole design exists for, where one initiative's task
+ * surfaces another initiative's note about a conflicting dependency, and two are merely same-genre. That is a good rate for
  * three slots.
  *
  * Known bias: a two-word subject inflates per-term score, since each term

@@ -502,7 +502,7 @@ describe('findSessionIssues', () => {
         'session_id: broken',
         'started: 2026-07-05T00:00:00Z',
         'ended: 2026-07-05T00:00:00Z',
-        'track: feat/tts-quality',
+        'track: feat/example-branch',
         'next_steps:',
         '  - id: n9',
         '    text: lost with the file',

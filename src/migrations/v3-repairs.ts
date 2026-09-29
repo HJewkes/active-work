@@ -4,7 +4,7 @@ import { SessionFrontmatterSchema, type SessionFrontmatter } from '../schemas/se
 import { readRawFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 
 /**
- * Two session files in the live data predate the schema and fail it. v3 turns
+ * Known session files that predate the schema and fail it. v3 turns
  * unreadable session files into a standing `doctor` warning, so unless these
  * are repaired in the same pass the new integrity check starts life crying
  * wolf — and a permanent false positive masks the real reports it exists for.
@@ -36,14 +36,14 @@ interface KnownRepair {
 
 export const KNOWN_REPAIRS: KnownRepair[] = [
   {
-    file: path.join('audiobook', 'sessions', '2026-07-23-0549-2026-07-26-book1-m4b-packaging.md'),
+    file: path.join('demo-site', 'sessions', '2026-05-20-1000-example-retrack.md'),
     kind: 'retrack',
-    why: "track is a branch name ('feat/tts-quality'), not one of canonical|sidecar|adhoc",
+    why: "track is a branch name ('feat/example-branch'), not one of canonical|sidecar|adhoc",
   },
   {
-    file: path.join('voltras-workspace', 'sessions', 'ARCHIVED-handoff-through-2026-07-15.md'),
+    file: path.join('example-app', 'sessions', 'ARCHIVED-handoff.md'),
     kind: 'relocate',
-    target: path.join('voltras-workspace', 'sources', 'ARCHIVED-handoff-through-2026-07-15.md'),
+    target: path.join('example-app', 'sources', 'ARCHIVED-handoff.md'),
     why: 'not a session file — a hand-archived handoff parked in sessions/',
   },
 ];
@@ -54,16 +54,16 @@ const TRACKS = new Set(['canonical', 'sidecar', 'adhoc']);
  * Brief-level repairs, applied before the `task_seq` backfill so a brief that
  * currently fails validation can still be rewritten.
  *
- * `health` carries `state: active`, which has never been in the enum, so every
- * validating writer refuses it — `active-work touch health` errors today. The
- * operator's chosen resolution is `focused` at rank 11 (1–10 are taken).
+ * An initiative carrying `state: active`, which has never been in the enum, is
+ * refused by every validating writer. The repair sets `focused` at rank 11.
  * Guarded by the exact broken value, so a hand-fix beforehand wins.
+ * The entries here are synthetic examples of the mechanism.
  */
 const BRIEF_REPAIRS: Record<
   string,
   (fm: Record<string, unknown>) => { patch: Record<string, unknown>; detail: string } | null
 > = {
-  health(fm) {
+  'sample-lib'(fm) {
     if (fm.state !== 'active') return null;
     return {
       patch: { state: 'focused', ...(fm.rank === undefined ? { rank: 11 } : {}) },
