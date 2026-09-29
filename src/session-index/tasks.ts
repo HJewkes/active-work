@@ -28,7 +28,7 @@ import { readYaml } from '../utils/yaml-io.js';
 
 /**
  * A task id is unique per initiative, not globally, and one collision is real:
- * `health` and `herald` both mint `H-<n>`, so `H-1`..`H-7` name two different
+ * two initiatives can both mint `H-<n>`, so `H-1`..`H-7` name two different
  * tasks. An ambiguous id resolves to nothing rather than to a coin flip — a
  * wrong title is worse than a null one, and no ambiguous id is actually cited
  * by any command in the corpus.
