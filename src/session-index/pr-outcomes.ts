@@ -51,30 +51,17 @@ interface CheckedRow {
   outcome_checked_at: string | null;
 }
 
-/**
- * One round per `CHANGES_REQUESTED` submission that a later commit answered
- * (Q6, decided 2026-09-23). Reviews over agent-chat never reach GitHub, so
- * this is a floor.
- */
-function countReviewRounds(reviews: readonly GhReview[], commits: readonly GhCommit[]): number {
-  const commitTimes = commits.flatMap((c) =>
-    c.committedDate ? [Date.parse(c.committedDate)] : [],
-  );
-  const lastCommit = commitTimes.length > 0 ? Math.max(...commitTimes) : -Infinity;
-  return reviews.filter(
-    (r) =>
-      r.state === 'CHANGES_REQUESTED' &&
-      r.submittedAt != null &&
-      Date.parse(r.submittedAt) < lastCommit,
-  ).length;
-}
-
+/** The round rule lives in session-graph; this side only hands over what the forge said. */
 function toResolved(pr: GhPr): ResolvedPr {
   return {
     state: pr.state ?? null,
     mergedAt: pr.mergedAt || null,
     closedAt: pr.closedAt || null,
-    reviewRounds: countReviewRounds(pr.reviews ?? [], pr.commits ?? []),
+    reviews: (pr.reviews ?? []).flatMap((r) =>
+      r.state && r.submittedAt ? [{ state: r.state, submittedAt: r.submittedAt }] : [],
+    ),
+    // Sent even when empty, so the package stores [] instead of offering the PR again.
+    commitTimes: (pr.commits ?? []).flatMap((c) => (c.committedDate ? [c.committedDate] : [])),
   };
 }
 
