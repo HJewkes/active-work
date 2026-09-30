@@ -103,33 +103,48 @@ describe('the gh PR resolver', () => {
     expect(rowFor(2)?.outcome_checked_at).toEqual(expect.any(String));
   });
 
-  it('counts review rounds by the agreed rule', async () => {
+  it('passes reviews and commit times through, with no local round count', async () => {
     addPr(3);
-    const review = (state: string, submittedAt: string): Record<string, string> => ({
-      state,
-      submittedAt,
-    });
     const gh = fakeGh({
       'acme/demo#3': pr({
         reviews: [
-          review('CHANGES_REQUESTED', '2026-09-20T01:00:00Z'),
-          review('COMMENTED', '2026-09-20T01:30:00Z'),
-          review('CHANGES_REQUESTED', '2026-09-20T03:00:00Z'),
-          review('APPROVED', '2026-09-20T05:00:00Z'),
-          // No commit follows this one, so it is not a round yet.
-          review('CHANGES_REQUESTED', '2026-09-20T06:00:00Z'),
+          { state: 'CHANGES_REQUESTED', submittedAt: '2026-09-20T01:00:00Z' },
+          { state: 'APPROVED', submittedAt: '2026-09-20T05:00:00Z' },
+          { state: 'COMMENTED', submittedAt: null },
         ],
         commits: [
           { committedDate: '2026-09-20T00:00:00Z' },
           { committedDate: '2026-09-20T02:00:00Z' },
-          { committedDate: '2026-09-20T04:00:00Z' },
+          { committedDate: null },
         ],
       }),
     });
 
-    await enrichPrs(graph, ghPrResolver(graph, { run: gh }));
+    const resolution = await ghPrResolver(graph, { run: gh })([
+      { prRef: 'pr:acme/demo#3', repo: 'acme/demo', number: 3 },
+    ]);
 
-    expect(rowFor(3)).toMatchObject({ review_rounds: 2 });
+    expect(resolution.get('pr:acme/demo#3')).toEqual({
+      state: 'OPEN',
+      mergedAt: null,
+      closedAt: null,
+      reviews: [
+        { state: 'CHANGES_REQUESTED', submittedAt: '2026-09-20T01:00:00Z' },
+        { state: 'APPROVED', submittedAt: '2026-09-20T05:00:00Z' },
+      ],
+      commitTimes: ['2026-09-20T00:00:00Z', '2026-09-20T02:00:00Z'],
+    });
+  });
+
+  it('sends commit times as an empty array when a PR has no commits', async () => {
+    addPr(4);
+    const gh = fakeGh({ 'acme/demo#4': { state: 'OPEN' } });
+
+    const resolution = await ghPrResolver(graph, { run: gh })([
+      { prRef: 'pr:acme/demo#4', repo: 'acme/demo', number: 4 },
+    ]);
+
+    expect(resolution.get('pr:acme/demo#4')).toMatchObject({ commitTimes: [], reviews: [] });
   });
 
   it('asks only for open PRs and PRs never checked, at most 50 per pass', async () => {
