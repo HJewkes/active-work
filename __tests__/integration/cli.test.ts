@@ -235,4 +235,79 @@ describe('cli integration', () => {
       expect(reported).toBe('0.0.0-dev');
     }
   });
+
+  describe('task edit flags', () => {
+    const SLUG = 'flag-demo';
+    let taskId: string;
+
+    const taskEdit = (...args: string[]): RunResult =>
+      runCli(['--json', 'task', 'edit', SLUG, taskId, ...args], { ACTIVE_ROOT: activeRoot });
+
+    const readTaskFile = (): Promise<string> =>
+      fs.readFile(path.join(activeRoot, SLUG, 'tasks', `${taskId}.yml`), 'utf8');
+
+    beforeEach(() => {
+      const env = { ACTIVE_ROOT: activeRoot };
+      runCli(['new', SLUG, '--title', 'Flag demo', '--ship-target', '2026-Q3'], env);
+      const added = runCli(
+        [
+          '--json',
+          'task',
+          'add',
+          SLUG,
+          '--title',
+          'Demo',
+          '--tags',
+          'alpha,beta',
+          '--notes',
+          'One',
+        ],
+        env,
+      );
+      taskId = (JSON.parse(added.stdout) as { data: { id: string } }).data.id;
+    });
+
+    it('appends a line that starts with a dash and adds a tag in one call', () => {
+      const res = taskEdit('--append', '- item: "two" # kept', '--add-tag', 'gamma');
+
+      expect(res.status).toBe(0);
+      const { data } = JSON.parse(res.stdout) as { data: { notes: string; tags: string[] } };
+      expect(data.notes).toBe('One\n- item: "two" # kept');
+      expect(data.tags).toEqual(['alpha', 'beta', 'gamma']);
+    });
+
+    it('exits 0 and reports the no-op when the tag is already present', async () => {
+      const before = await readTaskFile();
+
+      const res = taskEdit('--add-tag', 'alpha');
+
+      expect(res.status).toBe(0);
+      const { warnings } = JSON.parse(res.stdout) as { warnings: string[] };
+      expect(warnings).toEqual(['Tag already present, nothing added: alpha']);
+      expect(await readTaskFile()).toBe(before);
+    });
+
+    it('still replaces a whole field with the four-argument form', () => {
+      const res = taskEdit('tags', 'x, y');
+
+      expect(res.status).toBe(0);
+      const { data } = JSON.parse(res.stdout) as { data: { tags: string[] } };
+      expect(data.tags).toEqual(['x', 'y']);
+    });
+
+    it.each([
+      ['the field form mixed with a flag', ['notes', 'Two', '--append', 'Three'], /not both/],
+      ['no operation', [], /Nothing to edit/],
+      ['a field without a value', ['notes'], /needs both <field> and <value>/],
+      ['an empty --append', ['--append', ''], /non-empty text/],
+    ])('exits 64 and leaves the file untouched for %s', async (_label, args, message) => {
+      const before = await readTaskFile();
+
+      const res = taskEdit(...args);
+
+      expect(res.status).toBe(64);
+      expect(res.stdout).toMatch(message);
+      expect(await readTaskFile()).toBe(before);
+    });
+  });
 });
