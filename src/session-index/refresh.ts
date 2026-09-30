@@ -188,7 +188,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       verifyHash: verify,
       withContentHash: verify,
       resolveTasks: taskResolver(options.taskRoot),
-      resolveOrigins: agentChatOriginResolver(),
+      resolveOrigins: agentChatOriginResolver(undefined, options.taskRoot),
       resolvePrs: options.skipPrOutcomes
         ? undefined
         : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),

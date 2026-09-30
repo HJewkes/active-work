@@ -91,6 +91,33 @@ export async function loadTaskStore(root: string = getActiveRoot()): Promise<Tas
   return store;
 }
 
+async function ymlStems(dir: string): Promise<string[]> {
+  try {
+    const files = await fs.readdir(dir);
+    return files.filter((f) => f.endsWith('.yml')).map((f) => f.slice(0, -'.yml'.length));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+/**
+ * Every task file id in the store, archived ones included (TP-407): a spawn
+ * brief names the task it was given, and that task is often done by the time
+ * the origin resolver reads the brief. Ambiguous ids count; the edge target
+ * carries no initiative.
+ */
+export async function loadKnownTaskIds(root: string = getActiveRoot()): Promise<Set<string>> {
+  const known = new Set<string>();
+  for (const slug of await initiativeSlugs(root)) {
+    const tasksDir = path.join(root, slug, 'tasks');
+    for (const dir of [tasksDir, path.join(tasksDir, 'archive')]) {
+      for (const id of await ymlStems(dir)) known.add(id);
+    }
+  }
+  return known;
+}
+
 /**
  * Only the ids the graph asked about are answered, so the task table stays
  * "tasks the corpus mentions". The resolver contract allows returning ids no

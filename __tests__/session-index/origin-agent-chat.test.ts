@@ -4,10 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { resolveOrigins, sessionsNeedingOrigin } from '@titan-design/session-graph';
+
+import { openGraph } from '../../src/session-index/graph.js';
 import {
+  agentChatOriginResolver,
   BRIEF_EXCERPT_CHARS,
   eventsDbSource,
   resolveFromSource,
+  type IsKnownTask,
   type OpenDatabase,
 } from '../../src/session-index/origin-agent-chat.js';
 
@@ -95,9 +100,14 @@ function adoptedCoordinator(name: string, agentId: string, ts = T0): Row[] {
   ];
 }
 
-function spawnedWorker(parent: string, parentId: string | null, ts = T0 + 1_000): Row[] {
+function spawnedWorker(
+  parent: string,
+  parentId: string | null,
+  ts = T0 + 1_000,
+  name = 'worker-1',
+): Row[] {
   const meta: Record<string, string> = {
-    name: 'worker-1',
+    name,
     profile: 'implementer',
     model: 'opus',
     surface: 'iterm-pane',
@@ -109,13 +119,18 @@ function spawnedWorker(parent: string, parentId: string | null, ts = T0 + 1_000)
   };
   if (parentId) meta.parent = parentId;
   return [
-    { ts, kind: 'agent_spawned', actor: parent, target: 'worker-1', meta },
-    { ts: ts + 500, kind: 'agent_attached', actor: 'worker-1', ref: 'bbbb2222' },
+    { ts, kind: 'agent_spawned', actor: parent, target: name, meta },
+    { ts: ts + 500, kind: 'agent_attached', actor: name, ref: 'bbbb2222' },
   ];
 }
 
-function resolve(sessionIds: string[] = [COORD_SESSION, WORKER_SESSION]) {
-  return resolveFromSource(eventsDbSource(home), sessionIds);
+const noKnownTasks: IsKnownTask = () => false;
+
+function resolve(
+  sessionIds: string[] = [COORD_SESSION, WORKER_SESSION],
+  isKnown: IsKnownTask = noKnownTasks,
+) {
+  return resolveFromSource(eventsDbSource(home), sessionIds, isKnown);
 }
 
 describe('agent-chat origin adapter', () => {
@@ -295,10 +310,132 @@ describe('agent-chat origin adapter', () => {
       return new Database(target, options);
     };
 
-    const { origins } = resolveFromSource(eventsDbSource(home, spy), [WORKER_SESSION]);
+    const { origins } = resolveFromSource(
+      eventsDbSource(home, spy),
+      [WORKER_SESSION],
+      noKnownTasks,
+    );
 
     expect(origins[WORKER_SESSION]).toBeDefined();
     expect(opened).toEqual([expect.objectContaining({ readonly: true })]);
     expect(statSync(file).mtimeMs).toBe(mtimeBefore);
+  });
+});
+
+function orientedBrief(assignment: string): string {
+  const openTasks = Array.from(
+    { length: 25 },
+    (_, i) => `- TP-${i + 1}: synthetic open task ${i + 1}`,
+  );
+  return [
+    '# Orientation: active-work initiative "example"',
+    '## Brief (brief.md)\n\nThe example initiative tracks TP-2 as its first milestone.',
+    `## Open tasks (25, highest priority first)\n\n${openTasks.join('\n')}`,
+    '## Related to this assignment (1, ranked; open with Read)\n\n- task:CC-9 "a related task"',
+    assignment,
+  ].join('\n\n');
+}
+
+function knownOnly(...ids: string[]): IsKnownTask {
+  const known = new Set(ids);
+  return (id) => known.has(id);
+}
+
+function writeTaskFile(root: string, file: string): void {
+  mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+  writeFileSync(path.join(root, file), 'id: synthetic\n', 'utf8');
+}
+
+describe('agent-chat origin task links', () => {
+  it('fills taskIds from a pane plan whose brief carries an orientation block', () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...spawnedWorker('coord', 'aaaa1111'),
+    ]);
+    const brief = orientedBrief('Task TP-31: add the widget.');
+    writePlan('bbbb2222', { args: ['--model', 'opus', '--', brief] });
+    const isKnown = knownOnly(
+      'TP-2',
+      'TP-31',
+      'CC-9',
+      ...Array.from({ length: 25 }, (_, i) => `TP-${i + 1}`),
+    );
+
+    const { origins } = resolve([WORKER_SESSION], isKnown);
+
+    expect(brief.indexOf('TP-31')).toBeGreaterThan(BRIEF_EXCERPT_CHARS);
+    expect(origins[WORKER_SESSION]).toMatchObject({
+      taskIds: ['TP-31'],
+      taskSource: 'brief-anchor',
+    });
+  });
+
+  it('links from the agent name when the plan.json is missing', () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...spawnedWorker('coord', 'aaaa1111', T0 + 1_000, 'tp-31-impl'),
+    ]);
+
+    const { origins } = resolve([WORKER_SESSION], knownOnly('TP-31'));
+
+    expect(origins[WORKER_SESSION]).toMatchObject({ taskIds: ['TP-31'], taskSource: 'name' });
+  });
+
+  it('an unlinked session gets empty taskIds and source none', () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...spawnedWorker('coord', 'aaaa1111'),
+    ]);
+    writePlan('bbbb2222', { stdin: 'Review the docs for tone.' });
+
+    const { origins } = resolve();
+
+    expect(origins[WORKER_SESSION]).toMatchObject({ taskIds: [], taskSource: 'none' });
+    expect(origins[COORD_SESSION]).toMatchObject({ taskIds: [], taskSource: 'none' });
+  });
+
+  it('an archived task still links', async () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...spawnedWorker('coord', 'aaaa1111'),
+    ]);
+    writePlan('bbbb2222', { stdin: 'Task TP-31: add the widget.' });
+    const taskRoot = path.join(home, 'active');
+    writeTaskFile(taskRoot, 'example/tasks/archive/TP-31.yml');
+    writeTaskFile(taskRoot, 'example/tasks/TP-32.yml');
+
+    const { origins } = await agentChatOriginResolver(
+      eventsDbSource(home),
+      taskRoot,
+    )([WORKER_SESSION]);
+
+    expect(origins[WORKER_SESSION]).toMatchObject({
+      taskIds: ['TP-31'],
+      taskSource: 'brief-anchor',
+    });
+  });
+
+  it('a second pass offers no row the first pass examined', async () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...spawnedWorker('coord', 'aaaa1111'),
+    ]);
+    writePlan('bbbb2222', { stdin: 'Review the docs for tone.' });
+    const graph = openGraph(path.join(home, 'graph.sqlite3'));
+    const addSession = graph.db.prepare(
+      'INSERT INTO session (session_id, turn_count) VALUES (?, 0)',
+    );
+    for (const id of [COORD_SESSION, WORKER_SESSION]) addSession.run(id);
+    const resolver = agentChatOriginResolver(eventsDbSource(home), path.join(home, 'active'));
+
+    try {
+      const first = await resolveOrigins(graph, resolver);
+      const offered = sessionsNeedingOrigin(graph);
+
+      expect(first).toMatchObject({ requested: 2, applied: 2, failed: false });
+      expect(offered).toEqual([]);
+    } finally {
+      graph.db.close();
+    }
   });
 });

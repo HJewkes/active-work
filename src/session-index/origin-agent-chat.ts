@@ -1,3 +1,4 @@
+import { assignedTaskIds } from '@titan-design/session-read';
 import Database from 'better-sqlite3';
 import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
@@ -8,6 +9,8 @@ import type {
   OriginResolver,
   ResolvedOrigin,
 } from '@titan-design/session-graph';
+
+import { loadKnownTaskIds } from './tasks.js';
 
 /**
  * Who launched a session, read from agent-chat's own record (TP-274).
@@ -120,19 +123,31 @@ function promptArg(args: unknown): string | null {
   return args.includes('--') && typeof prompt === 'string' ? prompt : null;
 }
 
-export function agentChatOriginResolver(source: SpawnSource = eventsDbSource()): OriginResolver {
-  return (sessionIds) => resolveFromSource(source, sessionIds);
+export type IsKnownTask = (taskId: string) => boolean;
+
+/** Known task ids are read once per pass, so every origin in it links against the same store. */
+export function agentChatOriginResolver(
+  source: SpawnSource = eventsDbSource(),
+  taskRoot?: string,
+): OriginResolver {
+  return async (sessionIds) => {
+    const known = await loadKnownTaskIds(taskRoot);
+    return resolveFromSource(source, sessionIds, (id) => known.has(id));
+  };
 }
 
 export function resolveFromSource(
   source: SpawnSource,
   sessionIds: readonly string[],
+  isKnown: IsKnownTask,
 ): OriginResolution {
   const wanted = new Set(sessionIds);
   const index = buildIndex(source.events());
   const origins: Record<string, ResolvedOrigin> = {};
   for (const spawn of index.spawns) {
-    if (wanted.has(spawn.sessionId)) origins[spawn.sessionId] = toOrigin(spawn, index, source);
+    if (wanted.has(spawn.sessionId)) {
+      origins[spawn.sessionId] = toOrigin(spawn, index, source, isKnown);
+    }
   }
   const externalEvents = index.events
     .map((event) => toExternalEvent(event, index))
@@ -216,9 +231,16 @@ function sessionSightings(
   return byAgent;
 }
 
-function toOrigin(spawn: Spawn, index: SpawnIndex, source: SpawnSource): ResolvedOrigin {
+function toOrigin(
+  spawn: Spawn,
+  index: SpawnIndex,
+  source: SpawnSource,
+  isKnown: IsKnownTask,
+): ResolvedOrigin {
   const { meta } = spawn;
   const plan = spawn.agentId ? source.plan(spawn.agentId) : null;
+  // The full brief: the excerpt ends inside the orientation block, before the assignment.
+  const task = assignedTaskIds({ agentName: spawn.name, brief: plan?.brief ?? '', isKnown });
   return {
     originSystem: ORIGIN_SYSTEM,
     agentId: spawn.agentId,
@@ -237,6 +259,8 @@ function toOrigin(spawn: Spawn, index: SpawnIndex, source: SpawnSource): Resolve
     briefChars: plan ? plan.brief.length : null,
     briefExcerpt: plan ? plan.brief.slice(0, BRIEF_EXCERPT_CHARS) : null,
     briefPath: plan?.path ?? null,
+    taskIds: task.taskIds,
+    taskSource: task.source,
   };
 }
 
