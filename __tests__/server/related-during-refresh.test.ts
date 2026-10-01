@@ -55,6 +55,7 @@ beforeEach(() => {
   scaffold(activeRoot);
   graph = openGraph(dbPath);
   vi.stubEnv('AGENT_CHAT_HOME', path.join(dir, 'agent-chat'));
+  vi.stubEnv('AW_INDEX_MIN_INTERVAL_MS', '1');
   Object.assign(slowEpisodes, { enabled: false, firstCallAt: 0 });
 });
 

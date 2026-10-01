@@ -292,7 +292,7 @@ describe('RefreshScheduler', () => {
 
   it('collapses triggers arriving mid-run into exactly one extra run', async () => {
     const gate = gatedRun();
-    const scheduler = new RefreshScheduler(gate.run);
+    const scheduler = new RefreshScheduler(gate.run, { minIntervalMs: 0 });
 
     scheduler.trigger();
     for (let i = 0; i < 10; i++) scheduler.trigger();
@@ -310,14 +310,17 @@ describe('RefreshScheduler', () => {
     let concurrent = 0;
     let maxConcurrent = 0;
     let runs = 0;
-    const scheduler = new RefreshScheduler(async () => {
-      concurrent += 1;
-      maxConcurrent = Math.max(maxConcurrent, concurrent);
-      runs += 1;
-      await Promise.resolve();
-      concurrent -= 1;
-      return summary();
-    });
+    const scheduler = new RefreshScheduler(
+      async () => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        runs += 1;
+        await Promise.resolve();
+        concurrent -= 1;
+        return summary();
+      },
+      { minIntervalMs: 0 },
+    );
 
     scheduler.trigger();
     scheduler.trigger();
@@ -334,7 +337,7 @@ describe('RefreshScheduler', () => {
 
   it('close() awaits the in-flight run and drops what was queued', async () => {
     const gate = gatedRun();
-    const scheduler = new RefreshScheduler(gate.run);
+    const scheduler = new RefreshScheduler(gate.run, { minIntervalMs: 0 });
 
     scheduler.trigger();
     scheduler.trigger();
@@ -357,7 +360,12 @@ describe('RefreshScheduler', () => {
         runs += 1;
         return Promise.reject(new Error(`boom ${runs}`));
       },
-      { sleep: async (ms) => void delays.push(ms), baseBackoffMs: 10, maxBackoffMs: 40 },
+      {
+        minIntervalMs: 0,
+        sleep: async (ms) => void delays.push(ms),
+        baseBackoffMs: 10,
+        maxBackoffMs: 40,
+      },
     );
 
     scheduler.trigger();

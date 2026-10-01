@@ -101,6 +101,7 @@ describe('startSessionIndexWatch', () => {
       },
     }));
     vi.stubEnv('AW_INDEX_POLL_MS', '1');
+    vi.stubEnv('AW_INDEX_MIN_INTERVAL_MS', '1');
     const { startSessionIndexWatch: start } =
       await import('../../src/server/session-index-watch.js');
 
