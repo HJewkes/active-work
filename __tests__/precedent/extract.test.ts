@@ -211,15 +211,16 @@ describe('precedent extract', () => {
     });
   });
 
-  it('files a session no initiative claims under the root-level file', async () => {
+  it('writes nothing for a session no initiative claims', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const summary = await run(activeRoot);
 
-      expect(summary.files).toEqual([path.join(activeRoot, '.precedents.jsonl')]);
+      expect(summary.files).toEqual([]);
+      expect(existsSync(path.join(activeRoot, '.precedents.jsonl'))).toBe(false);
     });
   });
 
-  it('ingests decision notes, feedback imports and queue answers, and skips other imports', async () => {
+  it('ingests decision notes and feedback imports, and skips other imports and unresolved queue answers', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       writeNote(
         activeRoot,
@@ -244,12 +245,10 @@ describe('precedent extract', () => {
       const summary = await run(activeRoot);
 
       const { rows } = await readAllPrecedents(activeRoot);
-      expect(summary.written).toMatchObject({ note: 2, queue: 1 });
+      expect(summary.written).toMatchObject({ note: 2, queue: 0 });
       expect(rows.map((r) => r.question)).not.toContain('Project fact');
-      expect(rows.find((r) => r.source === 'queue')).toMatchObject({
-        question: 'Restart the broker now?',
-        answer: 'Yes, restart it tonight',
-      });
+      expect(rows.some((r) => r.initiative === null)).toBe(false);
+      expect(rows.some((r) => r.source === 'queue')).toBe(false);
     });
   });
 });
