@@ -17,10 +17,18 @@ export interface SchedulerStatus {
   last: RefreshSummary | null;
   lastError: string | null;
   consecutiveErrors: number;
+  /** Rounds skipped because another process held the refresh lock. */
+  lockSkips: number;
 }
 
 export interface SchedulerOptions {
   onError?: (err: unknown) => void;
+  /** Called instead of `onError` when the refresh lock stayed held; the round retries with backoff. */
+  onLockSkip?: (skips: number) => void;
+  /** Least time between the starts of two runs; a burst inside it collapses to one trailing run. */
+  minIntervalMs?: number;
+  /** Injectable for tests; defaults to `Date.now`. */
+  now?: () => number;
   /** Injectable for tests; defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
   baseBackoffMs?: number;
@@ -29,6 +37,12 @@ export interface SchedulerOptions {
 
 const DEFAULT_BASE_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 60_000;
+export const DEFAULT_MIN_INTERVAL_MS = 15_000;
+
+/** proper-lockfile gives up with ELOCKED once its retries run out: someone else is mid-pass. */
+export function isLockContention(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === 'ELOCKED';
+}
 
 const realSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms).unref?.());
@@ -41,6 +55,8 @@ export class RefreshScheduler {
   private last: RefreshSummary | null = null;
   private lastError: string | null = null;
   private consecutiveErrors = 0;
+  private lockSkips = 0;
+  private lastStartedAt: number | null = null;
 
   constructor(
     private readonly run: () => Promise<RefreshSummary>,
@@ -71,25 +87,54 @@ export class RefreshScheduler {
    */
   private async drain(): Promise<void> {
     do {
+      const wait = this.windowWaitMs();
+      if (wait > 0) await (this.options.sleep ?? realSleep)(wait);
+      if (this.closed) return;
       this.pending = false;
-      try {
-        this.last = await this.run();
-        this.lastError = null;
-        this.consecutiveErrors = 0;
-      } catch (err) {
-        this.consecutiveErrors += 1;
-        this.lastError = err instanceof Error ? err.message : String(err);
-        this.options.onError?.(err);
-        // Back off so a permanently broken corpus cannot spin the daemon.
-        await (this.options.sleep ?? realSleep)(this.backoffMs());
-      }
+      this.lastStartedAt = this.now();
+      await this.runOnce();
     } while (this.pending && !this.closed);
   }
 
-  private backoffMs(): number {
+  /** How long until `minIntervalMs` has passed since the last start; triggers meanwhile coalesce. */
+  private windowWaitMs(): number {
+    if (this.lastStartedAt === null) return 0;
+    return this.lastStartedAt + this.minInterval() - this.now();
+  }
+
+  private async runOnce(): Promise<void> {
+    try {
+      this.last = await this.run();
+      this.lastError = null;
+      this.consecutiveErrors = 0;
+    } catch (err) {
+      if (isLockContention(err)) {
+        this.lockSkips += 1;
+        this.pending = true;
+        this.options.onLockSkip?.(this.lockSkips);
+        await (this.options.sleep ?? realSleep)(this.backoffMs(this.lockSkips));
+        return;
+      }
+      this.consecutiveErrors += 1;
+      this.lastError = err instanceof Error ? err.message : String(err);
+      this.options.onError?.(err);
+      // Back off so a permanently broken corpus cannot spin the daemon.
+      await (this.options.sleep ?? realSleep)(this.backoffMs(this.consecutiveErrors));
+    }
+  }
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
+
+  private minInterval(): number {
+    return this.options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
+  }
+
+  private backoffMs(attempt: number): number {
     const base = this.options.baseBackoffMs ?? DEFAULT_BASE_BACKOFF_MS;
     const max = this.options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS;
-    return Math.min(base * 2 ** (this.consecutiveErrors - 1), max);
+    return Math.min(base * 2 ** (attempt - 1), max);
   }
 
   status(): SchedulerStatus {
@@ -99,6 +144,7 @@ export class RefreshScheduler {
       last: this.last,
       lastError: this.lastError,
       consecutiveErrors: this.consecutiveErrors,
+      lockSkips: this.lockSkips,
     };
   }
 

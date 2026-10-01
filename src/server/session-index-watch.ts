@@ -15,7 +15,11 @@ import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { readerGate } from '../session-index/reader-gate.js';
 import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
-import { RefreshScheduler, type SchedulerStatus } from '../session-index/scheduler.js';
+import {
+  DEFAULT_MIN_INTERVAL_MS,
+  RefreshScheduler,
+  type SchedulerStatus,
+} from '../session-index/scheduler.js';
 
 export interface WatcherStatus extends SchedulerStatus {
   /** The longest the event loop stalled during the last successful pass; null before one. */
@@ -55,6 +59,9 @@ export async function yieldToReaders(): Promise<void> {
   await nextMacrotask();
   await readerGate.idle(IDLE_CAP_MS);
 }
+
+/** A held lock is routine on a busy machine; log the first skip and then one in this many. */
+const LOCK_SKIP_LOG_EVERY = 60;
 
 /** Every this many passes the daemon checks all sessions for stale episodes, not only touched ones. */
 const EPISODE_SWEEP_EVERY = 10;
@@ -167,6 +174,12 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
   };
   const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
     onError: (err) => log.warn({ err }, 'session index refresh failed'),
+    minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
+    onLockSkip: (skips) => {
+      if (skips % LOCK_SKIP_LOG_EVERY === 1) {
+        log.info({ skips }, 'session index refresh skipped: lock held elsewhere; will retry');
+      }
+    },
   });
 
   const watchers = claudeTranscriptRoots().flatMap(({ root }) => {
