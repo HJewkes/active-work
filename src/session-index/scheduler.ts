@@ -27,6 +27,8 @@ export interface SchedulerOptions {
   onLockSkip?: (skips: number) => void;
   /** Least time between the starts of two runs; a burst inside it collapses to one trailing run. */
   minIntervalMs?: number;
+  /** Least idle time after a pass ends before the next starts; defaults to `minIntervalMs`. */
+  minIdleMs?: number;
   /** Injectable for tests; defaults to `Date.now`. */
   now?: () => number;
   /** Injectable for tests; defaults to a real timer. */
@@ -44,8 +46,19 @@ export function isLockContention(err: unknown): boolean {
   return (err as { code?: unknown } | null)?.code === 'ELOCKED';
 }
 
-const realSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+/** A timer that `cancel` ends early, so `close()` never waits out a backoff. */
+function cancellableSleep(ms: number): { done: Promise<void>; cancel: () => void } {
+  let cancel = (): void => {};
+  const done = new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    cancel = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+  });
+  return { done, cancel };
+}
 
 export class RefreshScheduler {
   private running = false;
@@ -57,6 +70,8 @@ export class RefreshScheduler {
   private consecutiveErrors = 0;
   private lockSkips = 0;
   private lastStartedAt: number | null = null;
+  private lastEndedAt: number | null = null;
+  private cancelSleep: () => void = () => {};
 
   constructor(
     private readonly run: () => Promise<RefreshSummary>,
@@ -88,18 +103,34 @@ export class RefreshScheduler {
   private async drain(): Promise<void> {
     do {
       const wait = this.windowWaitMs();
-      if (wait > 0) await (this.options.sleep ?? realSleep)(wait);
+      if (wait > 0) await this.pause(wait);
       if (this.closed) return;
       this.pending = false;
       this.lastStartedAt = this.now();
       await this.runOnce();
+      this.lastEndedAt = this.now();
     } while (this.pending && !this.closed);
   }
 
-  /** How long until `minIntervalMs` has passed since the last start; triggers meanwhile coalesce. */
+  /** Sleep that `close()` cuts short; an injected `sleep` is raced against the close instead. */
+  private async pause(ms: number): Promise<void> {
+    if (this.closed) return;
+    const timer = cancellableSleep(ms);
+    this.cancelSleep = timer.cancel;
+    await (this.options.sleep ? Promise.race([this.options.sleep(ms), timer.done]) : timer.done);
+    timer.cancel();
+  }
+
+  /**
+   * The later of `minIntervalMs` after the last start and `minIdleMs` after the
+   * last end: a pass longer than the interval must still leave the loop idle
+   * before the next one, or a cold index keeps a core pinned. Triggers meanwhile coalesce.
+   */
   private windowWaitMs(): number {
-    if (this.lastStartedAt === null) return 0;
-    return this.lastStartedAt + this.minInterval() - this.now();
+    if (this.lastStartedAt === null || this.lastEndedAt === null) return 0;
+    const fromStart = this.lastStartedAt + this.minInterval() - this.now();
+    const fromEnd = this.lastEndedAt + this.minIdle() - this.now();
+    return Math.max(fromStart, fromEnd);
   }
 
   private async runOnce(): Promise<void> {
@@ -107,20 +138,25 @@ export class RefreshScheduler {
       this.last = await this.run();
       this.lastError = null;
       this.consecutiveErrors = 0;
+      this.lockSkips = 0;
     } catch (err) {
       if (isLockContention(err)) {
         this.lockSkips += 1;
         this.pending = true;
         this.options.onLockSkip?.(this.lockSkips);
-        await (this.options.sleep ?? realSleep)(this.backoffMs(this.lockSkips));
+        await this.pause(this.backoffMs(this.lockSkips));
         return;
       }
       this.consecutiveErrors += 1;
       this.lastError = err instanceof Error ? err.message : String(err);
       this.options.onError?.(err);
       // Back off so a permanently broken corpus cannot spin the daemon.
-      await (this.options.sleep ?? realSleep)(this.backoffMs(this.consecutiveErrors));
+      await this.pause(this.backoffMs(this.consecutiveErrors));
     }
+  }
+
+  private minIdle(): number {
+    return this.options.minIdleMs ?? this.minInterval();
   }
 
   private now(): number {
@@ -152,6 +188,7 @@ export class RefreshScheduler {
   async close(): Promise<void> {
     this.closed = true;
     this.pending = false;
+    this.cancelSleep();
     await this.inFlight;
   }
 }
