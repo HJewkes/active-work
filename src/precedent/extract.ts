@@ -2,6 +2,7 @@ import path from 'node:path';
 import { resolveSlugFromCwd } from '../commands/_open-helpers.js';
 import { agentChatHome } from '../session-index/origin-agent-chat.js';
 import { defaultGraphPath, openGraphReadOnly } from '../session-index/graph.js';
+import { loadHumanOnlyInitiatives } from './human-only.js';
 import { extractNoteRows } from './notes.js';
 import { extractQueueRows } from './queue.js';
 import type { PrecedentRow } from './schema.js';
@@ -47,6 +48,10 @@ function readAskCalls(graphPath: string): AskCall[] {
   }
 }
 
+function withoutInitiatives(rows: PrecedentRow[], skip: ReadonlySet<string>): PrecedentRow[] {
+  return rows.filter((row) => row.initiative === null || !skip.has(row.initiative));
+}
+
 function groupByFile(activeRoot: string, rows: PrecedentRow[]): Map<string, PrecedentRow[]> {
   const groups = new Map<string, PrecedentRow[]>();
   for (const row of rows) {
@@ -64,15 +69,20 @@ function countBySource(rows: PrecedentRow[]): ExtractSummary['written'] {
 
 export async function extractPrecedents(options: ExtractOptions): Promise<ExtractSummary> {
   const { activeRoot } = options;
+  const humanOnly = await loadHumanOnlyInitiatives(activeRoot);
   const seen = new Set((await readAllPrecedents(activeRoot)).rows.map((row) => row.key));
 
   const calls = readAskCalls(options.graphPath ?? defaultGraphPath());
   const unseen = calls.filter((c) => !seen.has(transcriptKey(c.sessionId, c.toolUseId)));
   const transcripts = await extractTranscriptRows(unseen, cachedResolver(activeRoot));
+  const transcriptRows = withoutInitiatives(transcripts.rows, humanOnly);
 
   const eventsDb = options.eventsDbPath ?? path.join(agentChatHome(), 'events.db');
-  const others = [...(await extractNoteRows(activeRoot)), ...extractQueueRows(eventsDb)];
-  const fresh = [...transcripts.rows, ...others.filter((row) => !seen.has(row.key))];
+  const others = [
+    ...(await extractNoteRows(activeRoot, humanOnly)),
+    ...withoutInitiatives(extractQueueRows(eventsDb), humanOnly),
+  ];
+  const fresh = [...transcriptRows, ...others.filter((row) => !seen.has(row.key))];
 
   const groups = groupByFile(activeRoot, fresh);
   for (const [file, rows] of groups) await appendPrecedents(file, rows);

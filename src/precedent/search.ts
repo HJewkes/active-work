@@ -1,5 +1,6 @@
 import { createRetrievalEngine, ftsRetriever } from '@titan-design/retrieval';
 import { openDatabase, SpanFtsTables, spanFtsTablesDdl, type Db } from '@titan-design/store-sqlite';
+import { dropHumanOnly } from './human-only.js';
 import type { PrecedentRow } from './schema.js';
 
 /**
@@ -10,6 +11,8 @@ import type { PrecedentRow } from './schema.js';
  */
 
 export interface PrecedentSearchOptions {
+  /** Initiatives whose rows are never returned; required so no caller can forget it. */
+  humanOnly: ReadonlySet<string>;
   limit?: number;
   /** Bias towards this initiative. A boost, never a filter, as in `search`. */
   initiative?: string;
@@ -48,10 +51,12 @@ function buildIndex(db: Db, rows: PrecedentRow[]): SpanFtsTables {
 export async function searchPrecedents(
   rows: PrecedentRow[],
   query: string,
-  options: PrecedentSearchOptions = {},
+  options: PrecedentSearchOptions,
 ): Promise<PrecedentHit[]> {
   const limit = options.limit ?? 8;
-  const pool = options.class === undefined ? rows : rows.filter((r) => r.class === options.class);
+  const visible = dropHumanOnly(rows, options.humanOnly);
+  const pool =
+    options.class === undefined ? visible : visible.filter((r) => r.class === options.class);
   if (pool.length === 0) return [];
   const db = openDatabase(':memory:');
   try {

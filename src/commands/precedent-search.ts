@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { searchPrecedents } from '../precedent/search.js';
 import { PrecedentRowSchema, type PrecedentRow } from '../precedent/schema.js';
+import { loadHumanOnlyInitiatives } from '../precedent/human-only.js';
 import { readAllPrecedents } from '../precedent/store.js';
 import { getActiveRoot } from '../utils/paths.js';
 
@@ -49,11 +50,14 @@ export default defineCommand<Args, Result>({
     usage: 'active-work precedent search <query> [--limit 8] [--initiative <slug>] [--class <c>]',
   },
   async run(args) {
-    const { rows, malformed } = await readAllPrecedents(getActiveRoot());
+    const activeRoot = getActiveRoot();
+    const humanOnly = await loadHumanOnlyInitiatives(activeRoot);
+    const { rows, malformed } = await readAllPrecedents(activeRoot);
     const hits = await searchPrecedents(rows, args.query, {
       limit: args.limit,
       initiative: args.initiative,
       class: args.class,
+      humanOnly,
     });
     return {
       query: args.query,

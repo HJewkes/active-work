@@ -9,7 +9,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -155,7 +155,16 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+function writeCharter(activeRoot: string, humanOnly: string[] | null): void {
+  const dirPath = path.join(activeRoot, 'claude-channels', 'sources', 'autonomy');
+  mkdirSync(dirPath, { recursive: true });
+  const list = humanOnly === null ? '' : `human_only_initiatives: ${JSON.stringify(humanOnly)}\n`;
+  writeFileSync(path.join(dirPath, 'charter.md'), `---\n${list}---\nCharter body\n`, 'utf8');
+}
+
 function run(activeRoot: string) {
+  const charter = path.join(activeRoot, 'claude-channels', 'sources', 'autonomy', 'charter.md');
+  if (!existsSync(charter)) writeCharter(activeRoot, []);
   return extractPrecedents({ activeRoot, graphPath, eventsDbPath: path.join(dir, 'events.db') });
 }
 
@@ -252,13 +261,75 @@ describe('precedent search', () => {
       await run(activeRoot);
       const { rows } = await readAllPrecedents(activeRoot);
 
-      const hits = await searchPrecedents(rows, 'should I merge the PR');
+      const hits = await searchPrecedents(rows, 'should I merge the PR', { humanOnly: new Set() });
       const tasteOnly = await searchPrecedents(rows, 'should I merge the PR', {
         class: 'visual_taste',
+        humanOnly: new Set(),
       });
 
       expect(hits[0].row.tool_use_id).toBe('tu-merge');
       expect(tasteOnly).toEqual([]);
+    });
+  });
+});
+
+describe('human-only initiatives', () => {
+  const noteFrontmatter = "kind: decision\ntitle: Keep example-app private\ncreated: '2026-09-01'";
+
+  it('extracts nothing from a listed initiative', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      registerWorktree(activeRoot);
+      writeNote(activeRoot, '2026-09-01-private.md', noteFrontmatter, 'Body.');
+      writeCharter(activeRoot, ['sample-initiative']);
+
+      const summary = await run(activeRoot);
+
+      const { rows } = await readAllPrecedents(activeRoot);
+      expect(rows.filter((r) => r.initiative === 'sample-initiative')).toEqual([]);
+      expect(summary.written).toEqual({ transcript: 0, note: 0, queue: 0 });
+    });
+  });
+
+  it.each([
+    ['is missing', null],
+    ['has no list', 'nolist'],
+    ['has a malformed list', 'bad'],
+  ])('extracts nothing and errors when the charter %s', async (_name, kind) => {
+    await withTempActiveRoot(async (activeRoot) => {
+      registerWorktree(activeRoot);
+      if (kind === 'nolist') writeCharter(activeRoot, null);
+      if (kind === 'bad') {
+        const dirPath = path.join(activeRoot, 'claude-channels', 'sources', 'autonomy');
+        mkdirSync(dirPath, { recursive: true });
+        writeFileSync(path.join(dirPath, 'charter.md'), '---\nhuman_only_initiatives: nope\n---\n');
+      }
+
+      await expect(extractPrecedents({ activeRoot, graphPath })).rejects.toThrow(
+        /human_only_initiatives/,
+      );
+
+      expect((await readAllPrecedents(activeRoot)).rows).toEqual([]);
+    });
+  });
+
+  it('drops listed and unresolved rows from search, including rows already on disk', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      registerWorktree(activeRoot);
+      await run(activeRoot);
+      const { rows } = await readAllPrecedents(activeRoot);
+      const unresolved = rows.map((r) => ({ ...r, key: `${r.key}:u`, initiative: null }));
+
+      const open = await searchPrecedents(rows, 'should I merge the PR', { humanOnly: new Set() });
+      const listed = await searchPrecedents(rows, 'should I merge the PR', {
+        humanOnly: new Set(['sample-initiative']),
+      });
+      const orphaned = await searchPrecedents(unresolved, 'should I merge the PR', {
+        humanOnly: new Set(),
+      });
+
+      expect(open.length).toBeGreaterThan(0);
+      expect(listed).toEqual([]);
+      expect(orphaned).toEqual([]);
     });
   });
 });

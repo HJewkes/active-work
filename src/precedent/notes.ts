@@ -41,9 +41,13 @@ function noteRow(slug: string, note: LoadedNote): PrecedentRow {
   };
 }
 
-export async function extractNoteRows(activeRoot: string): Promise<PrecedentRow[]> {
+export async function extractNoteRows(
+  activeRoot: string,
+  skip: ReadonlySet<string>,
+): Promise<PrecedentRow[]> {
   const rows: PrecedentRow[] = [];
   for (const slug of await listInitiativeSlugs(activeRoot)) {
+    if (skip.has(slug)) continue;
     const { notes } = await loadNotesFromDir(path.join(activeRoot, slug));
     rows.push(...notes.filter(isPrecedentNote).map((note) => noteRow(slug, note)));
   }
