@@ -6,6 +6,11 @@ export default defineConfig({
     passWithNoTests: true,
     teardownTimeout: 30_000,
     hookTimeout: 30_000,
+    // vitest 3.x reads poolOptions only from the root, so the caps live here
+    poolOptions: {
+      threads: { maxThreads: 4, minThreads: 1 },
+      forks: { maxForks: 2, minForks: 1 },
+    },
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
