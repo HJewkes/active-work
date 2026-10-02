@@ -1,0 +1,14 @@
+# Files allowed to carry an egress-scan hit: <glob> <rule-id> <reason with a task id>.
+# One entry per file and rule. Private terms are never allowable. See docs/egress-scan.md.
+CLAUDE.md aw-data-path documents the active-work data dir in tilde form, CC-443
+README.md aw-data-path documents the active-work data dir in tilde form, CC-443
+skill/SKILL.md aw-data-path documents the active-work data dir in tilde form, CC-443
+skill/references/auditing-existing-work.md home-path placeholder home in an example discover ref, CC-443
+__tests__/bootstrap/prompt.test.ts home-path placeholder home in session cwds, CC-443
+__tests__/discover/orchestrator.test.ts home-path placeholder home in a session cwd, CC-443
+__tests__/integration/discover-orchestrator.test.ts home-path placeholder home in a session cwd, CC-443
+__tests__/integration/end-to-end.test.ts home-path placeholder home in session refs, CC-443
+__tests__/schemas/artifacts.test.ts home-path placeholder home in an artifact path, CC-443
+__tests__/session-index/migration-repair.test.ts aw-data-path doc comment naming the miner database in the data dir, CC-443
+__tests__/setup/supervision-launchd.test.ts home-path placeholder home for a launchd plist, CC-443
+__tests__/setup/supervision-systemd.test.ts home-path placeholder home for a systemd unit dir, CC-443
