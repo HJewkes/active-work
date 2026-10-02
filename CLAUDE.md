@@ -52,8 +52,8 @@ and the failing job's log, fix, and push to the same PR.
 `verify` runs format:check (fix with `pnpm format`), lint, typecheck, check:tools, then
 `scripts/test-sandboxed.sh` (build:cli, `vitest run` under a throwaway HOME, the
 CLI-reference generator smoke), then the full build. CI's `std / verify` job runs exactly
-this script. CI also runs gitleaks, `pnpm audit --audit-level=critical` and the egress scan
-(`docs/egress-scan.md`), which `verify` does not. The eval-miner run stays a local, manual gate: it needs `~/.claude` transcripts.
+this script. CI also runs gitleaks and `pnpm audit --audit-level=critical`, which `verify`
+does not. The eval-miner run stays a local, manual gate: it needs `~/.claude` transcripts.
 
 ## Conventions
 
