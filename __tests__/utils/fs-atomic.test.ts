@@ -2,7 +2,9 @@ import { promises as fs, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { atomicWrite, withFileLock } from '../../src/utils/fs-atomic.js';
+import lockfile from 'proper-lockfile';
+import { LockTimeoutError } from '../../src/errors.js';
+import { atomicWrite, LOCK_STALE_MS, withFileLock } from '../../src/utils/fs-atomic.js';
 
 let dir: string;
 
@@ -89,5 +91,30 @@ describe('withFileLock', () => {
 
     const result = await withFileLock(lockTarget, async () => 'second');
     expect(result).toBe('second');
+  });
+
+  it('throws LockTimeoutError with a retry hint when a live holder outlasts the wait', async () => {
+    const lockTarget = path.join(dir, 'busy.lock');
+    const release = await lockfile.lock(lockTarget, { realpath: false });
+
+    try {
+      const attempt = withFileLock(lockTarget, async () => 'never', { timeoutMs: 200 });
+      await expect(attempt).rejects.toBeInstanceOf(LockTimeoutError);
+      await expect(attempt).rejects.toThrow(/Gave up after 200ms .* Retry later/);
+    } finally {
+      await release();
+    }
+  });
+
+  it('reclaims a lock left behind by a crashed holder', async () => {
+    const lockTarget = path.join(dir, 'crashed.lock');
+    const lockDir = `${lockTarget}.lock`;
+    await fs.mkdir(lockDir);
+    const past = new Date(Date.now() - LOCK_STALE_MS - 1_000);
+    await fs.utimes(lockDir, past, past);
+
+    const result = await withFileLock(lockTarget, async () => 'reclaimed', { timeoutMs: 1_000 });
+
+    expect(result).toBe('reclaimed');
   });
 });
