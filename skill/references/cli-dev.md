@@ -39,7 +39,7 @@ If you are modifying the `active-work` skill, adding a CLI command, extending th
 ## Schema + write discipline
 
 - Every write to `brief.md` frontmatter, `tasks/*.yml`, `sessions/*.md` (frontmatter), or `artifacts.yml` must go through a validator in `src/schemas/`.
-- Read-modify-write must use `withFileLock` from `src/utils/fs-atomic.ts` to take a per-initiative POSIX flock.
+- Read-modify-write must use `withFileLock` from `src/utils/fs-atomic.ts` to take a per-initiative lock (a `proper-lockfile` lock directory, not a POSIX flock). A busy lock is waited on for up to 20s, then the command exits 75 (`EX_TEMPFAIL`); a lock whose holder stopped refreshing it for 10s counts as stale and is reclaimed.
 - Paths are computed via `env-paths` through `src/utils/paths.ts`. Never hardcode `~/.local/share/...`.
 
 ## Daemon

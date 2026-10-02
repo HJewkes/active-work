@@ -13,6 +13,7 @@ export const EXIT = {
   NOINPUT: 66, // EX_NOINPUT — file/initiative not found
   UNAVAILABLE: 69, // EX_UNAVAILABLE — daemon unreachable
   SOFTWARE: 70, // EX_SOFTWARE — internal bug
+  TEMPFAIL: 75, // EX_TEMPFAIL — lock busy; retry later
   CONFIG: 78, // EX_CONFIG — bad config
 } as const;
 
@@ -81,6 +82,15 @@ export class SoftwareError extends ActiveWorkError {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'SoftwareError';
+  }
+}
+
+export class LockTimeoutError extends ActiveWorkError {
+  override readonly code: number = EXIT.TEMPFAIL;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'LockTimeoutError';
   }
 }
 
