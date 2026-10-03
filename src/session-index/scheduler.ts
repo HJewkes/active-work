@@ -104,8 +104,8 @@ export class RefreshScheduler {
   private lastStartedAt: number | null = null;
   private lastEndedAt: number | null = null;
   private cancelSleep: () => void = () => {};
-  /** Set by a failed full pass; the drain loop waits it out before the next. */
-  private backoff = 0;
+  /** Started by a failed full pass; the drain loop waits it out before the next. */
+  private backoff: Promise<void> | null = null;
 
   constructor(
     private readonly run: (kind: PassKind) => Promise<RefreshSummary>,
@@ -164,8 +164,8 @@ export class RefreshScheduler {
       if (this.closed) return;
       this.lastStartedAt = this.now();
       await this.execute('full');
-      if (this.backoff > 0) await this.pause(this.backoff);
-      this.backoff = 0;
+      await this.backoff;
+      this.backoff = null;
       this.lastEndedAt = this.now();
     } while (this.pending && !this.closed);
   }
@@ -207,9 +207,10 @@ export class RefreshScheduler {
   }
 
   /**
-   * One pass; never rejects. A failed full pass sets `backoff` for the drain
-   * loop to wait out. A delta pass that meets the lock held elsewhere just
-   * reports failure: the reader it serves must not wait, and the poll retries.
+   * One pass; never rejects. A failed full pass starts `backoff` at once, for
+   * the drain loop to wait out, while `executing` already reads it as done. A
+   * delta pass that meets the lock held elsewhere just reports failure: the
+   * reader it serves must not wait, and the poll retries.
    */
   private async attempt(kind: PassKind): Promise<boolean> {
     try {
@@ -224,14 +225,14 @@ export class RefreshScheduler {
         this.lockSkips += 1;
         this.pending = true;
         this.options.onLockSkip?.(this.lockSkips);
-        this.backoff = this.backoffMs(this.lockSkips);
+        this.backoff = this.pause(this.backoffMs(this.lockSkips));
         return false;
       }
       this.consecutiveErrors += 1;
       this.lastError = err instanceof Error ? err.message : String(err);
       this.options.onError?.(err);
       // Back off so a permanently broken corpus cannot spin the daemon.
-      if (kind === 'full') this.backoff = this.backoffMs(this.consecutiveErrors);
+      if (kind === 'full') this.backoff = this.pause(this.backoffMs(this.consecutiveErrors));
       return false;
     }
   }
