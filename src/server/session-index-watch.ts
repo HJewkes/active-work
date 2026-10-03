@@ -201,7 +201,11 @@ function watchRoot(
 }
 
 export interface PassRunner {
-  run(kind: PassKind, onIndexed?: () => void): Promise<RefreshSummary>;
+  run(
+    kind: PassKind,
+    onIndexed?: () => void,
+    onLockWait?: (waiting: boolean) => void,
+  ): Promise<RefreshSummary>;
   lastMaxLoopStallMs(): number | null;
 }
 
@@ -236,9 +240,14 @@ export function passRunner(
       throw err;
     }
   };
-  const run = (kind: PassKind, onIndexed?: () => void): Promise<RefreshSummary> =>
+  const run = (
+    kind: PassKind,
+    onIndexed?: () => void,
+    onLockWait?: (waiting: boolean) => void,
+  ): Promise<RefreshSummary> =>
     withRefreshLock(
       async () => {
+        onLockWait?.(false);
         const drained = dirty.drain();
         try {
           if (kind === 'full') return await full(drained);
@@ -250,7 +259,7 @@ export function passRunner(
           throw err;
         }
       },
-      kind === 'delta' ? { retries: 0, signal } : { signal },
+      kind === 'delta' ? { retries: 0, signal } : { signal, onWait: () => onLockWait?.(true) },
     );
   return { run, lastMaxLoopStallMs: () => lastMaxLoopStallMs };
 }
@@ -261,27 +270,30 @@ function createScheduler(
   log: WatchLogger,
   signal: AbortSignal,
 ): RefreshScheduler {
-  return new RefreshScheduler((kind, onIndexed) => runner.run(kind, onIndexed), {
-    onError: (err) => {
-      if (!signal.aborted) log.warn({ err }, 'session index refresh failed');
+  return new RefreshScheduler(
+    (kind, onIndexed, onLockWait) => runner.run(kind, onIndexed, onLockWait),
+    {
+      onError: (err) => {
+        if (!signal.aborted) log.warn({ err }, 'session index refresh failed');
+      },
+      minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
+      gate: async () => shouldHold(await readMachinePressure()),
+      gateRecheckMs: envInt('AW_INDEX_GATE_RECHECK_MS', DEFAULT_GATE_RECHECK_MS),
+      onHoldChange: (held, reason) =>
+        log.info({ reason }, held ? `session index paused: ${reason}` : 'session index resumed'),
+      hasUndrained: () => dirty.size > 0,
+      onLockSkip: (skips) => {
+        if (skips % LOCK_SKIP_LOG_EVERY === 1) {
+          void readRefreshLockHolder().then((holder) =>
+            log.info(
+              { skips, holder },
+              'session index refresh skipped: lock held elsewhere; will retry',
+            ),
+          );
+        }
+      },
     },
-    minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
-    gate: async () => shouldHold(await readMachinePressure()),
-    gateRecheckMs: envInt('AW_INDEX_GATE_RECHECK_MS', DEFAULT_GATE_RECHECK_MS),
-    onHoldChange: (held, reason) =>
-      log.info({ reason }, held ? `session index paused: ${reason}` : 'session index resumed'),
-    hasUndrained: () => dirty.size > 0,
-    onLockSkip: (skips) => {
-      if (skips % LOCK_SKIP_LOG_EVERY === 1) {
-        void readRefreshLockHolder().then((holder) =>
-          log.info(
-            { skips, holder },
-            'session index refresh skipped: lock held elsewhere; will retry',
-          ),
-        );
-      }
-    },
-  });
+  );
 }
 
 /** Readers refresh before they read; nothing to index and nothing running means already fresh. */
