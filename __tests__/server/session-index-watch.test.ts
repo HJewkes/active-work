@@ -185,6 +185,30 @@ describe('startSessionIndexWatch', () => {
       expect((passLines()[0] as { bytesRead: number }).bytesRead).toBeGreaterThan(0);
     });
 
+    it('logs the pass kind the refresh reports', async () => {
+      vi.resetModules();
+      vi.doMock('../../src/session-index/refresh.js', async (importOriginal) => ({
+        ...(await importOriginal<typeof RefreshModule>()),
+        withRefreshLock: <T>(fn: () => Promise<T>) => fn(),
+        runRefresh: () =>
+          Promise.resolve({
+            kind: 'delta',
+            episodeBacklog: null,
+            errors: [],
+            phases: {},
+          } as unknown as RefreshSummary),
+      }));
+      const { startSessionIndexWatch: start } =
+        await import('../../src/server/session-index-watch.js');
+
+      const watcher = start(log);
+      await vi.waitFor(() => expect(passLines()).toHaveLength(1), { timeout: 10_000 });
+      await watcher!.close();
+      vi.doUnmock('../../src/session-index/refresh.js');
+
+      expect(passLines()[0]).toMatchObject({ kind: 'delta' });
+    });
+
     it('logs one pause and one resume while memory pressure holds the pass', async () => {
       vi.stubEnv('AW_INDEX_GATE_RECHECK_MS', '1');
       probe.reads.push(

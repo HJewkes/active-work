@@ -72,7 +72,7 @@ const LOGGED_ERRORS = 5;
 
 function passLogLine(summary: RefreshSummary, maxStallMs: number): object {
   return {
-    kind: 'full',
+    kind: summary.kind,
     transcripts: summary.transcripts,
     scanned: summary.scanned,
     filesOpened: summary.filesOpened,

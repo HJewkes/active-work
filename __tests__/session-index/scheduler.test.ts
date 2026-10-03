@@ -59,6 +59,26 @@ describe('RefreshScheduler', () => {
     ]);
   });
 
+  it('collapses triggers that arrive mid-hold into one pass after the resume', async () => {
+    const clock = fakeClock();
+    const run = vi.fn(async () => summary);
+    let holds = 2;
+    const gate = vi.fn(async () => {
+      if (holds-- > 0) {
+        for (let i = 0; i < 5; i++) scheduler.trigger();
+        return { hold: true, reason: 'pressure' };
+      }
+      return { hold: false };
+    });
+    const scheduler = new RefreshScheduler(run, { ...clock, gate, gateRecheckMs: 60_000 });
+
+    scheduler.trigger();
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
   it('runs a pass without a hold report when the gate never holds', async () => {
     const run = vi.fn(async () => summary);
     const onHoldChange = vi.fn();

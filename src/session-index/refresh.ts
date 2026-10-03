@@ -14,6 +14,7 @@ import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { runDeltaPass } from './delta-pass.js';
+import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 
 /**
@@ -86,30 +87,11 @@ export interface RefreshOptions {
   yieldPoint?: () => Promise<void>;
 }
 
-/** Offset advance per transcript row; a row whose offset fell was re-read from byte 0. */
-function bytesAdvanced(before: Map<number, number>, after: Map<number, number>): number {
-  let total = 0;
-  for (const [sourceId, offset] of after) {
-    const was = before.get(sourceId) ?? 0;
-    total += offset >= was ? offset - was : offset;
-  }
-  return total;
-}
-
-/** Each call returns the milliseconds since the previous one (or since creation). */
-function lapTimer(): () => number {
-  let last = Date.now();
-  return () => {
-    const now = Date.now();
-    const lap = now - last;
-    last = now;
-    return lap;
-  };
-}
-
 const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export interface RefreshSummary {
+  /** `delta` when the pass visited only the transcripts it was handed. */
+  kind: 'full' | 'delta';
   startedAt: string;
   durationMs: number;
   /** Transcripts discovered in the corpus. */
@@ -120,7 +102,7 @@ export interface RefreshSummary {
   filesOpened: number;
   /** Bytes the watermarks advanced this pass, counting a rewound file from byte 0. */
   bytesRead: number;
-  /** Milliseconds spent in each phase: discover, corpus, episodes, workspace, preserve. */
+  /** Milliseconds spent in each phase; a full pass names discover, corpus, episodes, workspace and preserve, a delta pass scan, rollup, episodes and workspace. */
   phases: Record<string, number>;
   indexed: number;
   /** Transcripts re-read from byte 0 because the source was rewritten. */
@@ -281,6 +263,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     phases.preserve = lap();
 
     return {
+      kind: 'full',
       startedAt,
       durationMs: Date.now() - started,
       transcripts: discovered.length,

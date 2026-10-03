@@ -52,7 +52,8 @@ describe('delta pass', () => {
     await runRefresh({ graph, root, skipPrOutcomes: true, skipWorkspace: true, taskRoot: dir });
     const before = indexedAt();
     const changed = path.join(root, 'demo', 's7.jsonl');
-    appendFileSync(changed, userLine(7, 'a second, longer prompt'), 'utf8');
+    const appended = userLine(7, 'a second, longer prompt');
+    appendFileSync(changed, appended, 'utf8');
     const dirty = createDirtySet();
     dirty.add(root, 'demo/s7.jsonl');
 
@@ -61,7 +62,16 @@ describe('delta pass', () => {
     ]);
     const summary = await runRefresh({ graph, mode: 'delta', transcripts, taskRoot: dir });
 
-    expect(summary).toMatchObject({ transcripts: 1, scanned: 1, indexed: 1, unchanged: 0 });
+    expect(summary).toMatchObject({
+      kind: 'delta',
+      transcripts: 1,
+      scanned: 1,
+      indexed: 1,
+      unchanged: 0,
+      filesOpened: 1,
+      bytesRead: Buffer.byteLength(appended),
+    });
+    expect(Object.keys(summary.phases)).toEqual(['scan', 'rollup', 'episodes', 'workspace']);
     const changedKey = [...before.keys()].find((key) => key.endsWith('/demo/s7.jsonl'));
     for (const [key, stamp] of indexedAt()) {
       if (key !== changedKey) expect(stamp).toBe(before.get(key));
