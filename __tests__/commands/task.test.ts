@@ -311,19 +311,19 @@ describe('task.edit', () => {
       expect(t4.estimate).toBe(4);
 
       const t5 = await taskEdit.run(
-        { slug: SLUG, id: 'SI-1', field: 'done_when', value: 'ship it' },
+        { slug: SLUG, id: 'SI-1', field: 'done_when', value: 'ship it', force: true },
         ctx(root),
       );
       expect(t5.done_when).toBe('ship it');
 
       const t6 = await taskEdit.run(
-        { slug: SLUG, id: 'SI-1', field: 'tags', value: ['x', 'y'] },
+        { slug: SLUG, id: 'SI-1', field: 'tags', value: ['x', 'y'], force: true },
         ctx(root),
       );
       expect(t6.tags).toEqual(['x', 'y']);
 
       const t7 = await taskEdit.run(
-        { slug: SLUG, id: 'SI-1', field: 'notes', value: 'updated note' },
+        { slug: SLUG, id: 'SI-1', field: 'notes', value: 'updated note', force: true },
         ctx(root),
       );
       expect(t7.notes).toBe('updated note');
@@ -355,7 +355,7 @@ describe('task.edit', () => {
       expect(t2.estimate).toBe(4);
 
       const t3 = await taskEdit.run(
-        { slug: SLUG, id: 'SI-1', field: 'tags', value: 'x, y' },
+        { slug: SLUG, id: 'SI-1', field: 'tags', value: 'x, y', force: true },
         ctx(root),
       );
       expect(t3.tags).toEqual(['x', 'y']);
