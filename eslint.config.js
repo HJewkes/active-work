@@ -14,6 +14,22 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/consistent-type-imports': 'error',
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'gray-matter',
+              message:
+                'Use parseFrontmatter/stringifyFrontmatter from src/utils/gray-matter-io.ts; bare gray-matter executes ---js frontmatter (TP-1007).',
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    files: ['src/utils/gray-matter-io.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 );

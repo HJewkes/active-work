@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import matter from 'gray-matter';
 import { SessionFrontmatterSchema } from '../schemas/session.js';
 import type { SessionFrontmatter } from '../schemas/session.js';
 import { getInitiativeDir } from '../utils/paths.js';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({
@@ -77,8 +77,8 @@ async function readSession(
   filePath: string,
 ): Promise<{ frontmatter: SessionFrontmatter; body: string }> {
   const raw = await fs.readFile(filePath, 'utf8');
-  const parsed = matter(raw);
-  const coerced = coerceTimestamps(parsed.data as Record<string, unknown>);
+  const parsed = parseFrontmatter(raw);
+  const coerced = coerceTimestamps(parsed.data);
   const result = SessionFrontmatterSchema.safeParse(coerced);
   if (!result.success) {
     throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);

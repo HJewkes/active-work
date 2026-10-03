@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '../../src/utils/gray-matter-io.js';
 import set from '../../src/commands/set.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
 import type { CommandContext } from '../../src/registry/types.js';
@@ -46,8 +46,10 @@ describe('set on a brief that opts into burndown', () => {
       await set.run({ slug: 'bd', field: 'owner', value: 'hjewkes' }, makeCtx(activeRoot));
 
       const written = await fs.readFile(briefPath, 'utf8');
-      expect(matter(written).data.owner).toBe('hjewkes');
-      expect(matter(written).data.autonomy).toEqual(matter(BRIEF_WITH_AUTONOMY).data.autonomy);
+      expect(parseFrontmatter(written).data.owner).toBe('hjewkes');
+      expect(parseFrontmatter(written).data.autonomy).toEqual(
+        parseFrontmatter(BRIEF_WITH_AUTONOMY).data.autonomy,
+      );
       // agent-chat's line reader needs a block mapping, not a flow `{...}` one.
       expect(written).toMatch(/^autonomy:\n {2}mode: burndown$/m);
     });

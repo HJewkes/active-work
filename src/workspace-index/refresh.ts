@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
-import matter from 'gray-matter';
 import { z } from 'zod';
 import type { WorkspaceGraph } from '../session-index/graph.js';
 import { getActiveRoot } from '../utils/paths.js';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 import { rebuildEdges, type EdgeCounts, type NoteFacts } from './edges.js';
 import { readRecord, type WorkspaceRecord } from './read.js';
 import { scanWorkspace, type WorkspaceClass, type WorkspaceFile } from './scan.js';
@@ -189,7 +189,7 @@ async function collectNoteFacts(activeRoot: string, graph: WorkspaceGraph): Prom
 /** The body, not the file: frontmatter is metadata, and `mentions` is defined over prose. */
 async function readBody(absolutePath: string): Promise<string> {
   try {
-    return matter(await fs.readFile(absolutePath, 'utf8')).content;
+    return parseFrontmatter(await fs.readFile(absolutePath, 'utf8')).content;
   } catch {
     return '';
   }

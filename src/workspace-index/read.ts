@@ -1,11 +1,11 @@
 import { promises as fs } from 'node:fs';
-import matter from 'gray-matter';
 import YAML from 'yaml';
 import { NoteFrontmatterSchema } from '../schemas/note.js';
 import { TaskSchema } from '../schemas/task.js';
 import { SessionFrontmatterSchema } from '../schemas/session.js';
 import { BriefFrontmatterSchema } from '../schemas/brief.js';
 import { coerceDates } from '../utils/coerce-dates.js';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 import { initiativeRef, noteRef, sessionRef, sourceRef, taskRef } from './refs.js';
 import type { WorkspaceFile } from './scan.js';
 import { bodyByteOffset, locate, sectionSpans, type IndexedSpan } from './spans.js';
@@ -45,7 +45,7 @@ export async function readRecord(file: WorkspaceFile): Promise<WorkspaceRecord> 
 }
 
 function frontmatter(raw: string): { data: unknown; body: string } {
-  const parsed = matter(raw);
+  const parsed = parseFrontmatter(raw);
   return { data: coerceDates(parsed.data), body: parsed.content };
 }
 

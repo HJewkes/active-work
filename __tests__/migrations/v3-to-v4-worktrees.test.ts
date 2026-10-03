@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '../../src/utils/gray-matter-io.js';
 import YAML from 'yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -48,7 +48,10 @@ async function readArtifacts(dir: string) {
 }
 
 async function readBriefData(dir: string): Promise<Record<string, unknown>> {
-  return matter(await readFile(path.join(dir, 'brief.md'), 'utf8')).data as Record<string, unknown>;
+  return parseFrontmatter(await readFile(path.join(dir, 'brief.md'), 'utf8')).data as Record<
+    string,
+    unknown
+  >;
 }
 
 describe('v3 -> v4 worktrees', () => {
@@ -80,7 +83,7 @@ describe('v3 -> v4 worktrees', () => {
     await v3ToV4Worktrees.run(activeRoot);
 
     const raw = await readFile(path.join(dir, 'brief.md'), 'utf8');
-    expect(matter(raw).content.trim()).toBe(body.trim());
+    expect(parseFrontmatter(raw).content.trim()).toBe(body.trim());
   });
 
   // A wrap that ran before the migration already swept the directory. Adding a

@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
 import YAML from 'yaml';
 import { ArtifactsSchema, type WorktreeEntry } from '../schemas/artifacts.js';
 import { writeYaml } from '../utils/yaml-io.js';
 import { atomicWrite } from '../utils/fs-atomic.js';
+import { parseFrontmatter, stringifyFrontmatter } from '../utils/gray-matter-io.js';
 import type { Migration } from './types.js';
 
 /**
@@ -110,8 +110,8 @@ async function migrateOne(initiativeDir: string): Promise<number> {
   } catch {
     return 0;
   }
-  const parsed = matter(raw);
-  const data = parsed.data as Record<string, unknown>;
+  const parsed = parseFrontmatter(raw);
+  const data = parsed.data;
   if (!('worktrees' in data)) return 0;
 
   const incoming = toEntries(data.worktrees);
@@ -131,8 +131,8 @@ async function migrateOne(initiativeDir: string): Promise<number> {
     );
   }
 
-  // Rewrite the brief frontmatter only; `matter.stringify` preserves the body.
-  await atomicWrite(briefPath, matter.stringify(parsed.content, data));
+  // Rewrite the brief frontmatter only; `stringifyFrontmatter` preserves the body.
+  await atomicWrite(briefPath, stringifyFrontmatter(parsed.content, data));
   return incoming.length;
 }
 
