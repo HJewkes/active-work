@@ -177,16 +177,92 @@ describe('delta pass behind runNow', () => {
       runRefresh({ graph, mode: 'delta', transcripts, taskRoot: dir, onIndexed }),
     );
 
-    const started = Date.now();
-    const freshness = await scheduler.runNow(800);
-    const elapsedMs = Date.now() - started;
+    try {
+      const started = Date.now();
+      const freshness = await scheduler.runNow(800);
+      const elapsedMs = Date.now() - started;
 
-    expect(freshness).toBe('fresh');
-    expect(elapsedMs).toBeLessThan(800);
-    expect(episodeStepBlocked).toBe(true);
-    expect(scheduler.status().running).toBe(true);
-    episodes.release();
-    await scheduler.close();
+      expect(freshness).toBe('fresh');
+      expect(elapsedMs).toBeLessThan(800);
+      expect(episodeStepBlocked).toBe(true);
+      expect(scheduler.status().running).toBe(true);
+    } finally {
+      episodes.release();
+      await scheduler.close();
+    }
     expect(scheduler.status().running).toBe(false);
+  });
+
+  /** A scheduler whose delta drains `dirty` the way the daemon's pass runner does. */
+  function dirtyScheduler(dirty: ReturnType<typeof createDirtySet>): RefreshScheduler {
+    const roots = [{ root, account: 'default' }];
+    return new RefreshScheduler(
+      async (_kind, onIndexed) => {
+        const transcripts = await transcriptsFromDirty(graph, dirty.drain(), roots);
+        return runRefresh({ graph, mode: 'delta', transcripts, taskRoot: dir, onIndexed });
+      },
+      { hasUndrained: () => dirty.size > 0 },
+    );
+  }
+
+  /** Blocks only the first pass's episode step, writing `s2` while it holds. */
+  function writeDuringFirstEpisodes(
+    dirty: ReturnType<typeof createDirtySet>,
+    block: Promise<void>,
+  ): void {
+    let calls = 0;
+    episodeStep.before = () => {
+      calls += 1;
+      if (calls > 1) return Promise.resolve();
+      writeTranscript(2);
+      dirty.add(root, 'demo/s2.jsonl');
+      return block;
+    };
+  }
+
+  const isIndexed = (name: string): boolean =>
+    graph.transcripts.list().some((row) => row.sourceKey.endsWith(`/demo/${name}`));
+
+  it('reads stale when it joins a delta in its episode step after a path was written', async () => {
+    writeTranscript(1);
+    const dirty = createDirtySet();
+    dirty.add(root, 'demo/s1.jsonl');
+    const episodes = blockFor(5_000);
+    writeDuringFirstEpisodes(dirty, episodes.blocked);
+    const scheduler = dirtyScheduler(dirty);
+
+    try {
+      const first = await scheduler.runNow(800);
+      const joined = await scheduler.runNow(300);
+
+      expect(first).toBe('fresh');
+      expect(joined).toBe('stale');
+      expect(isIndexed('s2.jsonl')).toBe(false);
+    } finally {
+      episodes.release();
+      await scheduler.close();
+    }
+  });
+
+  it('reads fresh once a follow-up delta indexes the path written during the episode step', async () => {
+    writeTranscript(1);
+    const dirty = createDirtySet();
+    dirty.add(root, 'demo/s1.jsonl');
+    const episodes = blockFor(5_000);
+    writeDuringFirstEpisodes(dirty, episodes.blocked);
+    const scheduler = dirtyScheduler(dirty);
+
+    try {
+      await scheduler.runNow(800);
+      setTimeout(episodes.release, 100);
+      const joined = await scheduler.runNow(3_000);
+
+      expect(joined).toBe('fresh');
+      expect(isIndexed('s2.jsonl')).toBe(true);
+      expect(dirty.size).toBe(0);
+    } finally {
+      episodes.release();
+      await scheduler.close();
+    }
   });
 });

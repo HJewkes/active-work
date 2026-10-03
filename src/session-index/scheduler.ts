@@ -40,6 +40,8 @@ export interface SchedulerOptions {
   gateRecheckMs?: number;
   /** Called only when the gate flips between held and open, never on a recheck. */
   onHoldChange?: (held: boolean, reason?: string) => void;
+  /** Whether changes wait that no pass has drained yet; a reader joining an indexed delta checks it (TP-893). */
+  hasUndrained?: () => boolean;
 }
 
 /** A full pass walks the corpus; a delta pass indexes only what the watcher reported. */
@@ -78,13 +80,20 @@ function cancellableSleep(ms: number): { done: Promise<void>; cancel: () => void
 }
 
 /** Resolves `'fresh'` if `pass` succeeds within `budgetMs`, else `'stale'` at the budget. */
-async function withinBudget(pass: Promise<boolean>, budgetMs: number): Promise<Freshness> {
+async function withinBudget(
+  pass: (expired: () => boolean) => Promise<boolean>,
+  budgetMs: number,
+): Promise<Freshness> {
   let timer: NodeJS.Timeout | undefined;
+  let over = false;
   const expired = new Promise<false>((resolve) => {
-    timer = setTimeout(() => resolve(false), budgetMs);
+    timer = setTimeout(() => {
+      over = true;
+      resolve(false);
+    }, budgetMs);
     timer.unref?.();
   });
-  const ok = await Promise.race([pass, expired]);
+  const ok = await Promise.race([pass(() => over), expired]);
   clearTimeout(timer);
   return ok ? 'fresh' : 'stale';
 }
@@ -97,6 +106,8 @@ interface Execution {
   done: Promise<boolean>;
   /** Resolves true once readers can read the pass's writes; false if it failed first. */
   indexed: Promise<boolean>;
+  /** Set when the pass reports its writes committed, so its drain is already behind it. */
+  pastIndexed: boolean;
 }
 
 export class RefreshScheduler {
@@ -146,17 +157,36 @@ export class RefreshScheduler {
    */
   runNow(budgetMs: number): Promise<Freshness> {
     if (this.closed || this.held) return Promise.resolve('stale');
-    return withinBudget((this.executing ?? this.execute('delta')).indexed, budgetMs);
+    return withinBudget((expired) => this.indexedSinceNow(expired), budgetMs);
+  }
+
+  /**
+   * Resolves true once a pass that drained after this call has indexed. A delta
+   * already past its index step drained before changes still waiting, so those
+   * need a follow-up pass once it ends (TP-893).
+   */
+  private async indexedSinceNow(expired: () => boolean): Promise<boolean> {
+    const current = this.executing;
+    if (!current) return this.execute('delta').indexed;
+    if (!current.pastIndexed || !this.options.hasUndrained?.()) return current.indexed;
+    await current.done;
+    if (this.closed || expired()) return false;
+    return (this.executing ?? this.execute('delta')).indexed;
   }
 
   /** Run one pass of `kind` and track it, so the other kind waits instead of overlapping it. */
   private execute(kind: PassKind): Execution {
     let markIndexed = (): void => {};
     const marked = new Promise<true>((resolve) => (markIndexed = () => resolve(true)));
-    const done = this.attempt(kind, markIndexed).finally(() => {
+    const execution: Execution = { done: marked, indexed: marked, pastIndexed: false };
+    const onIndexed = (): void => {
+      execution.pastIndexed = true;
+      markIndexed();
+    };
+    execution.done = this.attempt(kind, onIndexed).finally(() => {
       if (this.executing === execution) this.executing = null;
     });
-    const execution: Execution = { done, indexed: Promise.race([marked, done]) };
+    execution.indexed = Promise.race([marked, execution.done]);
     this.executing = execution;
     return execution;
   }

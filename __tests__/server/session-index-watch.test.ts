@@ -210,6 +210,31 @@ describe('startSessionIndexWatch', () => {
     expect(dirty.size).toBe(0);
   });
 
+  it('a delta pass forwards onIndexed to the refresh', async () => {
+    vi.resetModules();
+    vi.doMock('../../src/session-index/refresh.js', async (importOriginal) => ({
+      ...(await importOriginal<typeof RefreshModule>()),
+      withRefreshLock: <T>(fn: () => Promise<T>) => fn(),
+      runRefresh: (options: RefreshOptions) => {
+        options.onIndexed?.();
+        return Promise.resolve({
+          kind: 'delta',
+          errors: [],
+          phases: {},
+        } as unknown as RefreshSummary);
+      },
+    }));
+    const { passRunner } = await import('../../src/server/session-index-watch.js');
+    const dirty = createDirtySet();
+    const runner = passRunner({} as WorkspaceGraph, dirty, log, new AbortController().signal);
+    const onIndexed = vi.fn();
+
+    await runner.run('delta', onIndexed);
+    vi.doUnmock('../../src/session-index/refresh.js');
+
+    expect(onIndexed).toHaveBeenCalledTimes(1);
+  });
+
   describe('with transcripts on disk', () => {
     beforeEach(() => {
       const project = path.join(home, '.claude', 'projects', 'demo');
