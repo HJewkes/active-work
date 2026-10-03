@@ -61,7 +61,8 @@ async function isSealed(
   if (row.status !== 'ok' || row.lastOffset !== row.fileSize) return false;
   if (row.lastIndexedAt !== null && Date.parse(row.lastIndexedAt) >= retiredAt) return true;
   const stat = await fs.stat(absolutePath).catch(() => null);
-  if (!stat || stat.size !== row.fileSize || stat.mtime.toISOString() !== row.fileMtime) return false;
+  if (!stat || stat.size !== row.fileSize || stat.mtime.toISOString() !== row.fileMtime)
+    return false;
   graph.transcripts.advance(row.sourceKey, {
     lastOffset: row.lastOffset,
     prefixHash: row.prefixHash,
@@ -98,4 +99,3 @@ export async function sealedFilter(
   }
   return kept;
 }
-

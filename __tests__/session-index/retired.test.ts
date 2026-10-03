@@ -111,13 +111,18 @@ describe('sealed transcripts of retired agents', () => {
   it('seals a retired session read before its retire once a stat shows no tail', async () => {
     writeFileSync(transcriptOf(SESSION), line(SESSION, 'all it ever wrote'), 'utf8');
     await pass();
-    retire(SESSION, 0);
-    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + SEAL_GRACE_MS + 60_000);
+    const retiredAt = Date.parse(rowFor(SESSION)?.lastIndexedAt ?? '') + 1;
+    writeEvents([{ ts: retiredAt, kind: 'agent_retired', sessionId: SESSION }]);
+    while (Date.now() <= retiredAt) {
+      // Spin past the retire's millisecond so the re-stamp lands after it.
+    }
+    vi.spyOn(Date, 'now').mockReturnValue(retiredAt + SEAL_GRACE_MS + 60_000);
 
     const sealed = await pass();
 
     expect(sealed).toMatchObject({ transcripts: 1, scanned: 0 });
     expect(rowFor(SESSION)?.status).toBe('ok');
+    expect(Date.parse(rowFor(SESSION)?.lastIndexedAt ?? '')).toBeGreaterThanOrEqual(retiredAt);
   });
 
   it('keeps visiting a retired session whose last line was never completed', async () => {
