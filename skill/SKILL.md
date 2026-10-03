@@ -41,7 +41,9 @@ active-work loop open <slug> --text "Schedule the digest" --kind pr --ref https:
 active-work loop open <slug> --text "Close slice 1" --kind task --ref SI-12
 ```
 
-`active-work loops <slug>` marks a loop `trigger_met` when its due time has passed, its task is done or its PR is merged, and `active-work loops <slug> --due` lists only those: they are owed now. Close one with `active-work loop resolve <slug> <ref>` (add `--outcome abandoned --note "<why>"` to drop it). `loop resolve` fails when the loop is already closed, so a mistyped ref cannot report success. The merge check runs `gh`; when it cannot reach GitHub the loop stays unmarked and the result carries a warning.
+`active-work loops <slug>` marks a loop `trigger_met` when its due time has passed, its task is done or its PR is merged, and `active-work loops <slug> --due` lists only those: they are owed now. Close one with `active-work loop resolve <slug> <ref>` (add `--outcome abandoned --note "<why>"` to drop it). `loop resolve` fails when the loop is already closed, so a mistyped ref cannot report success. The merge check runs `gh`; when it cannot reach GitHub the loop stays unmarked and the result carries a warning. Answers, failures included, are kept for 5 minutes in the daemon, and one call asks `gh` about at most 10 PRs; when more are waiting, the result says so and the next call checks the rest.
+
+`active-work loops` can list more open loops than the bootstrap's "Open loops" section. The bootstrap drops a `task` loop as soon as its task is done. `loops` keeps it, marked `trigger_met: ["task-done"]`, until someone resolves it: for a promise, the done task is the cue to act, not proof that the promised action happened. Trust `loops --due` for what is owed, and resolve each loop you settle.
 
 ## Wrapping a session
 

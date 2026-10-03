@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import loopsCmd from '../../src/commands/loops.js';
 import type { NextStep } from '../../src/schemas/session.js';
+import { clearPrStateCache } from '../../src/sessions/loop-pr-state.js';
 import { writeSessionFile } from '../../src/sessions/session-file.js';
 import {
   resetRunners,
@@ -64,7 +65,10 @@ const GH_OFFLINE: CommandRunner = () =>
 const GIT_REMOTE: CommandRunner = () =>
   Promise.resolve({ code: 0, stdout: 'git@github.com:acme/sample.git\n', stderr: '' });
 
-afterEach(() => resetRunners());
+afterEach(() => {
+  resetRunners();
+  clearPrStateCache();
+});
 
 describe('loops trigger marking', () => {
   it('marks a loop whose due time has passed and leaves a future one unmarked', async () => {
