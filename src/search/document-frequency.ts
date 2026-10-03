@@ -22,6 +22,11 @@ const CACHE_TERMS = 20_000;
 /** The kit's default span FTS table; `spans.search` reads it too, but ranks every match first. */
 const SPAN_FTS = 'search_fts';
 
+/** Drop the cached counts for one database; a pass that indexed spans has made them stale. */
+export function clearDocumentFrequency(dbName: string): void {
+  cache.delete(dbName);
+}
+
 /** min(matches, cap) without bm25 ordering: the count never needs a rank. */
 export function countMatches(graph: WorkspaceGraph, expression: string, cap: number): number {
   const row = graph.db
@@ -38,9 +43,9 @@ function countSpans(graph: WorkspaceGraph, term: string): number {
 
 export function graphDocumentFrequency(graph: WorkspaceGraph): DocumentFrequency {
   const key = graph.db.name;
-  const counts = cache.get(key) ?? new Map<string, number>();
-  cache.set(key, counts);
   return (term) => {
+    const counts = cache.get(key) ?? new Map<string, number>();
+    cache.set(key, counts);
     const known = counts.get(term);
     if (known !== undefined) return known;
     if (counts.size >= CACHE_TERMS) counts.clear();

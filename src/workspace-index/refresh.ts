@@ -6,6 +6,7 @@ import { parseFrontmatter } from '../utils/gray-matter-io.js';
 import { rebuildEdges, type EdgeCounts, type NoteFacts } from './edges.js';
 import { readRecord, type WorkspaceRecord } from './read.js';
 import { scanWorkspace, type WorkspaceClass, type WorkspaceFile } from './scan.js';
+import { clearDocumentFrequency } from '../search/document-frequency.js';
 import { toAbsolute } from './refs.js';
 import { WorkspaceWriter } from './write.js';
 
@@ -238,6 +239,8 @@ export async function refreshWorkspace(
       malformed.push({ path: failed.file.path, reason: failed.reason ?? 'unreadable' });
     }
   }
+
+  if (writer.spansWritten > 0) clearDocumentFrequency(graph.db.name);
 
   const removed = removeVanished(graph, writer, new Set(files.map((f) => f.path)));
   const edges = rebuildEdges(graph, await collectNoteFacts(activeRoot, graph));

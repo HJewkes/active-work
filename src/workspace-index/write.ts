@@ -78,6 +78,8 @@ export class WorkspaceWriter {
   private readonly inserts: Record<WorkspaceClass, Statement>;
   private readonly deletes: Statement[];
   private readonly deleteSpans: Statement;
+  /** Spans indexed since construction; a pass reads it to know whether counts went stale. */
+  spansWritten = 0;
 
   constructor(private readonly graph: WorkspaceGraph) {
     this.inserts = Object.fromEntries(
@@ -132,6 +134,7 @@ export class WorkspaceWriter {
         },
         span.text,
       );
+      this.spansWritten++;
     }
   }
 }
