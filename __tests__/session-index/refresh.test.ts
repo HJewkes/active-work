@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import {
+  readRefreshLockHolder,
   refreshLockHolderPath,
   runRefresh,
   withRefreshLock,
@@ -450,6 +451,36 @@ describe('withRefreshLock', () => {
     const second = withRefreshLock(async () => 'ran', { retries: 0 });
 
     await expect(second).rejects.toMatchObject({ holder: { pid: deadPid, stale: true } });
+    await first.release();
+  });
+
+  it('marks a live pid stale when its holder file predates the last boot', async () => {
+    const startedAt = '2026-01-01T00:00:00.000Z';
+    const first = await holdLock(() => {
+      const holder = { pid: process.pid, command: 'before reboot', startedAt };
+      writeFileSync(refreshLockHolderPath(), JSON.stringify(holder));
+    });
+
+    const holder = await readRefreshLockHolder(Date.parse(startedAt) + 1);
+
+    expect(holder).toMatchObject({ pid: process.pid, stale: true });
+    await first.release();
+  });
+
+  it('stops waiting for a held lock once the signal aborts, without running fn', async () => {
+    const first = await holdLock();
+    const abort = new AbortController();
+    const fn = vi.fn(async () => 'ran');
+    const onWait = vi.fn();
+
+    const second = withRefreshLock(fn, { signal: abort.signal, onWait });
+    await vi.waitFor(() => expect(onWait).toHaveBeenCalled());
+    const started = Date.now();
+    abort.abort(new Error('closing'));
+
+    await expect(second).rejects.toThrow('closing');
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(fn).not.toHaveBeenCalled();
     await first.release();
   });
 

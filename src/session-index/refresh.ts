@@ -1,4 +1,6 @@
+import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { promises as fs } from 'node:fs';
 import lockfile from 'proper-lockfile';
 import { discoverAllTranscripts, discoverTranscripts } from '@titan-design/session-read';
@@ -147,21 +149,28 @@ export interface RefreshLockHolder {
   pid: number;
   command: string;
   startedAt: string;
-  /** Set when `pid` is no longer running: the holder file outlived its writer. */
+  /** Set when the holder file outlived its writer: `pid` is gone, or it was written before the last boot. */
   stale?: boolean;
 }
 
 export interface RefreshLockOptions {
   /** Attempts after the first; `0` fails at once with ELOCKED. Omitted, the call blocks about 4 minutes. */
   retries?: number;
-  /** Called once with the current holder when a blocking call finds the lock held. */
+  /** Called once with the current holder when the first attempt finds the lock held and the call will wait. */
   onWait?: (holder: RefreshLockHolder | null) => void;
+  /** Ends the wait for the lock; the call then rejects with the abort reason, holding nothing. */
+  signal?: AbortSignal;
 }
 
 /** proper-lockfile's ELOCKED, carrying the holder file's contents when there was one. */
 export type RefreshLockError = Error & { code: 'ELOCKED'; holder: RefreshLockHolder | null };
 
-const BLOCKING_RETRIES = { retries: 120, factor: 1.5, minTimeout: 200, maxTimeout: 2_000 };
+/** 120 retries backing off from 200 ms by 1.5x to 2 s: about 4 minutes in all. */
+const BLOCKING_RETRIES = 120;
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(200 * 1.5 ** attempt, 2_000);
+}
 
 export function refreshLockHolderPath(): string {
   return `${refreshLockPath()}.holder.json`;
@@ -176,40 +185,52 @@ function isRunning(pid: number): boolean {
   }
 }
 
-export async function readRefreshLockHolder(): Promise<RefreshLockHolder | null> {
+/** On darwin libuv reads `os.uptime()` from `kern.boottime`. */
+function bootedAtMs(): number {
+  return Date.now() - os.uptime() * 1_000;
+}
+
+/** A pid alive now may be a different process if the file predates the last boot. */
+export async function readRefreshLockHolder(
+  bootedAt: number = bootedAtMs(),
+): Promise<RefreshLockHolder | null> {
   try {
     const raw = await fs.readFile(refreshLockHolderPath(), 'utf8');
     const holder = JSON.parse(raw) as RefreshLockHolder;
-    return isRunning(holder.pid) ? holder : { ...holder, stale: true };
+    const live = isRunning(holder.pid) && Date.parse(holder.startedAt) >= bootedAt;
+    return live ? holder : { ...holder, stale: true };
   } catch {
     return null;
   }
 }
 
-async function lockOnce(
-  target: string,
-  retries: number | typeof BLOCKING_RETRIES,
-): Promise<() => Promise<void>> {
-  try {
-    return await lockfile.lock(target, { realpath: false, stale: LOCK_STALE_MS, retries });
-  } catch (err) {
-    if (isLockContention(err)) (err as RefreshLockError).holder = await readRefreshLockHolder();
-    throw err;
-  }
-}
-
-/** One fast attempt first, so a blocking caller can report the holder before it waits. */
+/**
+ * Our own retry loop over single attempts, rather than proper-lockfile's, so
+ * the wait between attempts can be aborted and the holder reported before it.
+ */
 async function acquireRefreshLock(
   target: string,
   options: RefreshLockOptions,
 ): Promise<() => Promise<void>> {
-  if (options.retries !== undefined) return lockOnce(target, options.retries);
-  try {
-    return await lockOnce(target, 0);
-  } catch (err) {
-    if (!isLockContention(err)) throw err;
-    options.onWait?.((err as RefreshLockError).holder);
-    return lockOnce(target, BLOCKING_RETRIES);
+  const retries = options.retries ?? BLOCKING_RETRIES;
+  options.signal?.throwIfAborted();
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await lockfile.lock(target, { realpath: false, stale: LOCK_STALE_MS, retries: 0 });
+    } catch (err) {
+      if (!isLockContention(err)) throw err;
+      if (attempt >= retries) {
+        (err as RefreshLockError).holder = await readRefreshLockHolder();
+        throw err;
+      }
+      if (attempt === 0) options.onWait?.(await readRefreshLockHolder());
+      await sleep(retryDelayMs(attempt), undefined, { signal: options.signal }).catch(
+        (sleepErr: unknown) => {
+          options.signal?.throwIfAborted();
+          throw sleepErr;
+        },
+      );
+    }
   }
 }
 

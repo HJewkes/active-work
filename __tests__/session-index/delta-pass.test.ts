@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { discoverTranscripts } from '@titan-design/session-read';
 import { createDirtySet } from '../../src/session-index/dirty-set.js';
 import { transcriptsFromDirty, unknownRootCandidates } from '../../src/session-index/delta-pass.js';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
@@ -95,5 +96,40 @@ describe('delta pass', () => {
     const found = await unknownRootCandidates(graph, { root, account: 'default' });
 
     expect(found.map((t) => t.absolutePath).sort()).toEqual([recent, fresh].sort());
+  });
+});
+
+describe('delta pass aborted mid-scan', () => {
+  const assistantLine = (n: number): string =>
+    `${JSON.stringify({
+      type: 'assistant',
+      sessionId: `sess-${n}`,
+      uuid: `a-${n}`,
+      parentUuid: `u-${n}-12`,
+      timestamp: '2026-01-01T00:00:05.000Z',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+    })}\n`;
+
+  const unrolledTurns = (): number =>
+    (
+      graph.db.prepare('SELECT COUNT(*) AS n FROM turn WHERE ended_at IS NULL').get() as {
+        n: number;
+      }
+    ).n;
+
+  it('rolls up the sessions it committed before the abort', async () => {
+    for (const n of [1, 2]) appendFileSync(writeTranscript(n), assistantLine(n), 'utf8');
+    const transcripts = await discoverTranscripts(root);
+    const aborted = new Error('watcher closed');
+    const yieldPoint = vi.fn(async () => {
+      throw aborted;
+    });
+
+    const pass = runRefresh({ graph, mode: 'delta', transcripts, yieldPoint, taskRoot: dir });
+
+    await expect(pass).rejects.toBe(aborted);
+    const turns = graph.db.prepare('SELECT COUNT(*) AS n FROM turn').get() as { n: number };
+    expect(turns.n).toBe(1);
+    expect(unrolledTurns()).toBe(0);
   });
 });

@@ -221,7 +221,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
       throw err;
     }
   };
-  const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
+  const scheduler = new RefreshScheduler(() => withRefreshLock(pass, { signal: abort.signal }), {
     onError: (err) => {
       if (!abort.signal.aborted) log.warn({ err }, 'session index refresh failed');
     },

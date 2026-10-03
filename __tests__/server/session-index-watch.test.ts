@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { startSessionIndexWatch } from '../../src/server/session-index-watch.js';
+import { withRefreshLock } from '../../src/session-index/refresh.js';
 import type * as MachinePressureModule from '../../src/utils/machine-pressure.js';
 import { FIXTURE_LINES, SESSION, renderTranscript } from '../session-index/fixture.js';
 import type * as PrOutcomesModule from '../../src/session-index/pr-outcomes.js';
@@ -77,6 +78,30 @@ describe('startSessionIndexWatch', () => {
     expect(watcher!.status()).toMatchObject({ running: true });
     await watcher!.close();
     expect(watcher!.status()).toMatchObject({ running: false, pending: false, last: null });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it('close() while the pass waits on a lock held elsewhere returns without waiting it out', async () => {
+    let letGo!: () => void;
+    let entered!: () => void;
+    const inside = new Promise<void>((resolve) => (entered = resolve));
+    const held = withRefreshLock(async () => {
+      entered();
+      await new Promise<void>((resolve) => (letGo = resolve));
+    });
+    await inside;
+    const releaseLater = setTimeout(() => letGo(), 3_000);
+    const watcher = startSessionIndexWatch(log);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const started = Date.now();
+    await watcher!.close();
+    const elapsedMs = Date.now() - started;
+    clearTimeout(releaseLater);
+    letGo();
+    await held;
+
+    expect(elapsedMs).toBeLessThan(1_000);
     expect(log.warn).not.toHaveBeenCalled();
   });
 
