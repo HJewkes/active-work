@@ -35,11 +35,23 @@ export interface SchedulerOptions {
   sleep?: (ms: number) => Promise<void>;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
+  /** Checked before each pass; while it holds, the pass stays pending and the gate is asked again. */
+  gate?: () => Promise<GateDecision>;
+  /** How long to wait between gate checks while held; defaults to 60 s. */
+  gateRecheckMs?: number;
+  /** Called only when the gate flips between held and open, never on a recheck. */
+  onHoldChange?: (held: boolean, reason?: string) => void;
+}
+
+export interface GateDecision {
+  hold: boolean;
+  reason?: string;
 }
 
 const DEFAULT_BASE_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 60_000;
 export const DEFAULT_MIN_INTERVAL_MS = 15_000;
+export const DEFAULT_GATE_RECHECK_MS = 60_000;
 
 /** proper-lockfile gives up with ELOCKED once its retries run out: someone else is mid-pass. */
 export function isLockContention(err: unknown): boolean {
@@ -69,6 +81,7 @@ export class RefreshScheduler {
   private lastError: string | null = null;
   private consecutiveErrors = 0;
   private lockSkips = 0;
+  private held = false;
   private lastStartedAt: number | null = null;
   private lastEndedAt: number | null = null;
   private cancelSleep: () => void = () => {};
@@ -105,11 +118,27 @@ export class RefreshScheduler {
       const wait = this.windowWaitMs();
       if (wait > 0) await this.pause(wait);
       if (this.closed) return;
+      if (this.options.gate && !(await this.waitForGate(this.options.gate))) return;
       this.pending = false;
       this.lastStartedAt = this.now();
       await this.runOnce();
       this.lastEndedAt = this.now();
     } while (this.pending && !this.closed);
+  }
+
+  /** Resolves true once the gate is open, false if `close()` came first. `pending` stays set meanwhile. */
+  private async waitForGate(gate: () => Promise<GateDecision>): Promise<boolean> {
+    const { onHoldChange } = this.options;
+    for (;;) {
+      const decision = await gate().catch((): GateDecision => ({ hold: false }));
+      if (this.held !== decision.hold) {
+        this.held = decision.hold;
+        onHoldChange?.(decision.hold, decision.reason);
+      }
+      if (!decision.hold) return true;
+      await this.pause(this.options.gateRecheckMs ?? DEFAULT_GATE_RECHECK_MS);
+      if (this.closed) return false;
+    }
   }
 
   /** Sleep that `close()` cuts short; an injected `sleep` is raced against the close instead. */

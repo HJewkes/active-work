@@ -15,6 +15,7 @@ import { transcriptFromPath } from './transcript-path.js';
 import { taskResolver } from './tasks.js';
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { refreshWorkspace } from '../workspace-index/refresh.js';
+import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import type { RefreshSummary } from './refresh.js';
 
 /** An unknown root only re-checks rows modified this recently; older ones are settled. */
@@ -85,6 +86,8 @@ export async function runDeltaPass(options: DeltaPassOptions): Promise<RefreshSu
   const startedAt = new Date().toISOString();
   const started = Date.now();
   const offsetsBefore = snapshotOffsets(graph);
+  const lap = lapTimer();
+  const phases: Record<string, number> = {};
   const tasksBefore = new Set(allTaskIds(graph));
   const counts = { indexed: 0, unchanged: 0, rewound: 0, missing: 0, quarantined: 0 };
   const touched: string[] = [];
@@ -96,9 +99,11 @@ export async function runDeltaPass(options: DeltaPassOptions): Promise<RefreshSu
     touched.push(...outcome.sessionIds);
     await yieldPoint();
   }
+  phases.scan = lap();
   const turnsRolledUp = rollupSessions(graph, touched);
   const newTasks = allTaskIds(graph).filter((id) => !tasksBefore.has(id));
   const tasks = await enrichTasks(graph, taskResolver(options.taskRoot), newTasks);
+  phases.rollup = lap();
   const episodes = await refreshEpisodes(
     graph,
     offsetsBefore,
@@ -106,15 +111,21 @@ export async function runDeltaPass(options: DeltaPassOptions): Promise<RefreshSu
     yieldPoint,
     false,
   );
+  phases.episodes = lap();
   const workspace =
     options.activeRootChanged && !options.skipWorkspace
       ? await refreshWorkspace(graph, { activeRoot: options.activeRoot ?? options.taskRoot })
       : null;
+  phases.workspace = lap();
   return {
+    kind: 'delta',
     startedAt,
     durationMs: Date.now() - started,
     transcripts: transcripts.length,
     scanned: transcripts.length,
+    filesOpened: counts.indexed + counts.rewound + counts.quarantined,
+    bytesRead: bytesAdvanced(offsetsBefore, snapshotOffsets(graph)),
+    phases,
     ...counts,
     reconciledMissing: 0,
     facetsBackfilled: 0,
