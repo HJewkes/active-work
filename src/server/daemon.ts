@@ -83,6 +83,38 @@ export async function startActiveWorkDaemon(setup: ActiveWorkDaemonSetup): Promi
   });
 }
 
+/** How long shutdown waits on the session index watcher; `AW_SHUTDOWN_INDEX_MS` overrides. */
+export const DEFAULT_SHUTDOWN_INDEX_MS = 10_000;
+
+function shutdownIndexMs(): number {
+  const value = Number(process.env.AW_SHUTDOWN_INDEX_MS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_SHUTDOWN_INDEX_MS;
+}
+
+/**
+ * Awaited before the socket closes: a refresh may be mid-transaction and must
+ * commit first. Capped, so a pass that never reaches a yield point cannot hold
+ * shutdown (and the refresh lock) for minutes (TP-791).
+ */
+async function closeIndexWatch(indexWatch: SessionIndexWatcher | null, log: Logger): Promise<void> {
+  if (!indexWatch) return;
+  const capMs = shutdownIndexMs();
+  let timer: NodeJS.Timeout | undefined;
+  const capped = new Promise<'capped'>((resolve) => {
+    timer = setTimeout(() => resolve('capped'), capMs);
+  });
+  try {
+    const outcome = await Promise.race([indexWatch.close().then(() => 'closed' as const), capped]);
+    if (outcome === 'capped') {
+      log.warn({ capMs }, 'session index watcher still closing; stopping anyway');
+    }
+  } catch (err) {
+    log.error({ err }, 'error closing session index watcher');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
   const log = getLogger();
   // Read through a closure: the watcher only starts once the port is bound.
@@ -104,13 +136,7 @@ export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
       shuttingDown = true;
       log.info({ signal }, 'shutting down');
       void (async () => {
-        try {
-          // Awaited before the socket closes: a refresh may be mid-transaction
-          // and must commit before the process exits.
-          await indexWatch?.close();
-        } catch (err) {
-          log.error({ err }, 'error closing session index watcher');
-        }
+        await closeIndexWatch(indexWatch, log);
         try {
           await handle.close();
         } catch (err) {
