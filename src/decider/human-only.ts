@@ -1,13 +1,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import type { ExclusionPolicy } from '@titan-design/decider';
 import matter from 'gray-matter';
 import { z } from 'zod';
-import type { PrecedentRow } from './schema.js';
 
 /**
  * Initiatives the owner marked human-only hold personal data, so their
  * precedents are never indexed and never returned. The list lives in the
  * autonomy charter's frontmatter, and an unreadable charter fails closed.
+ * The decider package never reads the charter; active-work passes the list in.
  */
 
 const CharterSchema = z.object({ human_only_initiatives: z.array(z.string().min(1)) });
@@ -29,10 +30,6 @@ export async function loadHumanOnlyInitiatives(activeRoot: string): Promise<Read
   }
 }
 
-/** Keeps only rows whose initiative resolved and is not human-only. */
-export function dropHumanOnly(
-  rows: PrecedentRow[],
-  humanOnly: ReadonlySet<string>,
-): PrecedentRow[] {
-  return rows.filter((row) => row.initiative !== null && !humanOnly.has(row.initiative));
+export function exclusionPolicy(humanOnly: ReadonlySet<string>): ExclusionPolicy {
+  return { humanOnlyInitiatives: [...humanOnly], projectInitiatives: [], personalDataPatterns: [] };
 }

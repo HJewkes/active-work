@@ -1,38 +1,52 @@
+import type { LedgerRow } from '@titan-design/decider';
 import { createRetrievalEngine, ftsRetriever } from '@titan-design/retrieval';
 import { openDatabase, SpanFtsTables, spanFtsTablesDdl, type Db } from '@titan-design/store-sqlite';
-import { dropHumanOnly } from './human-only.js';
-import type { PrecedentRow } from './schema.js';
 
 /**
- * Rank precedent rows for a query with the same BM25 retriever and fusion
- * engine as workspace search. The index is built in memory per query: the
- * corpus is a few thousand short rows, and keeping it out of the graph keeps
- * conversation text out of any file the miner owns.
+ * Rank ledger rows for a query with the same BM25 retriever and fusion engine
+ * as workspace search. The index is built in memory per query: the corpus is a
+ * few thousand short rows, and keeping it out of the graph keeps conversation
+ * text out of any file the miner owns.
  */
 
 export interface PrecedentSearchOptions {
   /** Initiatives whose rows are never returned; required so no caller can forget it. */
   humanOnly: ReadonlySet<string>;
+  /** Return rows no initiative claims; off by default (TP-695 Q6). */
+  includeUnclaimed?: boolean;
   limit?: number;
-  /** Bias towards this initiative. A boost, never a filter, as in `search`. */
+  /** Bias towards this initiative. A boost, never a filter. */
   initiative?: string;
-  /** Only rows of this class. */
-  class?: string;
+  /** Only rows of this category. */
+  category?: string;
 }
 
 export interface PrecedentHit {
   score: number;
-  row: PrecedentRow;
+  row: LedgerRow;
 }
 
 const AFFINITY_BOOST = 0.007;
 const OWNER_PREFIX = 'precedent:';
 
-function searchableText(row: PrecedentRow): string {
-  return [row.header, row.question, row.options.join(' / '), row.answer].filter(Boolean).join('\n');
+export function isUnclaimed(row: LedgerRow): boolean {
+  return row.unclaimed || row.initiative === null;
 }
 
-function buildIndex(db: Db, rows: PrecedentRow[]): SpanFtsTables {
+export function visibleRows(rows: LedgerRow[], options: PrecedentSearchOptions): LedgerRow[] {
+  return rows.filter((row) => {
+    if (row.initiative !== null && options.humanOnly.has(row.initiative)) return false;
+    if (isUnclaimed(row) && options.includeUnclaimed !== true) return false;
+    return options.category === undefined || row.category === options.category;
+  });
+}
+
+function searchableText(row: LedgerRow): string {
+  const options = row.options.map((o) => o.label).join(' / ');
+  return [row.header, row.question, options, row.answer].filter(Boolean).join('\n');
+}
+
+function buildIndex(db: Db, rows: LedgerRow[]): SpanFtsTables {
   db.exec(spanFtsTablesDdl());
   const spans = new SpanFtsTables(db);
   rows.forEach((row, i) => {
@@ -49,14 +63,12 @@ function buildIndex(db: Db, rows: PrecedentRow[]): SpanFtsTables {
 }
 
 export async function searchPrecedents(
-  rows: PrecedentRow[],
+  rows: LedgerRow[],
   query: string,
   options: PrecedentSearchOptions,
 ): Promise<PrecedentHit[]> {
   const limit = options.limit ?? 8;
-  const visible = dropHumanOnly(rows, options.humanOnly);
-  const pool =
-    options.class === undefined ? visible : visible.filter((r) => r.class === options.class);
+  const pool = visibleRows(rows, options);
   if (pool.length === 0) return [];
   const db = openDatabase(':memory:');
   try {
@@ -69,7 +81,7 @@ export async function searchPrecedents(
 }
 
 function rankHits(
-  pool: PrecedentRow[],
+  pool: LedgerRow[],
   results: { id: string; score: number }[],
   initiative: string | undefined,
 ): PrecedentHit[] {
