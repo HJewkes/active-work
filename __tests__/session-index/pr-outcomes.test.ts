@@ -12,13 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enrichPrs } from '@titan-design/session-graph';
 import type { CommandResult, RunCommand } from '../../src/discover/run-command.js';
 import { openGraph, type WorkspaceGraph } from '../../src/session-index/graph.js';
-import { ghPrResolver } from '../../src/session-index/pr-outcomes.js';
+import { clearPrFailureBackoff, ghPrResolver } from '../../src/session-index/pr-outcomes.js';
 import { runRefresh } from '../../src/session-index/refresh.js';
 
 let dir: string;
 let graph: WorkspaceGraph;
 
 beforeEach(() => {
+  clearPrFailureBackoff();
   dir = mkdtempSync(path.join(os.tmpdir(), 'aw-pr-outcomes-'));
   graph = openGraph(path.join(dir, 'graph.sqlite3'));
   vi.stubEnv('AGENT_CHAT_HOME', path.join(dir, 'agent-chat'));
@@ -195,5 +196,23 @@ describe('the gh PR resolver', () => {
     expect(rowFor(7)).toMatchObject({ outcome_checked_at: null });
     expect(rowFor(8)).toMatchObject({ outcome_checked_at: null });
     expect(rowFor(9)).toMatchObject({ state: 'closed' });
+  });
+
+  it('does not ask gh again about a failed PR until the backoff has passed', async () => {
+    const backoffMs = 30 * 60 * 1000;
+    let clock = 1_000_000;
+    addPr(1);
+    const gh = fakeGh({ 'acme/demo#1': { code: 1, stdout: '', stderr: 'boom\n' } });
+    const resolver = ghPrResolver(graph, { run: gh, now: () => clock });
+    const keys = [{ prRef: 'pr:acme/demo#1', repo: 'acme/demo', number: 1 }];
+
+    await resolver(keys);
+    clock += backoffMs;
+    await resolver(keys);
+    expect(gh.asked).toEqual(['acme/demo#1']);
+
+    clock += 1;
+    await resolver(keys);
+    expect(gh.asked).toEqual(['acme/demo#1', 'acme/demo#1']);
   });
 });
