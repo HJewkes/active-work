@@ -27,11 +27,19 @@ export function clearDocumentFrequency(dbName: string): void {
   cache.delete(dbName);
 }
 
-/** min(matches, cap) without bm25 ordering: the count never needs a rank. */
+/**
+ * min(matches, cap) without bm25 ordering: the count never needs a rank.
+ *
+ * Joined to the span table because a purged span strands its contentless FTS
+ * row; counting the FTS table alone would keep a deleted span in the count.
+ */
 export function countMatches(graph: WorkspaceGraph, expression: string, cap: number): number {
   const row = graph.db
     .prepare(
-      `SELECT count(*) AS n FROM (SELECT rowid FROM ${SPAN_FTS} WHERE ${SPAN_FTS} MATCH ? LIMIT ?)`,
+      `SELECT count(*) AS n FROM (
+        SELECT ${SPAN_FTS}.rowid FROM ${SPAN_FTS}
+        JOIN search_span ON search_span.span_id = ${SPAN_FTS}.rowid
+        WHERE ${SPAN_FTS} MATCH ? LIMIT ?)`,
     )
     .get(expression, cap) as { n: number };
   return row.n;

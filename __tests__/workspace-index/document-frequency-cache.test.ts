@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { graphDocumentFrequency } from '../../src/search/document-frequency.js';
 import { openGraph, type WorkspaceGraph } from '../../src/session-index/graph.js';
 import { refreshWorkspace } from '../../src/workspace-index/refresh.js';
-import { scaffold, writeFile } from './fixture.js';
+import { removeFile, scaffold, writeFile } from './fixture.js';
 
 let dir: string;
 let root: string;
@@ -40,7 +40,7 @@ describe('document frequency across workspace passes', () => {
     expect(frequency('indexer')).toBeGreaterThan(before);
   });
 
-  it('keeps the cached count when a pass writes no spans', async () => {
+  it('keeps the cached count when a pass neither writes nor removes spans', async () => {
     const frequency = graphDocumentFrequency(graph);
     const before = frequency('indexer');
     graph.db.prepare('DELETE FROM search_span').run();
@@ -48,5 +48,31 @@ describe('document frequency across workspace passes', () => {
     await refreshWorkspace(graph, { activeRoot: root });
 
     expect(frequency('indexer')).toBe(before);
+  });
+
+  it('counts a term lower after a pass removes a file that held it', async () => {
+    fileDesign('doomed');
+    await refreshWorkspace(graph, { activeRoot: root });
+    const frequency = graphDocumentFrequency(graph);
+    const before = frequency('doomed');
+
+    removeFile(root, 'beta/sources/doomed.md');
+    await refreshWorkspace(graph, { activeRoot: root });
+
+    expect(before).toBeGreaterThan(0);
+    expect(frequency('doomed')).toBeLessThan(before);
+  });
+
+  it('counts a term lower after a file is replaced by one with no spans', async () => {
+    fileDesign('replaced');
+    await refreshWorkspace(graph, { activeRoot: root });
+    const frequency = graphDocumentFrequency(graph);
+    const before = frequency('replaced');
+
+    writeFile(root, 'beta/sources/replaced.md', '');
+    await refreshWorkspace(graph, { activeRoot: root });
+
+    expect(before).toBeGreaterThan(0);
+    expect(frequency('replaced')).toBeLessThan(before);
   });
 });

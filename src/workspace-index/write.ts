@@ -78,8 +78,8 @@ export class WorkspaceWriter {
   private readonly inserts: Record<WorkspaceClass, Statement>;
   private readonly deletes: Statement[];
   private readonly deleteSpans: Statement;
-  /** Spans indexed since construction; a pass reads it to know whether counts went stale. */
-  spansWritten = 0;
+  /** Spans indexed or purged since construction; a pass reads it to know whether counts went stale. */
+  spansChanged = 0;
 
   constructor(private readonly graph: WorkspaceGraph) {
     this.inserts = Object.fromEntries(
@@ -106,7 +106,7 @@ export class WorkspaceWriter {
    */
   purge(relativePath: string, watermarkId: number): void {
     for (const statement of this.deletes) statement.run(relativePath);
-    this.deleteSpans.run(spanSourceId(watermarkId));
+    this.spansChanged += this.deleteSpans.run(spanSourceId(watermarkId)).changes;
   }
 
   /**
@@ -134,7 +134,7 @@ export class WorkspaceWriter {
         },
         span.text,
       );
-      this.spansWritten++;
+      this.spansChanged++;
     }
   }
 }

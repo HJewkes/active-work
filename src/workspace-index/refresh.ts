@@ -240,9 +240,8 @@ export async function refreshWorkspace(
     }
   }
 
-  if (writer.spansWritten > 0) clearDocumentFrequency(graph.db.name);
-
   const removed = removeVanished(graph, writer, new Set(files.map((f) => f.path)));
+  if (writer.spansChanged > 0) clearDocumentFrequency(graph.db.name);
   const edges = rebuildEdges(graph, await collectNoteFacts(activeRoot, graph));
   return {
     files: files.length,

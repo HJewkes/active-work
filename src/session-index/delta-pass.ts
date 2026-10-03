@@ -14,6 +14,7 @@ import type { DrainedDirtySet } from './dirty-set.js';
 import { transcriptFromPath } from './transcript-path.js';
 import { taskResolver } from './tasks.js';
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
+import { clearDocumentFrequency } from '../search/document-frequency.js';
 import { refreshWorkspace } from '../workspace-index/refresh.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import type { RefreshSummary } from './refresh.js';
@@ -103,6 +104,8 @@ async function scanTranscripts(
   } catch (err) {
     rollupSessions(graph, touched);
     throw err;
+  } finally {
+    if (counts.indexed + counts.rewound > 0) clearDocumentFrequency(graph.db.name);
   }
   return { counts, touched, facts };
 }
