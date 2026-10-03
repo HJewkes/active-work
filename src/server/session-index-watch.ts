@@ -257,6 +257,7 @@ export function passRunner(
 
 function createScheduler(
   runner: PassRunner,
+  dirty: DirtySet,
   log: WatchLogger,
   signal: AbortSignal,
 ): RefreshScheduler {
@@ -269,6 +270,7 @@ function createScheduler(
     gateRecheckMs: envInt('AW_INDEX_GATE_RECHECK_MS', DEFAULT_GATE_RECHECK_MS),
     onHoldChange: (held, reason) =>
       log.info({ reason }, held ? `session index paused: ${reason}` : 'session index resumed'),
+    hasUndrained: () => dirty.size > 0,
     onLockSkip: (skips) => {
       if (skips % LOCK_SKIP_LOG_EVERY === 1) {
         void readRefreshLockHolder().then((holder) =>
@@ -311,7 +313,7 @@ export function startSessionIndexWatch(
   const dirty = createDirtySet();
   const abort = new AbortController();
   const runner = passRunner(graph, dirty, log, abort.signal);
-  const scheduler = createScheduler(runner, log, abort.signal);
+  const scheduler = createScheduler(runner, dirty, log, abort.signal);
   const uninstall = installFreshness(scheduler, dirty);
 
   // The watcher only records what changed; a reader or the poll runs the pass.

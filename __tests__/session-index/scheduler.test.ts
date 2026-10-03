@@ -272,5 +272,59 @@ describe('RefreshScheduler', () => {
       expect(onLockSkip).not.toHaveBeenCalled();
       expect(scheduler.status()).toMatchObject({ pending: false, lockSkips: 0 });
     });
+
+    /** A run whose first pass marks itself indexed, then holds until `finish`. */
+    function indexedThenHeld() {
+      let finish: () => void = () => {};
+      const run = vi.fn(async (_kind: string, onIndexed: () => void) => {
+        if (run.mock.calls.length > 1) return summary;
+        onIndexed();
+        await new Promise<void>((resolve) => (finish = resolve));
+        return summary;
+      });
+      return { run, finish: () => finish() };
+    }
+
+    it('joins a delta past its index step at once when nothing waits undrained', async () => {
+      const { run, finish } = indexedThenHeld();
+      const scheduler = new RefreshScheduler(run, { hasUndrained: () => false });
+      await scheduler.runNow(500);
+
+      const joined = await scheduler.runNow(500);
+
+      expect(joined).toBe('fresh');
+      expect(run).toHaveBeenCalledTimes(1);
+      finish();
+      await scheduler.close();
+    });
+
+    it('follows a delta past its index step with another delta when changes wait undrained', async () => {
+      const { run, finish } = indexedThenHeld();
+      const scheduler = new RefreshScheduler(run, { hasUndrained: () => true });
+      await scheduler.runNow(500);
+
+      const joining = scheduler.runNow(500);
+      await settle();
+      const kindsWhileHeld = run.mock.calls.map(([kind]) => kind);
+      finish();
+
+      expect(await joining).toBe('fresh');
+      expect(kindsWhileHeld).toEqual(['delta']);
+      expect(run.mock.calls.map(([kind]) => kind)).toEqual(['delta', 'delta']);
+      await scheduler.close();
+    });
+
+    it('reads stale and starts no follow-up when the joined delta outlasts the budget', async () => {
+      const { run, finish } = indexedThenHeld();
+      const scheduler = new RefreshScheduler(run, { hasUndrained: () => true });
+      await scheduler.runNow(500);
+
+      const joined = await scheduler.runNow(30);
+      finish();
+      await scheduler.close();
+
+      expect(joined).toBe('stale');
+      expect(run).toHaveBeenCalledTimes(1);
+    });
   });
 });
