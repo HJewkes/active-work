@@ -73,6 +73,8 @@ export interface RefreshOptions {
    * Defaults to true; the daemon sweeps only now and then (TP-343).
    */
   episodeSweep?: boolean;
+  /** Absolute paths the watcher reported since the last pass; the sealed filter never hides these. */
+  dirtyPaths?: readonly string[];
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
   /**
@@ -321,7 +323,13 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // A rebuild has just reset every row, so nothing is sealed yet.
     const unsealed = options.full
       ? discovered
-      : await sealedFilter(graph, discovered, retiredSessions());
+      : await sealedFilter(
+          graph,
+          discovered,
+          retiredSessions(),
+          undefined,
+          new Set(options.dirtyPaths),
+        );
     const visiting = unsealed.slice(0, options.limit ?? unsealed.length);
     const verify = options.verifyHashes ?? options.full ?? false;
 

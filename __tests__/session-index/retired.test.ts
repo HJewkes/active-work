@@ -158,6 +158,38 @@ describe('sealed transcripts of retired agents', () => {
     expect(second).toMatchObject({ scanned: 1, unchanged: 1 });
   });
 
+  it('indexes bytes appended to a sealed transcript after its retire (TP-874)', async () => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    const sealed = await pass();
+    const late = line(SESSION, 'flushed after the retire');
+    appendFileSync(transcriptOf(SESSION), late, 'utf8');
+
+    const healed = await pass();
+
+    expect(sealed).toMatchObject({ scanned: 0 });
+    expect(healed).toMatchObject({ scanned: 1, indexed: 1, bytesRead: Buffer.byteLength(late) });
+  });
+
+  it('opens a sealed transcript whose path the watcher reported since the last pass', async () => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    await pass();
+
+    const reported = await runRefresh({
+      graph,
+      root,
+      skipPrOutcomes: true,
+      skipWorkspace: true,
+      taskRoot: dir,
+      dirtyPaths: [transcriptOf(SESSION)],
+    });
+
+    expect(reported).toMatchObject({ scanned: 1, unchanged: 1 });
+  });
+
   it('opens a sealed session again once a respawn reuses its session id', async () => {
     writeFileSync(transcriptOf(SESSION), line(SESSION, 'before the retire'), 'utf8');
     retire(SESSION);
