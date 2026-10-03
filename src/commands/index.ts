@@ -59,6 +59,7 @@ import sourceRead from './source-read.js';
 import audit from './audit.js';
 import contextGraph from './context-graph.js';
 import contextRelated from './context-related.js';
+import inventory from './inventory.js';
 import search from './search.js';
 import precedentExtract from './precedent-extract.js';
 import precedentSearch from './precedent-search.js';
@@ -154,6 +155,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   contextGraph,
   contextRelated,
   search,
+  inventory,
   precedentExtract,
   precedentSearch,
   // discover / triage

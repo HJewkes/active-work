@@ -19,6 +19,7 @@
   "active__fold",
   "active__hooks__agent-chat-complete",
   "active__hooks__agent-chat-spawn",
+  "active__inventory",
   "active__list",
   "active__loops",
   "active__mcp__logs",
