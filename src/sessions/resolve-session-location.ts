@@ -1,6 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
+import { ValidationError } from '../errors.js';
+import { resolveProfileDir } from '../launcher-profile.js';
 import { listInitiativeSlugs, resolveLaunchCwd } from '../commands/_open-helpers.js';
 import { parseFrontmatter } from '../utils/gray-matter-io.js';
 
@@ -9,6 +11,8 @@ export interface ResolvedSessionLocation {
   source: 'active-work' | 'claude-projects';
   /** Set only when `source` is `active-work`. */
   slug?: string;
+  /** Set only when the session lives outside the default config dir. */
+  configDir?: string;
 }
 
 /**
@@ -46,10 +50,20 @@ async function findInActiveWork(
   return null;
 }
 
+interface TranscriptRoot {
+  root: string;
+  /** Null for the default config dir (and the test override), where the env must stay untouched. */
+  configDir: string | null;
+}
+
 /** Every Claude config dir's transcript store. `CLAUDE_PROJECTS_ROOT` narrows it to one for tests. */
-function transcriptRoots(): string[] {
+function transcriptRoots(): TranscriptRoot[] {
   const override = process.env.CLAUDE_PROJECTS_ROOT;
-  return override ? [override] : claudeTranscriptRoots().map(({ root }) => root);
+  if (override) return [{ root: override, configDir: null }];
+  return claudeTranscriptRoots().map(({ root, account }) => ({
+    root,
+    configDir: account === 'default' ? null : path.dirname(root),
+  }));
 }
 
 /** The first `cwd` field found in a transcript's JSONL lines, if any. */
@@ -71,17 +85,24 @@ async function extractCwd(filePath: string): Promise<string | null> {
   return null;
 }
 
+interface TranscriptMatch {
+  cwd: string;
+  configDir: string | null;
+}
+
 /**
  * Claude Code names each transcript file after its session id
  * (`<project-dir>/<session_id>.jsonl`), so the lookup is a direct filename
  * match across project dirs rather than a scan of every transcript's content.
+ * Returns one match per config dir that holds the session.
  */
-async function findInClaudeProjects(sessionId: string): Promise<string | null> {
-  for (const root of transcriptRoots()) {
+async function findTranscripts(sessionId: string): Promise<TranscriptMatch[]> {
+  const matches: TranscriptMatch[] = [];
+  for (const { root, configDir } of transcriptRoots()) {
     const cwd = await findInRoot(root, sessionId);
-    if (cwd) return cwd;
+    if (cwd) matches.push({ cwd, configDir });
   }
-  return null;
+  return matches;
 }
 
 async function findInRoot(root: string, sessionId: string): Promise<string | null> {
@@ -105,24 +126,69 @@ async function findInRoot(root: string, sessionId: string): Promise<string | nul
   return null;
 }
 
+function describeConfigDir(match: TranscriptMatch): string {
+  return match.configDir ?? '~/.claude';
+}
+
+/** The config dir of the profile the initiative declares, if its brief names one. */
+async function declaredConfigDir(activeRoot: string, slug: string): Promise<string | null> {
+  try {
+    const raw = await fs.readFile(path.join(activeRoot, slug, 'brief.md'), 'utf8');
+    const { profile } = parseFrontmatter(raw).data;
+    return typeof profile === 'string' ? resolveProfileDir(profile) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One config dir, or a refusal to guess when several hold the same session id. */
+function pickMatch(
+  sessionId: string,
+  matches: TranscriptMatch[],
+  preferred: string | null,
+  fallbackToDefault = false,
+): TranscriptMatch | null {
+  if (matches.length <= 1) return matches[0] ?? null;
+  const named = preferred ? matches.find((m) => m.configDir === preferred) : undefined;
+  if (named) return named;
+  const inDefault = fallbackToDefault ? matches.find((m) => m.configDir === null) : undefined;
+  if (inDefault) return inDefault;
+  const where = matches.map(describeConfigDir).join(' and ');
+  throw new ValidationError(
+    `Session '${sessionId}' exists under more than one config dir (${where}); ` +
+      'remove one copy or set CLAUDE_CONFIG_DIR yourself and run `claude --resume`.',
+  );
+}
+
 /**
  * Resolve the working directory a session id belongs to: active-work's own
  * session log first (giving the initiative's directory, where `aw` launches
  * every session), then a direct filename match under every config dir's `projects` for
  * sessions active-work never tracked — there the transcript's recorded `cwd`
- * is the answer, since such a session may have run anywhere.
+ * is the answer, since such a session may have run anywhere. `configDir` is
+ * set when the transcript lives outside the default config dir.
  */
 export async function resolveSessionLocation(
   activeRoot: string,
   sessionId: string,
 ): Promise<ResolvedSessionLocation | null> {
   const viaActiveWork = await findInActiveWork(activeRoot, sessionId);
+  const matches = await findTranscripts(sessionId);
   if (viaActiveWork) {
-    return { cwd: viaActiveWork.cwd, source: 'active-work', slug: viaActiveWork.slug };
+    const preferred = await declaredConfigDir(activeRoot, viaActiveWork.slug);
+    const match = pickMatch(sessionId, matches, preferred, true);
+    return {
+      cwd: viaActiveWork.cwd,
+      source: 'active-work',
+      slug: viaActiveWork.slug,
+      ...(match?.configDir ? { configDir: match.configDir } : {}),
+    };
   }
-  const viaProjects = await findInClaudeProjects(sessionId);
-  if (viaProjects) {
-    return { cwd: viaProjects, source: 'claude-projects' };
-  }
-  return null;
+  const match = pickMatch(sessionId, matches, null);
+  if (!match) return null;
+  return {
+    cwd: match.cwd,
+    source: 'claude-projects',
+    ...(match.configDir ? { configDir: match.configDir } : {}),
+  };
 }
