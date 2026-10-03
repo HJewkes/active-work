@@ -9,6 +9,7 @@ import path from 'node:path';
 import { daemonPaths, silentLogger } from '@titan-design/daemon';
 import { runDaemon, startActiveWorkDaemon } from '../../src/server/daemon.js';
 import type * as RefreshModule from '../../src/session-index/refresh.js';
+import type * as MachinePressureModule from '../../src/utils/machine-pressure.js';
 import { refreshLockHolderPath } from '../../src/session-index/refresh.js';
 import { assertSafeToRemove, withEmptyActiveRoot } from '../setup/test-helpers.js';
 
@@ -23,6 +24,12 @@ const pass = vi.hoisted(() => {
 const log = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 
 vi.mock('../../src/server/logger.js', () => ({ getLogger: () => log }));
+
+// The real probe would run sysctl, and a loaded machine would hold the pass before its first yield.
+vi.mock('../../src/utils/machine-pressure.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof MachinePressureModule>()),
+  readMachinePressure: async () => ({ swapUsedPct: 0, pressureLevel: 1 }),
+}));
 
 // A related request that never finishes: the pass's yield point would wait out the gate.
 vi.mock('../../src/session-index/reader-gate.js', () => ({
