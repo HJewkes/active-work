@@ -20,6 +20,7 @@ import {
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
 import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
+import { indexFreshness, READ_FRESH_BUDGET_MS } from '../session-index/freshness.js';
 import { rankNotes, subjectOf, type NoteRanking, type NoteRelevance } from './rank-notes.js';
 import {
   relatedForLoops,
@@ -1333,6 +1334,8 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     briefTitle: brief.title,
     ...(topTask !== undefined ? { topTaskId: topTask.id, topTaskTitle: topTask.title } : {}),
   });
+  // Only the live graph needs catching up; a stale one still ranks, just without the newest writes.
+  if (noteRelevance === undefined) await indexFreshness.ensure(READ_FRESH_BUDGET_MS);
   const noteRanking = rankNotes({
     notes: notes.notes,
     slug,
