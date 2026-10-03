@@ -13,6 +13,8 @@ import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-ind
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
+import { runDeltaPass } from './delta-pass.js';
+import type { DiscoveredTranscript } from '@titan-design/session-read';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
@@ -42,6 +44,18 @@ export interface RefreshOptions {
    * transcripts carry no account.
    */
   root?: string;
+  /**
+   * The transcripts to visit, bypassing discovery. A `delta` pass visits only
+   * these; a full pass takes them in place of the walk.
+   */
+  transcripts?: DiscoveredTranscript[];
+  /**
+   * `delta` indexes just `transcripts` and skips the whole-corpus phases; the
+   * default `full` walks everything.
+   */
+  mode?: 'full' | 'delta';
+  /** Delta only: the active root changed, so the workspace half runs. */
+  activeRootChanged?: boolean;
   /** Stale audit facets re-extracted this pass; `Infinity` clears the backlog. */
   facetLimit?: number;
   /** Backlogged sessions segmented into episodes this pass; `Infinity` clears the backlog. */
@@ -193,6 +207,18 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
   const phases: Record<string, number> = {};
 
   try {
+    if (options.mode === 'delta') {
+      return await runDeltaPass({
+        graph,
+        transcripts: options.transcripts ?? [],
+        yieldPoint,
+        taskRoot: options.taskRoot,
+        episodeLimit: options.episodeLimit,
+        activeRootChanged: options.activeRootChanged,
+        activeRoot: options.activeRoot,
+        skipWorkspace: options.skipWorkspace,
+      });
+    }
     if (options.full) {
       // Before the reset, never after: a session whose transcripts Claude Code
       // has pruned cannot be re-derived, and `resetIndex` would take it with
@@ -203,9 +229,9 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       resetIndex(graph);
       resetWorkspaceIndex(graph);
     }
-    const discovered = await (options.root
-      ? discoverTranscripts(options.root)
-      : discoverAllTranscripts());
+    const discovered =
+      options.transcripts ??
+      (await (options.root ? discoverTranscripts(options.root) : discoverAllTranscripts()));
     const visiting = discovered.slice(0, options.limit ?? discovered.length);
     const verify = options.verifyHashes ?? options.full ?? false;
 

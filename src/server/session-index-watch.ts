@@ -12,6 +12,8 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
+import { watchChangedPaths } from '../session-index/watch-paths.js';
+import type { DirtySet } from '../session-index/dirty-set.js';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { readMachinePressure, shouldHold } from '../utils/machine-pressure.js';
 import { readerGate } from '../session-index/reader-gate.js';
@@ -145,16 +147,22 @@ function disabled(): boolean {
  * an ordinary state, not a fault: skip it and let the poll pick it up if it
  * ever appears.
  */
-function watchRoot(root: string, onChange: () => void, log: WatchLogger): TreeWatcher | null {
+function watchRoot(
+  root: string,
+  onChange: () => void,
+  log: WatchLogger,
+  dirty?: DirtySet,
+): TreeWatcher | null {
   if (!existsSync(root)) {
     log.info({ root }, 'no transcripts root yet; session indexing will poll for one');
     return null;
   }
   try {
-    const watcher = watchTree(root, onChange, {
-      debounceMs: envInt('AW_INDEX_DEBOUNCE_MS', DEFAULT_DEBOUNCE_MS),
-      onError: (err) => log.warn({ err, root }, 'session index watcher error'),
-    });
+    const debounceMs = envInt('AW_INDEX_DEBOUNCE_MS', DEFAULT_DEBOUNCE_MS);
+    const onError = (err: unknown) => log.warn({ err, root }, 'session index watcher error');
+    const watcher = dirty
+      ? watchChangedPaths(root, dirty, onChange, { debounceMs, onError })
+      : watchTree(root, onChange, { debounceMs, onError });
     log.info({ root }, 'watching transcripts for session indexing');
     return watcher;
   } catch (err) {
