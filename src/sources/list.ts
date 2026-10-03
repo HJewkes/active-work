@@ -33,7 +33,7 @@ const PR_FILENAME = /^pr-(\d+)-/;
 const DEEPDIVE_FILENAME = /^deepdive-/;
 const SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}-/;
 
-function inferType(filename: string): SourceType {
+export function inferType(filename: string): SourceType {
   if (PR_FILENAME.test(filename)) return 'pr';
   if (DEEPDIVE_FILENAME.test(filename)) return 'deepdive';
   if (SESSION_FILENAME.test(filename)) return 'session';
@@ -48,7 +48,7 @@ function firstHeading(contents: string): string | undefined {
   return undefined;
 }
 
-async function readTitle(filePath: string, filename: string): Promise<string> {
+export async function readTitle(filePath: string, filename: string): Promise<string> {
   const stem = filename.replace(/\.md$/, '');
   try {
     const contents = await fs.readFile(filePath, 'utf8');

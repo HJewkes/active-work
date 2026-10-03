@@ -45,6 +45,7 @@ import wrap from './wrap.js';
 // Notes
 import noteAdd from './note-add.js';
 import noteList from './note-list.js';
+import noteRead from './note-read.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -61,6 +62,7 @@ import sourceRead from './source-read.js';
 import audit from './audit.js';
 import contextGraph from './context-graph.js';
 import contextRelated from './context-related.js';
+import inventory from './inventory.js';
 import search from './search.js';
 import precedentExtract from './precedent-extract.js';
 import precedentSearch from './precedent-search.js';
@@ -140,6 +142,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   // notes
   noteAdd,
   noteList,
+  noteRead,
   // sources / artifacts
   sourceAdd,
   sourceList,
@@ -158,6 +161,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   contextGraph,
   contextRelated,
   search,
+  inventory,
   precedentExtract,
   precedentSearch,
   // discover / triage
