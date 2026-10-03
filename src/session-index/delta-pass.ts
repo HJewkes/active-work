@@ -33,6 +33,8 @@ export interface DeltaPassOptions {
   activeRootChanged?: boolean;
   activeRoot?: string;
   skipWorkspace?: boolean;
+  /** Called once scan and rollup have committed, before the episode step. */
+  onIndexed?: () => void;
 }
 
 /**
@@ -125,6 +127,7 @@ export async function runDeltaPass(options: DeltaPassOptions): Promise<RefreshSu
   const newTasks = allTaskIds(graph).filter((id) => !tasksBefore.has(id));
   const tasks = await enrichTasks(graph, taskResolver(options.taskRoot), newTasks);
   phases.rollup = lap();
+  options.onIndexed?.();
   const episodes = await refreshEpisodes(
     graph,
     offsetsBefore,

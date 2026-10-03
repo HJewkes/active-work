@@ -89,13 +89,23 @@ async function withinBudget(pass: Promise<boolean>, budgetMs: number): Promise<F
   return ok ? 'fresh' : 'stale';
 }
 
+/** Lets a pass tell the scheduler its index writes are committed before it finishes. */
+export type PassRun = (kind: PassKind, onIndexed: () => void) => Promise<RefreshSummary>;
+
+interface Execution {
+  /** Resolves true when the pass succeeded. */
+  done: Promise<boolean>;
+  /** Resolves true once readers can read the pass's writes; false if it failed first. */
+  indexed: Promise<boolean>;
+}
+
 export class RefreshScheduler {
   private running = false;
   private pending = false;
   private closed = false;
   private inFlight: Promise<void> | null = null;
-  /** The pass executing right now, of either kind; resolves true when it succeeded. */
-  private executing: Promise<boolean> | null = null;
+  /** The pass executing right now, of either kind. */
+  private executing: Execution | null = null;
   private last: RefreshSummary | null = null;
   private lastError: string | null = null;
   private consecutiveErrors = 0;
@@ -108,7 +118,7 @@ export class RefreshScheduler {
   private backoff: Promise<void> | null = null;
 
   constructor(
-    private readonly run: (kind: PassKind) => Promise<RefreshSummary>,
+    private readonly run: PassRun,
     private readonly options: SchedulerOptions = {},
   ) {}
 
@@ -129,22 +139,26 @@ export class RefreshScheduler {
   }
 
   /**
-   * Refresh before a read. Waits up to `budgetMs` for the pass already running,
-   * or starts a delta pass at once, ignoring the min-interval window. Never
-   * rejects: a pass that fails, or outlasts the budget, reads as `'stale'`.
+   * Refresh before a read. Waits up to `budgetMs` for the pass already running
+   * to index, or starts a delta pass at once, ignoring the min-interval window.
+   * The pass's later work, such as episodes, runs on after the reader returns
+   * (TP-873). Never rejects: a pass that fails, or outlasts the budget, reads as `'stale'`.
    */
   runNow(budgetMs: number): Promise<Freshness> {
     if (this.closed || this.held) return Promise.resolve('stale');
-    return withinBudget(this.executing ?? this.execute('delta'), budgetMs);
+    return withinBudget((this.executing ?? this.execute('delta')).indexed, budgetMs);
   }
 
   /** Run one pass of `kind` and track it, so the other kind waits instead of overlapping it. */
-  private execute(kind: PassKind): Promise<boolean> {
-    const pass = this.attempt(kind).finally(() => {
-      if (this.executing === pass) this.executing = null;
+  private execute(kind: PassKind): Execution {
+    let markIndexed = (): void => {};
+    const marked = new Promise<true>((resolve) => (markIndexed = () => resolve(true)));
+    const done = this.attempt(kind, markIndexed).finally(() => {
+      if (this.executing === execution) this.executing = null;
     });
-    this.executing = pass;
-    return pass;
+    const execution: Execution = { done, indexed: Promise.race([marked, done]) };
+    this.executing = execution;
+    return execution;
   }
 
   /**
@@ -160,10 +174,10 @@ export class RefreshScheduler {
       if (this.closed) return;
       if (this.options.gate && !(await this.waitForGate(this.options.gate))) return;
       this.pending = false;
-      while (this.executing) await this.executing;
+      while (this.executing) await this.executing.done;
       if (this.closed) return;
       this.lastStartedAt = this.now();
-      await this.execute('full');
+      await this.execute('full').done;
       await this.backoff;
       this.backoff = null;
       this.lastEndedAt = this.now();
@@ -212,9 +226,9 @@ export class RefreshScheduler {
    * delta pass that meets the lock held elsewhere just reports failure: the
    * reader it serves must not wait, and the poll retries.
    */
-  private async attempt(kind: PassKind): Promise<boolean> {
+  private async attempt(kind: PassKind, onIndexed: () => void): Promise<boolean> {
     try {
-      this.last = await this.run(kind);
+      this.last = await this.run(kind, onIndexed);
       this.lastError = null;
       this.consecutiveErrors = 0;
       this.lockSkips = 0;
@@ -271,6 +285,6 @@ export class RefreshScheduler {
     this.closed = true;
     this.pending = false;
     this.cancelSleep();
-    await Promise.all([this.inFlight, this.executing]);
+    await Promise.all([this.inFlight, this.executing?.done]);
   }
 }
