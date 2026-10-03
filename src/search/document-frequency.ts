@@ -19,8 +19,21 @@ const cache = new Map<string, Map<string, number>>();
 /** Bounded so a long-lived daemon cannot grow the cache without limit. */
 const CACHE_TERMS = 20_000;
 
+/** The kit's default span FTS table; `spans.search` reads it too, but ranks every match first. */
+const SPAN_FTS = 'search_fts';
+
+/** min(matches, cap) without bm25 ordering: the count never needs a rank. */
+export function countMatches(graph: WorkspaceGraph, expression: string, cap: number): number {
+  const row = graph.db
+    .prepare(
+      `SELECT count(*) AS n FROM (SELECT rowid FROM ${SPAN_FTS} WHERE ${SPAN_FTS} MATCH ? LIMIT ?)`,
+    )
+    .get(expression, cap) as { n: number };
+  return row.n;
+}
+
 function countSpans(graph: WorkspaceGraph, term: string): number {
-  return graph.spans.search(orExpression([term]), SPAN_CAP).length;
+  return countMatches(graph, orExpression([term]), SPAN_CAP);
 }
 
 export function graphDocumentFrequency(graph: WorkspaceGraph): DocumentFrequency {

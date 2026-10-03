@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
+import { runRefresh, withRefreshLock, type RefreshLockHolder } from '../session-index/refresh.js';
 
 /**
  * `active-work miner refresh` — bring the session-signal index up to date with
@@ -64,6 +64,13 @@ const ResultSchema = z.object({
 });
 type Result = z.infer<typeof ResultSchema>;
 
+/** One stderr line naming who holds the lock, so a long wait is never anonymous (TP-791). */
+export function describeLockWait(holder: RefreshLockHolder | null): string {
+  if (!holder) return 'miner refresh: waiting for the refresh lock (holder unknown)\n';
+  const state = holder.stale ? ', stale: that pid is gone' : '';
+  return `miner refresh: waiting for the refresh lock held by pid ${holder.pid} since ${holder.startedAt} (${holder.command}${state})\n`;
+}
+
 export default defineCommand<Args, Result>({
   name: 'miner.refresh',
   description: 'Index new Claude session transcripts into the session-signal index.',
@@ -91,14 +98,16 @@ export default defineCommand<Args, Result>({
     },
   },
   async run(args) {
-    return withRefreshLock(() =>
-      runRefresh({
-        full: args.full,
-        limit: args.limit,
-        verifyHashes: args.verify_hashes,
-        facetLimit: args.backfill_all ? Infinity : undefined,
-        episodeLimit: args.backfill_all ? Infinity : undefined,
-      }),
+    return withRefreshLock(
+      () =>
+        runRefresh({
+          full: args.full,
+          limit: args.limit,
+          verifyHashes: args.verify_hashes,
+          facetLimit: args.backfill_all ? Infinity : undefined,
+          episodeLimit: args.backfill_all ? Infinity : undefined,
+        }),
+      { onWait: (holder) => process.stderr.write(describeLockWait(holder)) },
     );
   },
 });

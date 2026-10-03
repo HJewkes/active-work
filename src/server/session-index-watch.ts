@@ -14,6 +14,7 @@ import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { watchChangedPaths } from '../session-index/watch-paths.js';
 import type { DirtySet } from '../session-index/dirty-set.js';
+import { readRefreshLockHolder } from '../session-index/refresh.js';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { readMachinePressure, shouldHold } from '../utils/machine-pressure.js';
 import { readerGate } from '../session-index/reader-gate.js';
@@ -58,10 +59,24 @@ const DEFAULT_POLL_MS = 60_000;
 /** The longest a pass waits on in-flight related requests before it resumes anyway. */
 export const IDLE_CAP_MS = 5_000;
 
-/** The daemon pass's yield point: let I/O in, then hold while a related request runs (TP-343). */
-export async function yieldToReaders(): Promise<void> {
+/** Settles with `work`, or rejects with the abort reason as soon as `signal` fires. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+/**
+ * The daemon pass's yield point: let I/O in, then hold while a related request runs (TP-343).
+ * An aborted `signal` ends the pass here, between chunks, so shutdown loses nothing committed (TP-791).
+ */
+export async function yieldToReaders(signal?: AbortSignal): Promise<void> {
   await nextMacrotask();
-  await readerGate.idle(IDLE_CAP_MS);
+  const idle = readerGate.idle(IDLE_CAP_MS);
+  await (signal ? untilAborted(idle, signal) : idle);
 }
 
 /** A held lock is routine on a busy machine; log the first skip and then one in this many. */
@@ -187,10 +202,15 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
 
   let lastMaxLoopStallMs: number | null = null;
   const sweep = episodeSweepPolicy();
+  const abort = new AbortController();
   const pass = async () => {
     try {
       const measured = await measureLoopStall(() =>
-        runRefresh({ graph, yieldPoint: yieldToReaders, episodeSweep: sweep.next() }),
+        runRefresh({
+          graph,
+          yieldPoint: () => yieldToReaders(abort.signal),
+          episodeSweep: sweep.next(),
+        }),
       );
       lastMaxLoopStallMs = measured.maxStallMs;
       log.info(passLogLine(measured.result, measured.maxStallMs), 'session index pass');
@@ -201,8 +221,10 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
       throw err;
     }
   };
-  const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
-    onError: (err) => log.warn({ err }, 'session index refresh failed'),
+  const scheduler = new RefreshScheduler(() => withRefreshLock(pass, { signal: abort.signal }), {
+    onError: (err) => {
+      if (!abort.signal.aborted) log.warn({ err }, 'session index refresh failed');
+    },
     minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
     gate: async () => shouldHold(await readMachinePressure()),
     gateRecheckMs: envInt('AW_INDEX_GATE_RECHECK_MS', DEFAULT_GATE_RECHECK_MS),
@@ -210,7 +232,12 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
       log.info({ reason }, held ? `session index paused: ${reason}` : 'session index resumed'),
     onLockSkip: (skips) => {
       if (skips % LOCK_SKIP_LOG_EVERY === 1) {
-        log.info({ skips }, 'session index refresh skipped: lock held elsewhere; will retry');
+        void readRefreshLockHolder().then((holder) =>
+          log.info(
+            { skips, holder },
+            'session index refresh skipped: lock held elsewhere; will retry',
+          ),
+        );
       }
     },
   });
@@ -230,6 +257,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
   return {
     status: () => ({ ...scheduler.status(), lastMaxLoopStallMs }),
     async close(): Promise<void> {
+      abort.abort(new Error('session index watcher closed'));
       clearInterval(poll);
       for (const watcher of watchers) watcher.close();
       await scheduler.close();

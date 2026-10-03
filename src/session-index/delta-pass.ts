@@ -18,6 +18,8 @@ import { refreshWorkspace } from '../workspace-index/refresh.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import type { RefreshSummary } from './refresh.js';
 
+type IndexStatus = 'indexed' | 'unchanged' | 'rewound' | 'missing' | 'quarantined';
+
 /** An unknown root only re-checks rows modified this recently; older ones are settled. */
 export const UNKNOWN_ROOT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -76,6 +78,34 @@ export async function transcriptsFromDirty(
 const NO_PRESERVED = { restored: 0, merged: 0, skipped: 0 };
 
 /**
+ * Index each transcript in turn. A throw mid-scan (a shutdown abort at the
+ * yield point) still rolls up the sessions already committed: their offsets
+ * have advanced, so no later delta pass would revisit them (TP-791).
+ */
+async function scanTranscripts(
+  graph: WorkspaceGraph,
+  transcripts: readonly DiscoveredTranscript[],
+  yieldPoint: () => Promise<void>,
+): Promise<{ counts: Record<IndexStatus, number>; touched: string[]; facts: number }> {
+  const counts = { indexed: 0, unchanged: 0, rewound: 0, missing: 0, quarantined: 0 };
+  const touched: string[] = [];
+  let facts = 0;
+  try {
+    for (const transcript of transcripts) {
+      const outcome = await indexTranscript(graph, transcript);
+      counts[outcome.status] += 1;
+      facts += outcome.facts;
+      touched.push(...outcome.sessionIds);
+      await yieldPoint();
+    }
+  } catch (err) {
+    rollupSessions(graph, touched);
+    throw err;
+  }
+  return { counts, touched, facts };
+}
+
+/**
  * Index only `transcripts`, roll up the sessions they touched and enrich new
  * tasks. Skips what a full pass does over the whole corpus: facet backfill,
  * reconcile, PR outcomes, review rounds, missing-row marking, preserved-row
@@ -89,16 +119,7 @@ export async function runDeltaPass(options: DeltaPassOptions): Promise<RefreshSu
   const lap = lapTimer();
   const phases: Record<string, number> = {};
   const tasksBefore = new Set(allTaskIds(graph));
-  const counts = { indexed: 0, unchanged: 0, rewound: 0, missing: 0, quarantined: 0 };
-  const touched: string[] = [];
-  let facts = 0;
-  for (const transcript of transcripts) {
-    const outcome = await indexTranscript(graph, transcript);
-    counts[outcome.status] += 1;
-    facts += outcome.facts;
-    touched.push(...outcome.sessionIds);
-    await yieldPoint();
-  }
+  const { counts, touched, facts } = await scanTranscripts(graph, transcripts, yieldPoint);
   phases.scan = lap();
   const turnsRolledUp = rollupSessions(graph, touched);
   const newTasks = allTaskIds(graph).filter((id) => !tasksBefore.has(id));
