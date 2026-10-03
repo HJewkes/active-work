@@ -43,6 +43,10 @@ pnpm build           # tsup
 pnpm verify          # the full local gate; CI runs exactly this
 ```
 
+## Worktree deps
+
+The agent-chat broker preinstalls deps in a new worktree from `.agent-chat/worktree.json`, with scripts ignored. Do not run `pnpm install` again; run `pnpm rebuild better-sqlite3` and `pnpm run prepare` only if you need the native module or the pre-push hook.
+
 ## Verify before opening a PR
 
 Before `gh pr create`, run `pnpm verify` in your worktree and report its last lines.
