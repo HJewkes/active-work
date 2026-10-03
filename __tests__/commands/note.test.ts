@@ -7,7 +7,7 @@ import noteListCmd from '../../src/commands/note-list.js';
 import { NOTE_TITLE_MAX_LENGTH, NoteFrontmatterSchema } from '../../src/schemas/note.js';
 import { readFrontmatter } from '../../src/utils/gray-matter-io.js';
 import { today } from '../../src/utils/today.js';
-import { withTempActiveRoot } from '../setup/test-helpers.js';
+import { withEmptyActiveRoot, withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SLUG = 'sample-initiative';
 const ctx = { activeRoot: '', warnings: [], format: 'json' as const };
@@ -19,6 +19,12 @@ function notesDir(root: string): string {
 async function writeNoteFixture(root: string, filename: string, contents: string): Promise<void> {
   await fs.mkdir(notesDir(root), { recursive: true });
   await fs.writeFile(path.join(notesDir(root), filename), contents, 'utf8');
+}
+
+async function writeNoteIn(root: string, slug: string, name: string, body: string): Promise<void> {
+  const dir = path.join(root, slug, 'sources', 'notes');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, name), body, 'utf8');
 }
 
 function noteFixture(kind: string, title: string, created: string): string {
@@ -173,6 +179,27 @@ describe('note.list', () => {
     await withTempActiveRoot(async () => {
       const res = await noteListCmd.run({ slug: SLUG }, ctx);
       expect(res).toEqual({ notes: [], errors: [] });
+    });
+  });
+
+  it('lists notes from every initiative, newest first, each tagged with its slug', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeNoteIn(root, 'alpha', '2026-01-02-a.md', noteFixture('fyi', 'A', '2026-01-02'));
+      await writeNoteIn(root, 'beta', '2026-03-01-b.md', noteFixture('plan', 'B', '2026-03-01'));
+      await writeNoteIn(root, 'beta', '2026-01-05-bad.md', '---\nkind: mystery\n---\nnope\n');
+
+      const res = await noteListCmd.run({ all_initiatives: true }, ctx);
+      expect(res.notes.map((n) => [n.slug, n.title])).toEqual([
+        ['beta', 'B'],
+        ['alpha', 'A'],
+      ]);
+      expect(res.errors.map((e) => [e.slug, e.filename])).toEqual([['beta', '2026-01-05-bad.md']]);
+    });
+  });
+
+  it('refuses to run with neither a slug nor all_initiatives', async () => {
+    await withEmptyActiveRoot(async () => {
+      await expect(noteListCmd.run({}, ctx)).rejects.toThrow(/requires a slug/);
     });
   });
 });
