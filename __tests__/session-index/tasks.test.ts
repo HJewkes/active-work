@@ -9,14 +9,15 @@
  * stays null rather than being guessed at.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { allTaskIds, enrichTasks } from '@titan-design/session-graph';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
-import { loadTaskStore, taskResolver } from '../../src/session-index/tasks.js';
+import { readYaml } from '../../src/utils/yaml-io.js';
+import { loadKnownTaskIds, loadTaskStore, taskResolver } from '../../src/session-index/tasks.js';
 
 let dir: string;
 let storeRoot: string;
@@ -57,7 +58,10 @@ function writeTask(
     `done_at: ${fields.done_at ?? 'null'}`,
     ...(fields.estimate === undefined ? [] : [`estimate: ${fields.estimate}`]),
   ].join('\n');
-  writeFileSync(path.join(tasks, `${id}.yml`), body + '\n', 'utf8');
+  // Rename into place, as the real writer does; that is what moves the dir mtime.
+  const tmp = path.join(tasks, `${id}.yml.tmp`);
+  writeFileSync(tmp, body + '\n', 'utf8');
+  renameSync(tmp, path.join(tasks, `${id}.yml`));
 }
 
 /** A task ref as a transcript leaves it: an id, and nothing else known. */
@@ -112,6 +116,62 @@ describe('loadTaskStore', () => {
 
   it('is empty rather than throwing when the root does not exist', async () => {
     expect(await loadTaskStore(path.join(dir, 'nope'))).toEqual(new Map());
+  });
+});
+
+describe('loadTaskStore memo', () => {
+  const countingReader = () => {
+    const real = vi.fn();
+    return {
+      reads: real,
+      read: ((file, schema) => {
+        real(file);
+        return readYaml(file, schema);
+      }) as typeof readYaml,
+    };
+  };
+
+  it('reads no task file on a second load when no directory changed', async () => {
+    writeTask('alpha', 'A-1');
+    const { reads, read } = countingReader();
+    await loadTaskStore(storeRoot, read);
+    reads.mockClear();
+
+    const store = await loadTaskStore(storeRoot, read);
+
+    expect(reads).not.toHaveBeenCalled();
+    expect(store.get('A-1')).toMatchObject({ title: 'Do A-1' });
+  });
+
+  it('reloads a task file renamed into place', async () => {
+    writeTask('alpha', 'A-1');
+    const { read } = countingReader();
+    await loadTaskStore(storeRoot, read);
+
+    const tasks = path.join(storeRoot, 'alpha', 'tasks');
+    const tmp = path.join(tasks, 'A-1.yml.tmp');
+    writeFileSync(
+      tmp,
+      'id: A-1\ntitle: Retitled\npriority: 10\nstatus: open\ncreated: 2026-08-01\nupdated: 2026-08-02\ndone_at: null\n',
+      'utf8',
+    );
+    renameSync(tmp, path.join(tasks, 'A-1.yml'));
+    const store = await loadTaskStore(storeRoot, read);
+
+    expect(store.get('A-1')).toMatchObject({ title: 'Retitled' });
+  });
+
+  it('sees a new initiative and a new archived task id', async () => {
+    writeTask('alpha', 'A-1');
+    await loadTaskStore(storeRoot);
+    await loadKnownTaskIds(storeRoot);
+
+    writeTask('beta', 'B-1');
+    mkdirSync(path.join(storeRoot, 'alpha', 'tasks', 'archive'), { recursive: true });
+    writeFileSync(path.join(storeRoot, 'alpha', 'tasks', 'archive', 'A-9.yml'), 'x\n', 'utf8');
+
+    expect((await loadTaskStore(storeRoot)).get('B-1')).toMatchObject({ initiative: 'beta' });
+    expect(await loadKnownTaskIds(storeRoot)).toEqual(new Set(['A-1', 'B-1', 'A-9']));
   });
 });
 

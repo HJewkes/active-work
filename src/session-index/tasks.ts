@@ -47,7 +47,13 @@ async function initiativeSlugs(root: string): Promise<string[]> {
   }
 }
 
-async function readInitiative(root: string, slug: string): Promise<[string, ResolvedTask][]> {
+type TaskReader = typeof readYaml;
+
+async function readInitiative(
+  root: string,
+  slug: string,
+  read: TaskReader,
+): Promise<[string, ResolvedTask][]> {
   const dir = path.join(root, slug, 'tasks');
   let files: string[];
   try {
@@ -62,7 +68,7 @@ async function readInitiative(root: string, slug: string): Promise<[string, Reso
     // A malformed task file must not fail the whole refresh: the index is a
     // read-only observer of this store and has no standing to reject it.
     try {
-      const task = await readYaml(path.join(dir, file), TaskSchema);
+      const task = await read(path.join(dir, file), TaskSchema);
       found.push([
         task.id,
         {
@@ -79,16 +85,69 @@ async function readInitiative(root: string, slug: string): Promise<[string, Reso
   return found;
 }
 
-/** Every task in the store, keyed by bare id; ambiguous ids map to null. */
-export async function loadTaskStore(root: string = getActiveRoot()): Promise<TaskStore> {
-  const store: TaskStore = new Map();
-  for (const slug of await initiativeSlugs(root)) {
-    for (const [id, task] of await readInitiative(root, slug)) {
-      if (store.has(id)) store.set(id, AMBIGUOUS);
-      else store.set(id, task);
-    }
+async function dirMtime(dir: string): Promise<string> {
+  try {
+    return String((await fs.stat(dir)).mtimeMs);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '-';
+    throw err;
   }
-  return store;
+}
+
+/**
+ * Cheap change key for the whole store: the root's own mtime plus the mtime of
+ * each `<slug>/tasks` and `<slug>/tasks/archive` dir. A task edit renames a file
+ * into place, which moves its dir's mtime; a new initiative moves the root's.
+ */
+async function storeKey(root: string, slugs: string[]): Promise<string> {
+  const parts = [await dirMtime(root)];
+  for (const slug of slugs) {
+    const tasksDir = path.join(root, slug, 'tasks');
+    parts.push(slug, await dirMtime(tasksDir), await dirMtime(path.join(tasksDir, 'archive')));
+  }
+  return parts.join('|');
+}
+
+interface Memo<T> {
+  key: string;
+  value: T;
+}
+
+const storeMemo = new Map<string, Memo<TaskStore>>();
+const knownIdsMemo = new Map<string, Memo<Set<string>>>();
+
+async function memoized<T>(
+  memo: Map<string, Memo<T>>,
+  root: string,
+  build: (slugs: string[]) => Promise<T>,
+): Promise<T> {
+  const slugs = await initiativeSlugs(root);
+  const key = await storeKey(root, slugs);
+  const hit = memo.get(root);
+  if (hit?.key === key) return hit.value;
+  const value = await build(slugs);
+  memo.set(root, { key, value });
+  return value;
+}
+
+/**
+ * Every task in the store, keyed by bare id; ambiguous ids map to null.
+ * Memoized per root until a task directory changes; callers must not mutate it.
+ */
+export async function loadTaskStore(
+  root: string = getActiveRoot(),
+  read: TaskReader = readYaml,
+): Promise<TaskStore> {
+  return memoized(storeMemo, root, async (slugs) => {
+    const store: TaskStore = new Map();
+    for (const slug of slugs) {
+      for (const [id, task] of await readInitiative(root, slug, read)) {
+        if (store.has(id)) store.set(id, AMBIGUOUS);
+        else store.set(id, task);
+      }
+    }
+    return store;
+  });
 }
 
 async function ymlStems(dir: string): Promise<string[]> {
@@ -108,14 +167,16 @@ async function ymlStems(dir: string): Promise<string[]> {
  * carries no initiative.
  */
 export async function loadKnownTaskIds(root: string = getActiveRoot()): Promise<Set<string>> {
-  const known = new Set<string>();
-  for (const slug of await initiativeSlugs(root)) {
-    const tasksDir = path.join(root, slug, 'tasks');
-    for (const dir of [tasksDir, path.join(tasksDir, 'archive')]) {
-      for (const id of await ymlStems(dir)) known.add(id);
+  return memoized(knownIdsMemo, root, async (slugs) => {
+    const known = new Set<string>();
+    for (const slug of slugs) {
+      const tasksDir = path.join(root, slug, 'tasks');
+      for (const dir of [tasksDir, path.join(tasksDir, 'archive')]) {
+        for (const id of await ymlStems(dir)) known.add(id);
+      }
     }
-  }
-  return known;
+    return known;
+  });
 }
 
 /**
