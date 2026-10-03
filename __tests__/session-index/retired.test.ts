@@ -10,7 +10,7 @@ import { retiredSessions, SEAL_GRACE_MS } from '../../src/session-index/retired.
 
 // Same shape as `origin-agent-chat.test.ts`, trimmed to the columns read here.
 const EVENTS_DDL = `
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id     INTEGER PRIMARY KEY AUTOINCREMENT,
   ts     INTEGER NOT NULL,
   kind   TEXT    NOT NULL,
@@ -157,6 +157,19 @@ describe('sealed transcripts of retired agents', () => {
 
     expect(second).toMatchObject({ scanned: 1, unchanged: 1 });
   });
+
+  it('opens a sealed session again once a respawn reuses its session id', async () => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'before the retire'), 'utf8');
+    retire(SESSION);
+    await pass();
+    const sealed = await pass();
+
+    writeEvents([{ ts: Date.now() - 60_000, kind: 'agent_spawned', sessionId: SESSION }]);
+    const respawned = await pass();
+
+    expect(sealed).toMatchObject({ scanned: 0 });
+    expect(respawned).toMatchObject({ transcripts: 1, scanned: 1, unchanged: 1 });
+  });
 });
 
 describe('retiredSessions', () => {
@@ -169,16 +182,44 @@ describe('retiredSessions', () => {
 
     expect([...retiredSessions()]).toEqual([[OTHER, 3_000]]);
   });
+});
 
-  it('fails open to an empty map when the events record cannot be read', () => {
-    const unreadable = {
-      events: () => {
-        throw new Error('database is locked');
-      },
-      plan: () => null,
-    };
-
-    expect(retiredSessions(unreadable).size).toBe(0);
-    expect(retiredSessions().size).toBe(0);
+describe('an unreadable events record', () => {
+  beforeEach(() => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
   });
+
+  const expectEverythingIndexed = async (): Promise<void> => {
+    expect(retiredSessions().size).toBe(0);
+    const second = await pass();
+    expect(second).toMatchObject({ transcripts: 1, scanned: 1, unchanged: 1 });
+  };
+
+  it('indexes everything when events.db is missing', async () => {
+    await pass();
+
+    await expectEverythingIndexed();
+  });
+
+  it('indexes everything when events.db has no events table', async () => {
+    const db = new Database(path.join(home, 'events.db'));
+    db.exec('CREATE TABLE unrelated (id INTEGER)');
+    db.close();
+    await pass();
+
+    await expectEverythingIndexed();
+  });
+
+  it('indexes everything while another connection holds events.db exclusively', async () => {
+    retire(SESSION);
+    await pass();
+    const holder = new Database(path.join(home, 'events.db'));
+    holder.exec('BEGIN EXCLUSIVE');
+    try {
+      await expectEverythingIndexed();
+    } finally {
+      holder.exec('ROLLBACK');
+      holder.close();
+    }
+  }, 30_000);
 });

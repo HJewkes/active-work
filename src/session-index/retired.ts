@@ -1,10 +1,17 @@
+import Database from 'better-sqlite3';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 import type { SessionGraph } from '@titan-design/session-graph';
 import type { WatermarkRow } from '@titan-design/store-sqlite';
 
-import { eventsDbSource, type LifecycleEvent, type SpawnSource } from './origin-agent-chat.js';
+import {
+  agentChatHome,
+  eventsDbSource,
+  type LifecycleEvent,
+  type OpenDatabase,
+  type SpawnSource,
+} from './origin-agent-chat.js';
 
 /**
  * Retired agents stop writing, so once the index has read a retired session's
@@ -14,14 +21,20 @@ import { eventsDbSource, type LifecycleEvent, type SpawnSource } from './origin-
 
 export const SEAL_GRACE_MS = 10 * 60_000;
 
-/** An agent picked up again after its retire is writing to the session once more. */
-const REVIVING_KINDS = new Set(['agent_resumed', 'agent_attached']);
+/** Skipping is only a saving, so a locked `events.db` is not worth better-sqlite3's 5 s busy wait. */
+const EVENTS_BUSY_TIMEOUT_MS = 100;
+
+const openBriefly: OpenDatabase = (file, options) =>
+  new Database(file, { ...options, timeout: EVENTS_BUSY_TIMEOUT_MS });
 
 /**
- * Session id to retire time in epoch ms, from agent-chat's `events.db`. An
- * unreadable record yields an empty map, so every transcript stays indexed.
+ * Session id to retire time in epoch ms, from agent-chat's `events.db`. Any
+ * later event naming the session (a resume, or a respawn reusing it) revives
+ * it. An unreadable record yields an empty map, so every transcript stays indexed.
  */
-export function retiredSessions(source: SpawnSource = eventsDbSource()): Map<string, number> {
+export function retiredSessions(
+  source: SpawnSource = eventsDbSource(agentChatHome(), openBriefly),
+): Map<string, number> {
   let events: LifecycleEvent[];
   try {
     events = source.events();
@@ -33,7 +46,7 @@ export function retiredSessions(source: SpawnSource = eventsDbSource()): Map<str
     const sessionId = event.meta.session_id;
     if (typeof sessionId !== 'string' || sessionId === '') continue;
     if (event.kind === 'agent_retired') retired.set(sessionId, event.ts);
-    else if (REVIVING_KINDS.has(event.kind)) retired.delete(sessionId);
+    else retired.delete(sessionId);
   }
   return retired;
 }
