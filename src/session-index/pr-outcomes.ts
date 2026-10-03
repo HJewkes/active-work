@@ -17,6 +17,7 @@ import type { WorkspaceGraph } from './graph.js';
 
 export const PR_OUTCOME_BATCH = 50;
 const CONCURRENCY = 5;
+const DEFAULT_FAIL_BACKOFF_MS = 30 * 60 * 1000;
 const GH_FIELDS = 'state,mergedAt,closedAt,reviews,commits';
 
 export interface PrOutcomeOptions {
@@ -26,6 +27,22 @@ export interface PrOutcomeOptions {
   limit?: number;
   /** Receives one line per PR `gh` could not answer. */
   errors?: string[];
+  /** Clock for the failure backoff; tests replace it. */
+  now?: () => number;
+}
+
+/** Failure times outlive a resolver: each refresh pass builds a new one inside one daemon. */
+const failedAt = new Map<string, number>();
+
+export function clearPrFailureBackoff(): void {
+  failedAt.clear();
+}
+
+function failBackoffMs(): number {
+  const parsed = Number(process.env.AW_PR_FAIL_BACKOFF_MS);
+  return process.env.AW_PR_FAIL_BACKOFF_MS && Number.isFinite(parsed) && parsed >= 0
+    ? parsed
+    : DEFAULT_FAIL_BACKOFF_MS;
 }
 
 interface GhReview {
@@ -71,7 +88,13 @@ function toResolved(pr: GhPr): ResolvedPr {
  * change, and the least recently checked go first so a long open tail is not
  * starved by the same fifty.
  */
-function selectPrs(graph: WorkspaceGraph, prs: readonly PrKey[], limit: number): PrKey[] {
+function selectPrs(
+  graph: WorkspaceGraph,
+  prs: readonly PrKey[],
+  limit: number,
+  now: number,
+): PrKey[] {
+  const backoff = failBackoffMs();
   const rows = graph.db
     .prepare('SELECT pr_ref, state, outcome_checked_at FROM pr')
     .all() as CheckedRow[];
@@ -79,6 +102,8 @@ function selectPrs(graph: WorkspaceGraph, prs: readonly PrKey[], limit: number):
   const checkedAt = (pr: PrKey): string => byRef.get(pr.prRef)?.outcome_checked_at ?? '';
   return prs
     .filter((pr) => {
+      const failed = failedAt.get(pr.prRef);
+      if (failed !== undefined && now - failed <= backoff) return false;
       const row = byRef.get(pr.prRef);
       return !row?.outcome_checked_at || row.state?.toLowerCase() === 'open';
     })
@@ -98,14 +123,17 @@ async function viewPr(run: RunCommand, pr: PrKey): Promise<ResolvedPr> {
 
 export function ghPrResolver(graph: WorkspaceGraph, options: PrOutcomeOptions = {}): PrResolver {
   const run = options.run ?? runCommand;
+  const now = options.now ?? Date.now;
   return async (prs: readonly PrKey[]): Promise<PrResolution> => {
-    const queue = selectPrs(graph, prs, options.limit ?? PR_OUTCOME_BATCH);
+    const queue = selectPrs(graph, prs, options.limit ?? PR_OUTCOME_BATCH, now());
     const resolved = new Map<string, ResolvedPr>();
     const worker = async (): Promise<void> => {
       for (let pr = queue.shift(); pr; pr = queue.shift()) {
         try {
           resolved.set(pr.prRef, await viewPr(run, pr));
+          failedAt.delete(pr.prRef);
         } catch (err) {
+          failedAt.set(pr.prRef, now());
           const reason = err instanceof Error ? err.message : String(err);
           options.errors?.push(`prs: ${pr.repo}#${String(pr.number)}: ${reason}`);
         }
