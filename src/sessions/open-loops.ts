@@ -34,6 +34,8 @@ export interface OpenLoop {
   kind: 'task' | 'pr' | 'prose';
   /** The yaml `ref` field of the next_step (task id or PR number), when present. */
   targetRef?: string;
+  /** ISO timestamp after which the loop's trigger is met, when the opener set one. */
+  due?: string;
   /** Session filename without `.md` — the identity half of `ref`. */
   sessionFile: string;
   /** Frontmatter `session_id`, kept for display; not unique. */
@@ -343,17 +345,45 @@ export function normalizePrRef(ref: string): string {
   return fromUrl?.[1] ?? trimmed.replace(/^#/, '');
 }
 
-function isAutoResolved(entry: LoopEntry, opts: DeriveOptions): boolean {
-  const target = entry.step.ref;
+function isTargetClosed(
+  kind: NextStep['kind'],
+  target: string | undefined,
+  opts: DeriveOptions,
+): boolean {
   if (target === undefined) return false;
-  if (entry.step.kind === 'task' && opts.tasks) {
+  if (kind === 'task' && opts.tasks) {
     return opts.tasks.some((t) => t.id === target && t.status === 'done');
   }
-  if (entry.step.kind === 'pr' && opts.mergedPrs) {
+  if (kind === 'pr' && opts.mergedPrs) {
     const wanted = normalizePrRef(target);
     return opts.mergedPrs.some((ref) => normalizePrRef(ref) === wanted);
   }
   return false;
+}
+
+function isAutoResolved(entry: LoopEntry, opts: DeriveOptions): boolean {
+  return isTargetClosed(entry.step.kind, entry.step.ref, opts);
+}
+
+/** Why a loop needs attention now: its task closed, its PR merged, or its due time passed. */
+export type LoopTrigger = 'task-done' | 'pr-merged' | 'due';
+
+/**
+ * The triggers of an open loop that have fired (TP-913).
+ *
+ * A promise is filed as a loop with a condition; when the condition holds, the
+ * promised action is owed. Derive `loop` without `tasks` or `mergedPrs`, or the
+ * loops whose target closed are auto-resolved away before they can be marked.
+ */
+export function triggersMet(loop: OpenLoop, opts: DeriveOptions): LoopTrigger[] {
+  const met: LoopTrigger[] = [];
+  if (isTargetClosed(loop.kind, loop.targetRef, opts)) {
+    met.push(loop.kind === 'task' ? 'task-done' : 'pr-merged');
+  }
+  if (loop.due !== undefined && new Date(loop.due).getTime() <= opts.now.getTime()) {
+    met.push('due');
+  }
+  return met;
 }
 
 function toOpenLoop(entry: LoopEntry, now: Date): OpenLoop {
@@ -362,6 +392,7 @@ function toOpenLoop(entry: LoopEntry, now: Date): OpenLoop {
     ref: entry.ref,
     text: entry.step.text,
     ...(entry.step.ref !== undefined ? { targetRef: entry.step.ref } : {}),
+    ...(entry.step.due !== undefined ? { due: entry.step.due } : {}),
     kind: entry.step.kind,
     sessionFile: entry.session.sessionFile,
     sessionId: entry.session.sessionId,

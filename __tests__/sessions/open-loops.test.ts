@@ -12,6 +12,7 @@ import {
   findDanglingResolves,
   findSessionIssues,
   loadSessionsFromDir,
+  triggersMet,
 } from '../../src/sessions/open-loops.js';
 import type { Task } from '../../src/schemas/task.js';
 
@@ -732,5 +733,60 @@ describe('deriveResolvedLoops', () => {
       resolves: [{ ref: 'nope#n1', outcome: 'abandoned', note: 'bad ref' }],
     });
     expect(await deriveResolvedLoops(initiativeDir, { now: NOW })).toHaveLength(0);
+  });
+});
+
+describe('triggersMet', () => {
+  async function openLoop(step: Record<string, unknown>) {
+    await writeSession({
+      session_id: 'a',
+      ended: '2026-07-20T10:00:00Z',
+      next_steps: [{ id: 'n1', text: 'a promise', ...step }],
+    });
+    const [loop] = await deriveOpenLoops(initiativeDir, { now: NOW });
+    return loop!;
+  }
+
+  it('reports nothing for a loop whose condition has not fired', async () => {
+    const loop = await openLoop({ kind: 'task', ref: 'AW-1', due: '2026-08-01T00:00:00Z' });
+
+    expect(loop.due).toBe('2026-08-01T00:00:00Z');
+    expect(triggersMet(loop, { now: NOW, tasks: [task('AW-1', 'open')] })).toEqual([]);
+  });
+
+  it('marks a loop whose due time has passed', async () => {
+    const loop = await openLoop({ kind: 'prose', due: '2026-07-27T23:59:59Z' });
+
+    expect(triggersMet(loop, { now: NOW })).toEqual(['due']);
+  });
+
+  // Offsets must compare as instants: 18:00-07:00 is 01:00Z the next day.
+  it('compares a due time with an offset as an instant', async () => {
+    const loop = await openLoop({ kind: 'prose', due: '2026-07-27T18:00:00-07:00' });
+
+    expect(triggersMet(loop, { now: NOW })).toEqual([]);
+    expect(triggersMet(loop, { now: new Date('2026-07-28T01:00:00Z') })).toEqual(['due']);
+  });
+
+  it('marks a task loop whose task is done', async () => {
+    const loop = await openLoop({ kind: 'task', ref: 'AW-1' });
+
+    expect(triggersMet(loop, { now: NOW, tasks: [task('AW-1', 'done')] })).toEqual(['task-done']);
+  });
+
+  it('marks a pr loop whose PR is known merged, in any ref form', async () => {
+    const loop = await openLoop({ kind: 'pr', ref: 'https://github.com/o/r/pull/57' });
+
+    expect(triggersMet(loop, { now: NOW, mergedPrs: ['#57'] })).toEqual(['pr-merged']);
+    expect(triggersMet(loop, { now: NOW, mergedPrs: ['58'] })).toEqual([]);
+  });
+
+  it('reports every trigger that fired', async () => {
+    const loop = await openLoop({ kind: 'task', ref: 'AW-1', due: '2026-07-01T00:00:00Z' });
+
+    expect(triggersMet(loop, { now: NOW, tasks: [task('AW-1', 'done')] })).toEqual([
+      'task-done',
+      'due',
+    ]);
   });
 });
