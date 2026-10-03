@@ -43,6 +43,7 @@ import wrap from './wrap.js';
 // Notes
 import noteAdd from './note-add.js';
 import noteList from './note-list.js';
+import noteRead from './note-read.js';
 
 // Sources / artifacts
 import artifactAddBranch from './artifact-add-branch.js';
@@ -137,6 +138,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   // notes
   noteAdd,
   noteList,
+  noteRead,
   // sources / artifacts
   sourceAdd,
   sourceList,
