@@ -321,8 +321,18 @@ describe('cli integration', () => {
       expect(await readTaskFile()).toBe(before);
     });
 
-    it('still replaces a whole field with the four-argument form', () => {
+    it('refuses a four-argument tags edit that drops a tag unless --force is passed', async () => {
+      const before = await readTaskFile();
+
       const res = taskEdit('tags', 'x, y');
+
+      expect(res.status).not.toBe(0);
+      expect(res.stdout + res.stderr).toContain('--force');
+      expect(await readTaskFile()).toBe(before);
+    });
+
+    it('still replaces a whole field with the four-argument form', () => {
+      const res = taskEdit('tags', 'x, y', '--force');
 
       expect(res.status).toBe(0);
       const { data } = JSON.parse(res.stdout) as { data: { tags: string[] } };

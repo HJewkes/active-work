@@ -29,6 +29,7 @@ const ArgsSchema = z.object({
   append: z.string().optional(),
   add_tag: z.string().optional(),
   remove_tag: z.string().optional(),
+  force: z.boolean().optional(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -147,11 +148,35 @@ function patchChange(task: Task, edit: Extract<Edit, { kind: 'patch' }>): TaskCh
   return { changes, notices };
 }
 
-function changeFor(task: Task, edit: Edit, date: string): TaskChange {
+function guardFieldEdit(task: Task, field: EditableField, value: unknown): void {
+  if (field === 'notes' && typeof value === 'string') {
+    const current = task.notes ?? '';
+    if (value.length < current.length) {
+      throw new UsageError(
+        `Refusing to shrink notes (${current.length} -> ${value.length} chars). ` +
+          'Use --append to add a line, or pass --force to replace the notes',
+      );
+    }
+  }
+  if (field === 'tags' && Array.isArray(value)) {
+    const dropped = (task.tags ?? []).filter((tag) => !value.includes(tag));
+    if (dropped.length > 0) {
+      throw new UsageError(
+        `Refusing to drop existing tags: ${dropped.join(', ')}. ` +
+          'Use --add-tag or --remove-tag to change one tag, or pass --force to replace the tags',
+      );
+    }
+  }
+  if (field === 'done_when' && (task.done_when ?? '').trim() !== '') {
+    throw new UsageError('Refusing to replace a non-empty done_when. Pass --force to replace it');
+  }
+}
+
+function changeFor(task: Task, edit: Edit, date: string, force: boolean): TaskChange {
   if (edit.kind === 'patch') return patchChange(task, edit);
-  const changes: Record<string, unknown> = {
-    [edit.field]: coerceValue(edit.field, edit.value),
-  };
+  const value = coerceValue(edit.field, edit.value);
+  if (!force) guardFieldEdit(task, edit.field, value);
+  const changes: Record<string, unknown> = { [edit.field]: value };
   if (edit.field === 'status' && edit.value === 'done') changes.done_at = date;
   return { changes, notices: [] };
 }
@@ -184,6 +209,10 @@ export default defineCommand<Args, Task>({
       append: { long: '--append', description: 'Append one line to notes, keeping the rest' },
       add_tag: { long: '--add-tag', description: 'Add one tag, keeping the others' },
       remove_tag: { long: '--remove-tag', description: 'Remove one tag, keeping the others' },
+      force: {
+        long: '--force',
+        description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
+      },
     },
   },
   async run(args, ctx) {
@@ -193,7 +222,7 @@ export default defineCommand<Args, Task>({
       const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
       const task = await loadTask(file, args.id);
       const date = today();
-      const { changes, notices } = changeFor(task, edit, date);
+      const { changes, notices } = changeFor(task, edit, date, args.force === true);
       announce(ctx, notices);
       if (Object.keys(changes).length === 0) return task;
       const parsed = TaskSchema.safeParse({ ...task, ...changes, updated: date });
