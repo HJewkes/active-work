@@ -27,7 +27,7 @@ import {
   parseLauncherFlags,
 } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
-import { applyProfileEnv } from './launcher-profile.js';
+import { applyProfileEnv, CONFIG_DIR_ENV } from './launcher-profile.js';
 import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './launcher-init.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT, NotFoundError } from './errors.js';
@@ -190,16 +190,19 @@ function spawnClaude(
   });
 }
 
-function spawnClaudeResume(
+export function spawnClaudeResume(
   sessionId: string,
   cwd: string,
   remoteControl: boolean,
+  configDir?: string,
+  spawnFn: typeof spawn = spawn,
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn('claude', buildResumeArgs(sessionId, { remoteControl }), {
+    const child = spawnFn('claude', buildResumeArgs(sessionId, { remoteControl }), {
       cwd,
       stdio: 'inherit',
-      env: process.env,
+      // Without a config dir the env stays exactly as inherited.
+      env: configDir ? { ...process.env, [CONFIG_DIR_ENV]: configDir } : process.env,
     });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
@@ -224,7 +227,7 @@ function spawnClaudeResume(
 /**
  * `aw resume <session_id>` — find the directory a session id belongs to
  * (active-work's own session log, then a direct match under
- * `~/.claude/projects`) and launch `claude --resume` there, so the caller
+ * every Claude config dir's `projects`, profiles included) and launch `claude --resume` there, so the caller
  * doesn't need to already know or remember where the session ran.
  */
 async function runResume(argv: string[]): Promise<void> {
@@ -244,11 +247,22 @@ async function runResume(argv: string[]): Promise<void> {
   };
   try {
     const parsed = resumeCommand.args.parse({ session_id: sessionId });
-    const resolved = (await resumeCommand.run(parsed, ctx)) as { cwd: string; source: string };
+    const resolved = (await resumeCommand.run(parsed, ctx)) as {
+      cwd: string;
+      source: string;
+      configDir?: string;
+    };
     process.stderr.write(
-      color.dim(`Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}).\n`),
+      color.dim(
+        `Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}${resolved.configDir ? `, config dir ${resolved.configDir}` : ''}).\n`,
+      ),
     );
-    const code = await spawnClaudeResume(sessionId, resolved.cwd, remoteControl);
+    const code = await spawnClaudeResume(
+      sessionId,
+      resolved.cwd,
+      remoteControl,
+      resolved.configDir,
+    );
     process.exit(code);
   } catch (err) {
     const { message, code } = formatError(err);
@@ -280,7 +294,8 @@ function printHelp(): void {
       '                 `--no-remote-control` is accepted as an alias.',
       '  aw resume <session_id> [--no-rc]',
       "                 Find the directory a session id ran in (active-work's",
-      '                 session log, then ~/.claude/projects) and resume it there.',
+      "                 session log, then every config dir's projects) and resume",
+      "                 it there, under the profile's config dir if it has one.",
       '  aw --help      Show this message.',
       '  aw --version   Print version.',
       '',

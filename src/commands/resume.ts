@@ -12,6 +12,7 @@ const ResultSchema = z.object({
   cwd: z.string(),
   source: z.enum(['active-work', 'claude-projects']),
   slug: z.string().optional(),
+  configDir: z.string().optional(),
 });
 
 export default defineCommand({
@@ -28,7 +29,7 @@ export default defineCommand({
     const resolved = await resolveSessionLocation(ctx.activeRoot, args.session_id);
     if (!resolved) {
       throw new NotFoundError(
-        `No session found for '${args.session_id}' in active-work sessions or ~/.claude/projects.`,
+        `No session found for '${args.session_id}' in active-work sessions or any Claude config dir's projects.`,
       );
     }
     return { session_id: args.session_id, ...resolved };

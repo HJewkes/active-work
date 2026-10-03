@@ -129,7 +129,11 @@ describe('resolveSessionLocation', () => {
 
     await withEmptyActiveRoot(async (activeRoot) => {
       const result = await resolveSessionLocation(activeRoot, 'prof-ile-id');
-      expect(result).toEqual({ cwd: '/Users/alice/agent', source: 'claude-projects' });
+      expect(result).toEqual({
+        cwd: '/Users/alice/agent',
+        source: 'claude-projects',
+        configDir: configDirs[1],
+      });
     });
   });
 
@@ -146,6 +150,66 @@ describe('resolveSessionLocation', () => {
       await makeInitiativeWithSession(activeRoot, 'my-initiative', 'abc-full', '/tmp/abc-full');
       const result = await resolveSessionLocation(activeRoot, 'abc');
       expect(result).toBeNull();
+    });
+  });
+});
+
+describe('resolveSessionLocation config dirs', () => {
+  async function writeIn(configDir: string, sessionId: string, cwd: string): Promise<void> {
+    const dir = path.join(configDir, 'projects', '-synthetic');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, `${sessionId}.jsonl`), `${JSON.stringify({ cwd })}\n`);
+  }
+
+  function useConfigDirs(...dirs: string[]): void {
+    vi.stubEnv('CLAUDE_PROJECTS_ROOT', '');
+    vi.stubEnv('CLAUDE_CONFIG_DIRS', dirs.join(path.delimiter));
+  }
+
+  it('reports the profile config dir a session was found under', async () => {
+    const profileDir = path.join(projectsRoot, 'agents');
+    await writeIn(profileDir, 'in-profile', '/synthetic/a');
+    useConfigDirs(path.join(projectsRoot, '.claude'), profileDir);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      const result = await resolveSessionLocation(activeRoot, 'in-profile');
+      expect(result?.configDir).toBe(profileDir);
+    });
+  });
+
+  it('omits configDir for the default config dir', async () => {
+    const defaultDir = path.join(projectsRoot, '.claude');
+    await writeIn(defaultDir, 'in-default', '/synthetic/b');
+    useConfigDirs(defaultDir, path.join(projectsRoot, 'agents'));
+    await withEmptyActiveRoot(async (activeRoot) => {
+      const result = await resolveSessionLocation(activeRoot, 'in-default');
+      expect(result).toEqual({ cwd: '/synthetic/b', source: 'claude-projects' });
+    });
+  });
+
+  it('refuses to guess when two config dirs hold the same session', async () => {
+    const dirs = ['.claude', 'agents'].map((n) => path.join(projectsRoot, n));
+    for (const dir of dirs) await writeIn(dir, 'dup-id', '/synthetic/c');
+    useConfigDirs(...dirs);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      await expect(resolveSessionLocation(activeRoot, 'dup-id')).rejects.toThrow(
+        /~\/\.claude and .*agents/,
+      );
+    });
+  });
+
+  it('prefers the config dir of the profile the session log initiative declares', async () => {
+    const dirs = ['.claude', 'agents'].map((n) => path.join(projectsRoot, n));
+    for (const dir of dirs) await writeIn(dir, 'dup-logged', '/synthetic/d');
+    useConfigDirs(...dirs);
+    vi.stubEnv('CLAUDE_PROFILE_ROOT', projectsRoot);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithSession(activeRoot, 'logged', 'dup-logged', '/synthetic/d');
+      await fs.writeFile(
+        path.join(activeRoot, 'logged', 'brief.md'),
+        '---\nprofile: agents\n---\n',
+      );
+      const result = await resolveSessionLocation(activeRoot, 'dup-logged');
+      expect(result?.configDir).toBe(dirs[1]);
     });
   });
 });
