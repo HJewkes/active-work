@@ -91,6 +91,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@titan-design/cluster": "^0.1.2",
     "@titan-design/daemon": "^0.1.4",
+    "@titan-design/decider": "0.3.0",
     "@titan-design/locator": "^0.2.1",
     "@titan-design/registry": "^0.1.0",
     "@titan-design/retrieval": "0.3.0",
