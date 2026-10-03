@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { allTaskIds, enrichTasks } from '@titan-design/session-graph';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
+import { readYaml } from '../../src/utils/yaml-io.js';
 import { loadKnownTaskIds, loadTaskStore, taskResolver } from '../../src/session-index/tasks.js';
 
 let dir: string;
@@ -123,10 +124,10 @@ describe('loadTaskStore memo', () => {
     const real = vi.fn();
     return {
       reads: real,
-      read: (async (file: string, schema: never) => {
+      read: ((file, schema) => {
         real(file);
-        return (await import('../../src/utils/yaml-io.js')).readYaml(file, schema);
-      }) as typeof import('../../src/utils/yaml-io.js').readYaml,
+        return readYaml(file, schema);
+      }) as typeof readYaml,
     };
   };
 
