@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { discoverTranscripts } from '@titan-design/session-read';
+import { graphDocumentFrequency } from '../../src/search/document-frequency.js';
 import { createDirtySet } from '../../src/session-index/dirty-set.js';
 import { transcriptsFromDirty, unknownRootCandidates } from '../../src/session-index/delta-pass.js';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
@@ -94,6 +95,35 @@ describe('delta pass', () => {
       if (key !== changedKey) expect(stamp).toBe(before.get(key));
     }
   }, 60_000);
+
+  it('counts a term higher after a delta pass indexes a transcript containing it', async () => {
+    writeTranscript(1);
+    await runRefresh({ graph, root, skipPrOutcomes: true, skipWorkspace: true, taskRoot: dir });
+    const frequency = graphDocumentFrequency(graph);
+    const before = frequency('prompt');
+    appendFileSync(path.join(root, 'demo', 's1.jsonl'), userLine(1, 'another prompt here'), 'utf8');
+    const dirty = createDirtySet();
+    dirty.add(root, 'demo/s1.jsonl');
+    const transcripts = await transcriptsFromDirty(graph, dirty.drain(), [
+      { root, account: 'default' },
+    ]);
+
+    await runRefresh({ graph, mode: 'delta', transcripts, skipWorkspace: true, taskRoot: dir });
+
+    expect(frequency('prompt')).toBeGreaterThan(before);
+  });
+
+  it('counts a term higher after a full refresh indexes a transcript containing it', async () => {
+    writeTranscript(1);
+    await runRefresh({ graph, root, skipPrOutcomes: true, skipWorkspace: true, taskRoot: dir });
+    const frequency = graphDocumentFrequency(graph);
+    const before = frequency('prompt');
+    writeTranscript(2);
+
+    await runRefresh({ graph, root, skipPrOutcomes: true, skipWorkspace: true, taskRoot: dir });
+
+    expect(frequency('prompt')).toBeGreaterThan(before);
+  });
 
   it('visits only recent rows and files with no row when a root is unknown', async () => {
     const [settled, recent] = [writeTranscript(1), writeTranscript(2)];

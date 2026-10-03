@@ -11,6 +11,7 @@ import { taskResolver } from './tasks.js';
 import { ghPrResolver } from './pr-outcomes.js';
 import { agentChatOriginResolver } from './origin-agent-chat.js';
 import type { RunCommand } from '../discover/run-command.js';
+import { clearDocumentFrequency } from '../search/document-frequency.js';
 import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-index/refresh.js';
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
@@ -352,6 +353,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),
       facetLimit: options.facetLimit,
     });
+    if (summary.indexed + summary.rewound > 0) clearDocumentFrequency(graph.db.name);
     const restored = restoreUnvisited(graph, unvisited);
     phases.corpus = lap();
     // After the rollup, because segmentation reads the wake causes it derives.
