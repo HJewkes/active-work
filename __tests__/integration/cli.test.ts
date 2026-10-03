@@ -236,6 +236,40 @@ describe('cli integration', () => {
     }
   });
 
+  it('opens a loop outside wrap, lists it as due, and refuses to resolve it twice', () => {
+    const env = { ACTIVE_ROOT: activeRoot };
+    const slug = 'loop-demo';
+    runCli(['new', slug, '--title', 'Loop demo', '--ship-target', '2026-Q3'], env);
+
+    const opened = runCli(
+      [
+        '--json',
+        'loop',
+        'open',
+        slug,
+        '--text',
+        'Restore the pool',
+        '--due',
+        '2026-01-01T00:00:00Z',
+      ],
+      env,
+    );
+    expect(opened.status).toBe(0);
+    const { ref } = (JSON.parse(opened.stdout) as { data: { ref: string } }).data;
+
+    const due = runCli(['--json', 'loops', slug, '--due'], env);
+    const listed = JSON.parse(due.stdout) as {
+      data: { open: Array<{ ref: string; trigger_met?: string[] }> };
+    };
+    expect(listed.data.open).toMatchObject([{ ref, trigger_met: ['due'] }]);
+
+    expect(runCli(['loop', 'resolve', slug, ref], env).status).toBe(0);
+    const again = runCli(['loop', 'resolve', slug, ref], env);
+    expect(again.status).toBe(65);
+    expect(again.stderr).toMatch(/already closed: done/);
+    expect(runCli(['--json', 'loops', slug, '--due'], env).stdout).toContain('"open":[]');
+  });
+
   describe('task edit flags', () => {
     const SLUG = 'flag-demo';
     let taskId: string;
