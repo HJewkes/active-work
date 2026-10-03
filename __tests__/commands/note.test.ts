@@ -203,4 +203,10 @@ describe('note.list', () => {
       await expect(noteListCmd.run({}, ctx)).rejects.toThrow(/requires a slug/);
     });
   });
+
+  it.each(['..', '.', 'Bad Slug', 'a/b'])('refuses the invalid slug %j', async (slug) => {
+    await withEmptyActiveRoot(async () => {
+      await expect(noteListCmd.run({ slug }, ctx)).rejects.toThrow(/Invalid slug/);
+    });
+  });
 });

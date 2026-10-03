@@ -1,6 +1,7 @@
 import { UsageError } from '../errors.js';
 import { listInitiativeSlugs } from '../lint/index.js';
 import { getActiveRoot } from '../utils/paths.js';
+import { validateSlug } from '../utils/slug.js';
 
 interface ListScope {
   slug?: string;
@@ -14,5 +15,7 @@ export async function resolveListSlugs(command: string, scope: ListScope): Promi
   }
   if (scope.all_initiatives) return listInitiativeSlugs(getActiveRoot());
   if (!scope.slug) throw new UsageError(`${command} requires a slug or --all-initiatives`);
+  const slugCheck = validateSlug(scope.slug);
+  if (!slugCheck.ok) throw new UsageError(`Invalid slug '${scope.slug}': ${slugCheck.error}`);
   return [scope.slug];
 }

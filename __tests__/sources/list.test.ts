@@ -2,7 +2,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { extractSourceReferences, listSources } from '../../src/sources/list.js';
+import {
+  extractSourceReferences,
+  listSources,
+  readTitle,
+  TITLE_PREFIX_BYTES,
+} from '../../src/sources/list.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SLUG = 'sample-initiative';
@@ -115,5 +120,22 @@ describe('extractSourceReferences', () => {
 
   it('returns nothing when the body never links into sources/', () => {
     expect(extractSourceReferences('# Brief\n\nWhy: because\n')).toEqual([]);
+  });
+});
+
+describe('readTitle', () => {
+  it('finds a heading inside the bounded prefix', async () => {
+    await withTempActiveRoot(async (root) => {
+      const dir = await writeSources(root, { 'a.md': `intro\n# Found it\n${'x'.repeat(20000)}` });
+      expect(await readTitle(path.join(dir, 'sources', 'a.md'), 'a.md')).toBe('Found it');
+    });
+  });
+
+  it('does not read past the cap, so a later heading falls back to the filename stem', async () => {
+    await withTempActiveRoot(async (root) => {
+      const padding = `${'x'.repeat(TITLE_PREFIX_BYTES)}\n`;
+      const dir = await writeSources(root, { 'big.md': `${padding}# Too late\n` });
+      expect(await readTitle(path.join(dir, 'sources', 'big.md'), 'big.md')).toBe('big');
+    });
   });
 });
