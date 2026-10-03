@@ -17,6 +17,7 @@ import { preserveUnreachable, replayPreserved, type ReplaySummary } from './pres
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { runDeltaPass } from './delta-pass.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
+import { retiredSessions, sealedFilter } from './retired.js';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 import { atomicWrite } from '../utils/fs-atomic.js';
 import { isLockContention } from './scheduler.js';
@@ -314,7 +315,11 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     const discovered =
       options.transcripts ??
       (await (options.root ? discoverTranscripts(options.root) : discoverAllTranscripts()));
-    const visiting = discovered.slice(0, options.limit ?? discovered.length);
+    // A rebuild has just reset every row, so nothing is sealed yet.
+    const unsealed = options.full
+      ? discovered
+      : await sealedFilter(graph, discovered, retiredSessions());
+    const visiting = unsealed.slice(0, options.limit ?? unsealed.length);
     const verify = options.verifyHashes ?? options.full ?? false;
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
