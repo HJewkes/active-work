@@ -48,11 +48,24 @@ function firstHeading(contents: string): string | undefined {
   return undefined;
 }
 
+/** Bound on bytes read per file when looking for a heading. */
+export const TITLE_PREFIX_BYTES = 8192;
+
+async function readPrefix(filePath: string): Promise<string> {
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(TITLE_PREFIX_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, TITLE_PREFIX_BYTES, 0);
+    return buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function readTitle(filePath: string, filename: string): Promise<string> {
   const stem = filename.replace(/\.md$/, '');
   try {
-    const contents = await fs.readFile(filePath, 'utf8');
-    return firstHeading(contents) ?? stem;
+    return firstHeading(await readPrefix(filePath)) ?? stem;
   } catch {
     return stem;
   }

@@ -19,6 +19,12 @@ async function writeSourceFiles(root: string, names: string[]): Promise<string> 
 }
 
 describe('source.list', () => {
+  it.each(['..', '.', 'Bad Slug', 'a/b'])('refuses the invalid slug %j', async (slug) => {
+    await withEmptyActiveRoot(async () => {
+      await expect(sourceListCmd.run({ slug }, ctx)).rejects.toThrow(/Invalid slug/);
+    });
+  });
+
   it('lists what is on disk, sorted, with no index file involved', async () => {
     await withTempActiveRoot(async (root) => {
       await writeSourceFiles(root, ['pr-9-b.md', 'deepdive-a.md']);
