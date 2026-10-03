@@ -60,6 +60,8 @@ export interface RefreshOptions {
    * default `full` walks everything.
    */
   mode?: 'full' | 'delta';
+  /** Delta only: called once scan and rollup commit, so a waiting reader need not wait on episodes. */
+  onIndexed?: () => void;
   /** Delta only: the active root changed, so the workspace half runs. */
   activeRootChanged?: boolean;
   /** Stale audit facets re-extracted this pass; `Infinity` clears the backlog. */
@@ -300,6 +302,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         activeRootChanged: options.activeRootChanged,
         activeRoot: options.activeRoot,
         skipWorkspace: options.skipWorkspace,
+        onIndexed: options.onIndexed,
       });
     }
     if (options.full) {

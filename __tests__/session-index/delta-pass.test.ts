@@ -8,6 +8,21 @@ import { createDirtySet } from '../../src/session-index/dirty-set.js';
 import { transcriptsFromDirty, unknownRootCandidates } from '../../src/session-index/delta-pass.js';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
 import { runRefresh } from '../../src/session-index/refresh.js';
+import { RefreshScheduler } from '../../src/session-index/scheduler.js';
+import type * as Episodes from '../../src/session-index/episodes.js';
+
+const episodeStep = vi.hoisted(() => ({ before: null as (() => Promise<void>) | null }));
+
+vi.mock('../../src/session-index/episodes.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof Episodes>();
+  return {
+    ...actual,
+    refreshEpisodes: async (...args: Parameters<typeof actual.refreshEpisodes>) => {
+      await episodeStep.before?.();
+      return actual.refreshEpisodes(...args);
+    },
+  };
+});
 
 const UNCHANGED = 1_000;
 
@@ -24,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  episodeStep.before = null;
   vi.unstubAllEnvs();
   graph.db.close();
   rmSync(dir, { recursive: true, force: true });
@@ -131,5 +147,46 @@ describe('delta pass aborted mid-scan', () => {
     const turns = graph.db.prepare('SELECT COUNT(*) AS n FROM turn').get() as { n: number };
     expect(turns.n).toBe(1);
     expect(unrolledTurns()).toBe(0);
+  });
+});
+
+describe('delta pass behind runNow', () => {
+  /** Resolves after `ms`, or at once when released. */
+  function blockFor(ms: number): { blocked: Promise<void>; release: () => void } {
+    let release = (): void => {};
+    const blocked = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      release = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    return { blocked, release };
+  }
+
+  it('reads fresh inside the related budget while the episode step blocks for 5 s', async () => {
+    writeTranscript(1);
+    const transcripts = await discoverTranscripts(root);
+    const episodes = blockFor(5_000);
+    let episodeStepBlocked = false;
+    episodeStep.before = () => {
+      episodeStepBlocked = true;
+      return episodes.blocked;
+    };
+    const scheduler = new RefreshScheduler((_kind, onIndexed) =>
+      runRefresh({ graph, mode: 'delta', transcripts, taskRoot: dir, onIndexed }),
+    );
+
+    const started = Date.now();
+    const freshness = await scheduler.runNow(800);
+    const elapsedMs = Date.now() - started;
+
+    expect(freshness).toBe('fresh');
+    expect(elapsedMs).toBeLessThan(800);
+    expect(episodeStepBlocked).toBe(true);
+    expect(scheduler.status().running).toBe(true);
+    episodes.release();
+    await scheduler.close();
+    expect(scheduler.status().running).toBe(false);
   });
 });

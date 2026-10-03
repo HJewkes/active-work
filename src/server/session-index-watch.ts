@@ -201,7 +201,7 @@ function watchRoot(
 }
 
 export interface PassRunner {
-  run(kind: PassKind): Promise<RefreshSummary>;
+  run(kind: PassKind, onIndexed?: () => void): Promise<RefreshSummary>;
   lastMaxLoopStallMs(): number | null;
 }
 
@@ -236,7 +236,7 @@ export function passRunner(
       throw err;
     }
   };
-  const run = (kind: PassKind): Promise<RefreshSummary> =>
+  const run = (kind: PassKind, onIndexed?: () => void): Promise<RefreshSummary> =>
     withRefreshLock(
       async () => {
         const drained = dirty.drain();
@@ -244,7 +244,7 @@ export function passRunner(
           if (kind === 'full') return await full();
           const roots = claudeTranscriptRoots();
           const transcripts = await transcriptsFromDirty(graph, drained, roots);
-          return await measured({ mode: 'delta', transcripts });
+          return await measured({ mode: 'delta', transcripts, onIndexed });
         } catch (err) {
           dirty.restore(drained);
           throw err;
@@ -260,7 +260,7 @@ function createScheduler(
   log: WatchLogger,
   signal: AbortSignal,
 ): RefreshScheduler {
-  return new RefreshScheduler((kind) => runner.run(kind), {
+  return new RefreshScheduler((kind, onIndexed) => runner.run(kind, onIndexed), {
     onError: (err) => {
       if (!signal.aborted) log.warn({ err }, 'session index refresh failed');
     },
