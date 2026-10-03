@@ -212,4 +212,31 @@ describe('resolveSessionLocation config dirs', () => {
       expect(result?.configDir).toBe(dirs[1]);
     });
   });
+
+  it('resumes a logged session from the default dir when no profile is declared', async () => {
+    const dirs = ['.claude', 'agents'].map((n) => path.join(projectsRoot, n));
+    for (const dir of dirs) await writeIn(dir, 'dup-default', '/synthetic/e');
+    useConfigDirs(...dirs);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithSession(activeRoot, 'plain', 'dup-default', '/synthetic/e');
+      const result = await resolveSessionLocation(activeRoot, 'dup-default');
+      expect(result).toEqual({
+        cwd: path.join(activeRoot, 'plain'),
+        source: 'active-work',
+        slug: 'plain',
+      });
+    });
+  });
+
+  it('errors for a logged duplicate held only by non-default dirs with no declared profile', async () => {
+    const dirs = ['a-profile', 'b-profile'].map((n) => path.join(projectsRoot, n));
+    for (const dir of dirs) await writeIn(dir, 'dup-nodefault', '/synthetic/f');
+    useConfigDirs(...dirs);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      await makeInitiativeWithSession(activeRoot, 'plain2', 'dup-nodefault', '/synthetic/f');
+      await expect(resolveSessionLocation(activeRoot, 'dup-nodefault')).rejects.toThrow(
+        /a-profile and .*b-profile/,
+      );
+    });
+  });
 });

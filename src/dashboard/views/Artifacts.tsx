@@ -1,12 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { palette, radii, sp, typography } from '../tokens.js';
 import { fetchArtifacts } from '../utils/api.js';
-import type {
-  ArtifactsResult,
-  BranchEntry,
-  StashEntry,
-  ViewProps,
-} from '../types.js';
+import type { ArtifactsResult, BranchEntry, StashEntry, ViewProps } from '../types.js';
 
 interface BranchRow extends BranchEntry {
   slug: string;
@@ -66,16 +61,12 @@ export function ArtifactsView({ refreshToken }: ViewProps): React.JSX.Element {
     );
   }
   if (!data) {
-    return (
-      <div style={{ color: palette.textTertiary, fontSize: 13 }}>Loading…</div>
-    );
+    return <div style={{ color: palette.textTertiary, fontSize: 13 }}>Loading…</div>;
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: sp[12] }}>
-      <h1 style={{ margin: 0, fontSize: 22, color: palette.textPrimary }}>
-        Artifacts
-      </h1>
+      <h1 style={{ margin: 0, fontSize: 22, color: palette.textPrimary }}>Artifacts</h1>
 
       <Section title={`Tracked Branches (${flattened.branches.length})`}>
         {flattened.branches.length === 0 ? (
@@ -131,9 +122,7 @@ function Section({
       >
         {title}
       </h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: sp[3] }}>
-        {children}
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: sp[3] }}>{children}</div>
     </section>
   );
 }
@@ -165,17 +154,9 @@ function Mono({
   color: string;
   children: React.ReactNode;
 }): React.JSX.Element {
-  return (
-    <span style={{ fontFamily: typography.mono, fontSize: 12, color }}>
-      {children}
-    </span>
-  );
+  return <span style={{ fontFamily: typography.mono, fontSize: 12, color }}>{children}</span>;
 }
 
 function Empty({ text }: { text: string }): React.JSX.Element {
-  return (
-    <p style={{ margin: 0, color: palette.textTertiary, fontSize: 13 }}>
-      {text}
-    </p>
-  );
+  return <p style={{ margin: 0, color: palette.textTertiary, fontSize: 13 }}>{text}</p>;
 }

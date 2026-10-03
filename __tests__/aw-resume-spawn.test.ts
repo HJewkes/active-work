@@ -31,11 +31,24 @@ describe('spawnClaudeResume', () => {
     expect(calls[0]?.env?.CLAUDE_CONFIG_DIR).toBe('/synthetic/profiles/agents');
   });
 
-  it('leaves the environment untouched for a default-dir session', async () => {
-    vi.stubEnv('CLAUDE_CONFIG_DIR', '/synthetic/inherited');
+  it('drops an inherited CLAUDE_CONFIG_DIR for a default-dir session without mutating process.env', async () => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/synthetic/other-profile');
     const calls: SpawnCall[] = [];
     await spawnClaudeResume('sess-2', '/synthetic/cwd', false, undefined, fakeSpawn(calls));
-    expect(calls[0]?.env).toBe(process.env);
-    expect(calls[0]?.env?.CLAUDE_CONFIG_DIR).toBe('/synthetic/inherited');
+    expect(calls[0]?.env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+    expect(process.env.CLAUDE_CONFIG_DIR).toBe('/synthetic/other-profile');
+  });
+
+  it('overrides an inherited CLAUDE_CONFIG_DIR with the profile the session was found under', async () => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/synthetic/other-profile');
+    const calls: SpawnCall[] = [];
+    await spawnClaudeResume(
+      'sess-3',
+      '/synthetic/cwd',
+      false,
+      '/synthetic/agents',
+      fakeSpawn(calls),
+    );
+    expect(calls[0]?.env?.CLAUDE_CONFIG_DIR).toBe('/synthetic/agents');
   });
 });

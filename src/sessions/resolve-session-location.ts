@@ -146,10 +146,13 @@ function pickMatch(
   sessionId: string,
   matches: TranscriptMatch[],
   preferred: string | null,
+  fallbackToDefault = false,
 ): TranscriptMatch | null {
   if (matches.length <= 1) return matches[0] ?? null;
   const named = preferred ? matches.find((m) => m.configDir === preferred) : undefined;
   if (named) return named;
+  const inDefault = fallbackToDefault ? matches.find((m) => m.configDir === null) : undefined;
+  if (inDefault) return inDefault;
   const where = matches.map(describeConfigDir).join(' and ');
   throw new ValidationError(
     `Session '${sessionId}' exists under more than one config dir (${where}); ` +
@@ -173,7 +176,7 @@ export async function resolveSessionLocation(
   const matches = await findTranscripts(sessionId);
   if (viaActiveWork) {
     const preferred = await declaredConfigDir(activeRoot, viaActiveWork.slug);
-    const match = pickMatch(sessionId, matches, preferred);
+    const match = pickMatch(sessionId, matches, preferred, true);
     return {
       cwd: viaActiveWork.cwd,
       source: 'active-work',

@@ -190,6 +190,14 @@ function spawnClaude(
   });
 }
 
+/** Pin the config dir the transcript lives under; unset means claude's own default (~/.claude). */
+export function resumeEnv(base: NodeJS.ProcessEnv, configDir?: string): NodeJS.ProcessEnv {
+  const env = { ...base };
+  if (configDir) env[CONFIG_DIR_ENV] = configDir;
+  else delete env[CONFIG_DIR_ENV];
+  return env;
+}
+
 export function spawnClaudeResume(
   sessionId: string,
   cwd: string,
@@ -201,8 +209,7 @@ export function spawnClaudeResume(
     const child = spawnFn('claude', buildResumeArgs(sessionId, { remoteControl }), {
       cwd,
       stdio: 'inherit',
-      // Without a config dir the env stays exactly as inherited.
-      env: configDir ? { ...process.env, [CONFIG_DIR_ENV]: configDir } : process.env,
+      env: resumeEnv(process.env, configDir),
     });
     child.on('error', (err) => {
       const e = err as NodeJS.ErrnoException;
