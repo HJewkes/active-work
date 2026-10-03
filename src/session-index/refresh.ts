@@ -18,6 +18,7 @@ import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { runDeltaPass } from './delta-pass.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import { restoreUnvisited, retiredSessions, sealedFilter, unvisitedOk } from './retired.js';
+import { rollupUnfinishedTurns } from './unfinished-turns.js';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 import { atomicWrite } from '../utils/fs-atomic.js';
 import { isLockContention } from './scheduler.js';
@@ -335,6 +336,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     const verify = options.verifyHashes ?? options.full ?? false;
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
+    // A rebuild rolls up every session itself; it has also just reset every turn.
+    const resumedTurns = options.full ? 0 : rollupUnfinishedTurns(graph);
     const offsetsBefore = snapshotOffsets(graph);
     phases.discover = lap();
     const prErrors: string[] = [];
@@ -399,7 +402,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       facetBacklog: summary.facetBacklog,
       ...episodes,
       factsAdded: summary.facts,
-      turnsRolledUp: summary.turnsRolledUp,
+      turnsRolledUp: summary.turnsRolledUp + resumedTurns,
       tasksRequested: summary.tasks.requested,
       tasksApplied: summary.tasks.applied,
       workspace,
