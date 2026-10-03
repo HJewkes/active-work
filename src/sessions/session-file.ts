@@ -96,8 +96,9 @@ export async function pickAvailableFilename(
 
 /**
  * Write `<slug>/sessions/<YYYY-MM-DD-HHMM>-<session_id>.md`, validating the
- * frontmatter first. `wrap` is the only command that writes sessions through
- * here; `fold` writes its derived sidecars directly.
+ * frontmatter first. `wrap` writes sessions through here, and `loop open` and
+ * `loop resolve` write one-entry ledger records; `fold` writes its derived
+ * sidecars directly.
  */
 export async function writeSessionFile(input: SessionWriteInput): Promise<SessionWriteResult> {
   const sessionsDir = resolveSessionsDir(input.slug, input.activeRoot);

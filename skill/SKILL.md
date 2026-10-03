@@ -31,6 +31,20 @@ Engage whenever the user signals they want to inspect, mutate, or hand off persi
 5. **`active-work mcp status` first.** If MCP tools aren't responding, the daemon may not be running. Start it with `active-work mcp serve --detach` before retrying.
 6. **Add to a task's notes or tags; never rebuild them.** `active-work task edit <slug> <id> --append "<one line>"` adds a line to `notes` and keeps the rest. `--add-tag <tag>` and `--remove-tag <tag>` change one tag and keep the others. The three flags combine in one call. `active-work task edit <slug> <id> notes "<value>"` and `... tags "<a,b>"` replace the whole field, so a broken quote or an empty variable wipes it: use that form only when you mean to replace.
 
+## Promises between wraps
+
+A session that ends before it wraps loses every loop it only meant to file. When you promise something with a trigger ("after the 18:00 reset, restore the pool", "once the PR merges, schedule the digest"), file it at that moment:
+
+```bash
+active-work loop open <slug> --text "Restore the pool" --due 2026-10-03T18:00:00-06:00
+active-work loop open <slug> --text "Schedule the digest" --kind pr --ref https://github.com/acme/widgets/pull/57
+active-work loop open <slug> --text "Close slice 1" --kind task --ref SI-12
+```
+
+`active-work loops <slug>` marks a loop `trigger_met` when its due time has passed, its task is done or its PR is merged, and `active-work loops <slug> --due` lists only those: they are owed now. Close one with `active-work loop resolve <slug> <ref>` (add `--outcome abandoned --note "<why>"` to drop it). `loop resolve` fails when the loop is already closed, so a mistyped ref cannot report success. The merge check runs `gh`; when it cannot reach GitHub the loop stays unmarked and the result carries a warning. Answers, failures included, are kept for 5 minutes in the daemon, and one call asks `gh` about at most 10 PRs; when more are waiting, the result says so and the next call checks the rest.
+
+`active-work loops` can list more open loops than the bootstrap's "Open loops" section. The bootstrap drops a `task` loop as soon as its task is done. `loops` keeps it, marked `trigger_met: ["task-done"]`, until someone resolves it: for a promise, the done task is the cue to act, not proof that the promised action happened. Trust `loops --due` for what is owed, and resolve each loop you settle.
+
 ## Wrapping a session
 
 **Assume the process exits the instant `wrap` returns, and that everything not written to disk is lost.** Not summarized in chat — *written*. The user will very likely start a fresh session immediately; the only thing that survives is what is on disk. Chat scrollback does not carry over.

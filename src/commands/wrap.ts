@@ -418,7 +418,7 @@ export default defineCommand<Args, Result>({
       next_steps: {
         long: '--next-steps',
         description:
-          'JSON array of loops this session opens: [{"id","text","kind":"task|pr|prose","ref"?}]',
+          'JSON array of loops this session opens: [{"id","text","kind":"task|pr|prose","ref"?,"due"?}]',
       },
       resolves: {
         long: '--resolves',

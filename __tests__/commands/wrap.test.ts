@@ -129,6 +129,20 @@ describe('wrap', () => {
     expect(registry.get('wrap')).toBeDefined();
   });
 
+  it('keeps a due time filed on a next_step', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const due = '2026-05-13T18:00:00Z';
+      const result = await wrap.run(
+        baseArgs({ next_steps: [{ id: 'n1', text: 'Restore the pool', kind: 'prose', due }] }),
+        makeCtx(activeRoot),
+      );
+
+      const [loop] = await deriveOpenLoops(path.join(activeRoot, SLUG), { now: new Date() });
+      expect(result.ready_to_end).toBe(true);
+      expect(loop?.due).toBe(due);
+    });
+  });
+
   it('writes the session ledger and bumps brief.updated in one call', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const priorRef = await seedPriorLoop(activeRoot);

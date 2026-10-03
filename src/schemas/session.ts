@@ -39,6 +39,8 @@ export const NextStepSchema = z.object({
   text: z.string().min(1),
   kind: z.enum(['task', 'pr', 'prose']),
   ref: z.string().min(1).optional(),
+  // When a promise comes due (TP-913). Past this instant the loop is "trigger met".
+  due: iso8601.optional(),
 });
 
 /** A loop opened by a prior session that this session closed. */

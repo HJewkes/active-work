@@ -42,6 +42,24 @@ describe('SessionFrontmatterSchema open-loop fields', () => {
     }
   });
 
+  it('keeps a due time on a next_step', () => {
+    const result = SessionFrontmatterSchema.parse({
+      ...validBase,
+      next_steps: [
+        { id: 'n1', text: 'restore the pool', kind: 'prose', due: '2026-05-13T18:00:00Z' },
+      ],
+    });
+    expect(result.next_steps[0]?.due).toBe('2026-05-13T18:00:00Z');
+  });
+
+  it('rejects a due time without a timezone', () => {
+    const result = SessionFrontmatterSchema.safeParse({
+      ...validBase,
+      next_steps: [{ id: 'n1', text: 'x', kind: 'prose', due: '2026-05-13T18:00:00' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects an unknown next_step kind', () => {
     const result = SessionFrontmatterSchema.safeParse({
       ...validBase,
