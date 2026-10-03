@@ -46,7 +46,7 @@ describe('startSessionIndexWatch', () => {
     expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it('starts a non-blocking initial refresh and closes cleanly', async () => {
+  it('starts a non-blocking initial refresh and close aborts it without a failure', async () => {
     writeFileSync(path.join(home, 'ignored.txt'), 'x', 'utf8');
 
     const watcher = startSessionIndexWatch(log);
@@ -56,11 +56,8 @@ describe('startSessionIndexWatch', () => {
     // daemon can bind its port before a cold corpus finishes indexing.
     expect(watcher!.status()).toMatchObject({ running: true });
     await watcher!.close();
-    expect(watcher!.status()).toMatchObject({
-      running: false,
-      pending: false,
-      lastMaxLoopStallMs: expect.any(Number),
-    });
+    expect(watcher!.status()).toMatchObject({ running: false, pending: false, last: null });
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it('watches every discovered root', async () => {

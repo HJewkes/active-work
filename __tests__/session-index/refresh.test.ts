@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -6,7 +7,12 @@ import { PRICE_TABLE, PRICE_TABLE_VERSION } from '@titan-design/session-analytic
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
-import { runRefresh, type RefreshSummary } from '../../src/session-index/refresh.js';
+import {
+  refreshLockHolderPath,
+  runRefresh,
+  withRefreshLock,
+  type RefreshSummary,
+} from '../../src/session-index/refresh.js';
 import { RefreshScheduler } from '../../src/session-index/scheduler.js';
 import type * as Preserve from '../../src/session-index/preserve.js';
 import type * as WorkspaceRefresh from '../../src/workspace-index/refresh.js';
@@ -398,5 +404,75 @@ describe('RefreshScheduler', () => {
 
     expect(scheduler.status()).toMatchObject({ consecutiveErrors: 0, lastError: null });
     expect(scheduler.status().last).not.toBeNull();
+  });
+});
+
+describe('withRefreshLock', () => {
+  beforeEach(() => {
+    vi.stubEnv('ACTIVE_ROOT', dir);
+  });
+
+  /** Enter the lock and hold it until the returned `release` is called. */
+  async function holdLock(
+    whileHeld: () => void = () => {},
+  ): Promise<{ release: () => Promise<void> }> {
+    let letGo!: () => void;
+    let entered!: () => void;
+    const inside = new Promise<void>((resolve) => (entered = resolve));
+    const done = withRefreshLock(async () => {
+      whileHeld();
+      entered();
+      await new Promise<void>((resolve) => (letGo = resolve));
+    });
+    await inside;
+    return { release: () => (letGo(), done) };
+  }
+
+  it('fails a caller that will not wait with ELOCKED naming the current holder', async () => {
+    const first = await holdLock();
+
+    const second = withRefreshLock(async () => 'ran', { retries: 0 });
+
+    await expect(second).rejects.toMatchObject({
+      code: 'ELOCKED',
+      holder: { pid: process.pid },
+    });
+    await first.release();
+  });
+
+  it('marks the holder stale when its pid is no longer running', async () => {
+    const deadPid = spawnSync(process.execPath, ['-e', '']).pid;
+    const first = await holdLock(() => {
+      const holder = { pid: deadPid, command: 'gone', startedAt: new Date().toISOString() };
+      writeFileSync(refreshLockHolderPath(), JSON.stringify(holder));
+    });
+
+    const second = withRefreshLock(async () => 'ran', { retries: 0 });
+
+    await expect(second).rejects.toMatchObject({ holder: { pid: deadPid, stale: true } });
+    await first.release();
+  });
+
+  it('removes the holder file on release so the next caller gets the lock', async () => {
+    const first = await holdLock();
+    await first.release();
+
+    const result = await withRefreshLock(async () => 'ran', { retries: 0 });
+
+    expect(result).toBe('ran');
+    expect(existsSync(refreshLockHolderPath())).toBe(false);
+  });
+
+  it('tells a blocking caller who holds the lock once, then waits for it', async () => {
+    const first = await holdLock();
+    const onWait = vi.fn();
+
+    const second = withRefreshLock(async () => 'ran', { onWait });
+    await vi.waitFor(() => expect(onWait).toHaveBeenCalledTimes(1));
+    await first.release();
+
+    expect(await second).toBe('ran');
+    expect(onWait).toHaveBeenCalledWith(expect.objectContaining({ pid: process.pid }));
+    expect(onWait).toHaveBeenCalledTimes(1);
   });
 });

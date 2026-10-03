@@ -15,6 +15,8 @@ import { preserveUnreachable, replayPreserved, type ReplaySummary } from './pres
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { runDeltaPass } from './delta-pass.js';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
+import { atomicWrite } from '../utils/fs-atomic.js';
+import { isLockContention } from './scheduler.js';
 
 /**
  * One refresh pass over the transcript corpus: discover -> index each changed
@@ -131,24 +133,101 @@ export function refreshLockPath(): string {
   return `${defaultGraphPath()}.lock`;
 }
 
+/** Written beside the lock while it is held, so a blocked caller can name who holds it (TP-791). */
+export interface RefreshLockHolder {
+  pid: number;
+  command: string;
+  startedAt: string;
+  /** Set when `pid` is no longer running: the holder file outlived its writer. */
+  stale?: boolean;
+}
+
+export interface RefreshLockOptions {
+  /** Attempts after the first; `0` fails at once with ELOCKED. Omitted, the call blocks about 4 minutes. */
+  retries?: number;
+  /** Called once with the current holder when a blocking call finds the lock held. */
+  onWait?: (holder: RefreshLockHolder | null) => void;
+}
+
+/** proper-lockfile's ELOCKED, carrying the holder file's contents when there was one. */
+export type RefreshLockError = Error & { code: 'ELOCKED'; holder: RefreshLockHolder | null };
+
+const BLOCKING_RETRIES = { retries: 120, factor: 1.5, minTimeout: 200, maxTimeout: 2_000 };
+
+export function refreshLockHolderPath(): string {
+  return `${refreshLockPath()}.holder.json`;
+}
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+export async function readRefreshLockHolder(): Promise<RefreshLockHolder | null> {
+  try {
+    const raw = await fs.readFile(refreshLockHolderPath(), 'utf8');
+    const holder = JSON.parse(raw) as RefreshLockHolder;
+    return isRunning(holder.pid) ? holder : { ...holder, stale: true };
+  } catch {
+    return null;
+  }
+}
+
+async function lockOnce(
+  target: string,
+  retries: number | typeof BLOCKING_RETRIES,
+): Promise<() => Promise<void>> {
+  try {
+    return await lockfile.lock(target, { realpath: false, stale: LOCK_STALE_MS, retries });
+  } catch (err) {
+    if (isLockContention(err)) (err as RefreshLockError).holder = await readRefreshLockHolder();
+    throw err;
+  }
+}
+
+/** One fast attempt first, so a blocking caller can report the holder before it waits. */
+async function acquireRefreshLock(
+  target: string,
+  options: RefreshLockOptions,
+): Promise<() => Promise<void>> {
+  if (options.retries !== undefined) return lockOnce(target, options.retries);
+  try {
+    return await lockOnce(target, 0);
+  } catch (err) {
+    if (!isLockContention(err)) throw err;
+    options.onWait?.((err as RefreshLockError).holder);
+    return lockOnce(target, BLOCKING_RETRIES);
+  }
+}
+
 /**
  * Run `fn` holding the refresh lock, *blocking* until the current holder
  * releases rather than failing fast: a user typing `miner refresh` while the
  * daemon happens to be mid-pass wants their refresh to happen, not an error.
  * A crashed holder's lock goes stale after `LOCK_STALE_MS`.
  */
-export async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function withRefreshLock<T>(
+  fn: () => Promise<T>,
+  options: RefreshLockOptions = {},
+): Promise<T> {
   const target = refreshLockPath();
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, '', { flag: 'a' });
-  const release = await lockfile.lock(target, {
-    realpath: false,
-    stale: LOCK_STALE_MS,
-    retries: { retries: 120, factor: 1.5, minTimeout: 200, maxTimeout: 2_000 },
-  });
+  const release = await acquireRefreshLock(target, options);
   try {
+    const holder: RefreshLockHolder = {
+      pid: process.pid,
+      command: process.argv.slice(1).join(' '),
+      startedAt: new Date().toISOString(),
+    };
+    await atomicWrite(refreshLockHolderPath(), JSON.stringify(holder));
     return await fn();
   } finally {
+    await fs.rm(refreshLockHolderPath(), { force: true });
     await release();
   }
 }
