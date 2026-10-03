@@ -204,6 +204,37 @@ describe('sealed transcripts of retired agents', () => {
   });
 });
 
+describe('sealed transcripts under a home-relative path (TP-878)', () => {
+  it('keeps a sealed transcript ok through a full pass', async () => {
+    vi.stubEnv('HOME', dir);
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    writeFileSync(transcriptOf(OTHER), line(OTHER, 'still working'), 'utf8');
+    retire(SESSION);
+    await pass();
+
+    const sealed = await pass();
+
+    expect(rowFor(SESSION)?.sourceKey.startsWith('~/')).toBe(true);
+    expect(sealed).toMatchObject({ scanned: 1, reconciledMissing: 0 });
+    expect(rowFor(SESSION)?.status).toBe('ok');
+    expect(rowFor(OTHER)?.status).toBe('ok');
+  });
+
+  it('brings back a sealed row an earlier pass wrongly marked missing', async () => {
+    vi.stubEnv('HOME', dir);
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    const key = rowFor(SESSION)?.sourceKey ?? '';
+    graph.transcripts.markStatus(key, 'missing', 'source file no longer exists');
+
+    await pass();
+    await pass();
+
+    expect(rowFor(SESSION)?.status).toBe('ok');
+  });
+});
+
 describe('retiredSessions', () => {
   it('forgets a retire that a later resume undid', () => {
     writeEvents([

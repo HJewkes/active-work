@@ -116,3 +116,38 @@ export async function sealedFilter(
   }
   return kept;
 }
+
+/**
+ * Discovered transcripts this pass left out of the corpus walk that the graph held as `ok`.
+ * `markMissing` stats an absent row by its `~/` display path, which never resolves,
+ * so it flags these `missing` while their files exist (TP-878).
+ */
+export function unvisitedOk(
+  graph: Pick<SessionGraph, 'transcripts'>,
+  discovered: DiscoveredTranscript[],
+  visiting: DiscoveredTranscript[],
+): string[] {
+  const visited = new Set(visiting.map((transcript) => transcript.displayPath));
+  const ok = new Set(
+    graph.transcripts
+      .list()
+      .filter((row) => row.status === 'ok')
+      .map((row) => row.sourceKey),
+  );
+  return discovered
+    .map((transcript) => transcript.displayPath)
+    .filter((key) => !visited.has(key) && ok.has(key));
+}
+
+/** Undo the `missing` mark `markMissing` put on rows whose files were never checked. */
+export function restoreUnvisited(graph: Pick<SessionGraph, 'transcripts'>, keys: string[]): number {
+  const missing = new Set(
+    graph.transcripts
+      .list()
+      .filter((row) => row.status === 'missing')
+      .map((row) => row.sourceKey),
+  );
+  const restored = keys.filter((key) => missing.has(key));
+  for (const key of restored) graph.transcripts.markStatus(key, 'ok', null);
+  return restored.length;
+}
