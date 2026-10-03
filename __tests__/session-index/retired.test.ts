@@ -158,6 +158,38 @@ describe('sealed transcripts of retired agents', () => {
     expect(second).toMatchObject({ scanned: 1, unchanged: 1 });
   });
 
+  it('indexes bytes appended to a sealed transcript after its retire (TP-874)', async () => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    const sealed = await pass();
+    const late = line(SESSION, 'flushed after the retire');
+    appendFileSync(transcriptOf(SESSION), late, 'utf8');
+
+    const healed = await pass();
+
+    expect(sealed).toMatchObject({ scanned: 0 });
+    expect(healed).toMatchObject({ scanned: 1, indexed: 1, bytesRead: Buffer.byteLength(late) });
+  });
+
+  it('opens a sealed transcript whose path the watcher reported since the last pass', async () => {
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    await pass();
+
+    const reported = await runRefresh({
+      graph,
+      root,
+      skipPrOutcomes: true,
+      skipWorkspace: true,
+      taskRoot: dir,
+      dirtyPaths: [transcriptOf(SESSION)],
+    });
+
+    expect(reported).toMatchObject({ scanned: 1, unchanged: 1 });
+  });
+
   it('opens a sealed session again once a respawn reuses its session id', async () => {
     writeFileSync(transcriptOf(SESSION), line(SESSION, 'before the retire'), 'utf8');
     retire(SESSION);
@@ -169,6 +201,37 @@ describe('sealed transcripts of retired agents', () => {
 
     expect(sealed).toMatchObject({ scanned: 0 });
     expect(respawned).toMatchObject({ transcripts: 1, scanned: 1, unchanged: 1 });
+  });
+});
+
+describe('sealed transcripts under a home-relative path (TP-878)', () => {
+  it('keeps a sealed transcript ok through a full pass', async () => {
+    vi.stubEnv('HOME', dir);
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    writeFileSync(transcriptOf(OTHER), line(OTHER, 'still working'), 'utf8');
+    retire(SESSION);
+    await pass();
+
+    const sealed = await pass();
+
+    expect(rowFor(SESSION)?.sourceKey.startsWith('~/')).toBe(true);
+    expect(sealed).toMatchObject({ scanned: 1, reconciledMissing: 0 });
+    expect(rowFor(SESSION)?.status).toBe('ok');
+    expect(rowFor(OTHER)?.status).toBe('ok');
+  });
+
+  it('brings back a sealed row an earlier pass wrongly marked missing', async () => {
+    vi.stubEnv('HOME', dir);
+    writeFileSync(transcriptOf(SESSION), line(SESSION, 'final words'), 'utf8');
+    retire(SESSION);
+    await pass();
+    const key = rowFor(SESSION)?.sourceKey ?? '';
+    graph.transcripts.markStatus(key, 'missing', 'source file no longer exists');
+
+    await pass();
+    await pass();
+
+    expect(rowFor(SESSION)?.status).toBe('ok');
   });
 });
 

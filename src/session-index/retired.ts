@@ -61,9 +61,10 @@ function sessionOf(transcript: DiscoveredTranscript): string {
 
 /**
  * The index read this row to its end after the agent retired, so nothing is
- * left: a retired agent stops writing. An earlier read needs one stat to rule
- * out a tail written before the retire; when the file is unchanged the row is
- * re-stamped, so later passes skip it with no stat.
+ * left: a retired agent stops writing. One stat rules out a late write (a flush
+ * after the retire, or a `claude --resume` that logs no event), so a file longer
+ * than the row is never sealed (TP-874). A read from before the retire also
+ * needs an unchanged mtime, and is then re-stamped.
  */
 async function isSealed(
   graph: Pick<SessionGraph, 'transcripts'>,
@@ -72,10 +73,10 @@ async function isSealed(
   absolutePath: string,
 ): Promise<boolean> {
   if (row.status !== 'ok' || row.lastOffset !== row.fileSize) return false;
-  if (row.lastIndexedAt !== null && Date.parse(row.lastIndexedAt) >= retiredAt) return true;
   const stat = await fs.stat(absolutePath).catch(() => null);
-  if (!stat || stat.size !== row.fileSize || stat.mtime.toISOString() !== row.fileMtime)
-    return false;
+  if (!stat || stat.size !== row.fileSize) return false;
+  if (row.lastIndexedAt !== null && Date.parse(row.lastIndexedAt) >= retiredAt) return true;
+  if (stat.mtime.toISOString() !== row.fileMtime) return false;
   graph.transcripts.advance(row.sourceKey, {
     lastOffset: row.lastOffset,
     prefixHash: row.prefixHash,
@@ -88,13 +89,15 @@ async function isSealed(
 /**
  * `discovered` without the transcripts of sessions retired more than `graceMs`
  * ago that the index has fully read. A retired transcript with unread bytes
- * stays in, so it is indexed once more before it seals.
+ * stays in, and so does a transcript whose path the watcher reported since the
+ * last pass (`dirtyPaths`), so it is indexed once more before it seals.
  */
 export async function sealedFilter(
   graph: Pick<SessionGraph, 'transcripts'>,
   discovered: DiscoveredTranscript[],
   retired: Map<string, number>,
   graceMs: number = SEAL_GRACE_MS,
+  dirtyPaths: ReadonlySet<string> = new Set(),
 ): Promise<DiscoveredTranscript[]> {
   if (retired.size === 0) return discovered;
   const now = Date.now();
@@ -105,10 +108,46 @@ export async function sealedFilter(
     const row = rows.get(transcript.displayPath);
     const sealed =
       retiredAt !== undefined &&
+      !dirtyPaths.has(transcript.absolutePath) &&
       now - retiredAt > graceMs &&
       row !== undefined &&
       (await isSealed(graph, row, retiredAt, transcript.absolutePath));
     if (!sealed) kept.push(transcript);
   }
   return kept;
+}
+
+/**
+ * Discovered transcripts this pass left out of the corpus walk that the graph held as `ok`.
+ * `markMissing` stats an absent row by its `~/` display path, which never resolves,
+ * so it flags these `missing` while their files exist (TP-878).
+ */
+export function unvisitedOk(
+  graph: Pick<SessionGraph, 'transcripts'>,
+  discovered: DiscoveredTranscript[],
+  visiting: DiscoveredTranscript[],
+): string[] {
+  const visited = new Set(visiting.map((transcript) => transcript.displayPath));
+  const ok = new Set(
+    graph.transcripts
+      .list()
+      .filter((row) => row.status === 'ok')
+      .map((row) => row.sourceKey),
+  );
+  return discovered
+    .map((transcript) => transcript.displayPath)
+    .filter((key) => !visited.has(key) && ok.has(key));
+}
+
+/** Undo the `missing` mark `markMissing` put on rows whose files were never checked. */
+export function restoreUnvisited(graph: Pick<SessionGraph, 'transcripts'>, keys: string[]): number {
+  const missing = new Set(
+    graph.transcripts
+      .list()
+      .filter((row) => row.status === 'missing')
+      .map((row) => row.sourceKey),
+  );
+  const restored = keys.filter((key) => missing.has(key));
+  for (const key of restored) graph.transcripts.markStatus(key, 'ok', null);
+  return restored.length;
 }

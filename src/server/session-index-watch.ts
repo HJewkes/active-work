@@ -13,7 +13,7 @@ import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { watchChangedPaths } from '../session-index/watch-paths.js';
-import { createDirtySet, type DirtySet } from '../session-index/dirty-set.js';
+import { createDirtySet, type DirtySet, type DrainedDirtySet } from '../session-index/dirty-set.js';
 import { transcriptsFromDirty } from '../session-index/delta-pass.js';
 import { indexFreshness } from '../session-index/freshness.js';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
@@ -226,9 +226,9 @@ export function passRunner(
     log.info(passLogLine(result, maxStallMs), 'session index pass');
     return result;
   };
-  const full = async (): Promise<RefreshSummary> => {
+  const full = async (drained: DrainedDirtySet): Promise<RefreshSummary> => {
     try {
-      const result = await measured({ episodeSweep: sweep.next() });
+      const result = await measured({ episodeSweep: sweep.next(), dirtyPaths: drained.paths });
       sweep.settle(result.episodeBacklog);
       return result;
     } catch (err) {
@@ -241,7 +241,7 @@ export function passRunner(
       async () => {
         const drained = dirty.drain();
         try {
-          if (kind === 'full') return await full();
+          if (kind === 'full') return await full(drained);
           const roots = claudeTranscriptRoots();
           const transcripts = await transcriptsFromDirty(graph, drained, roots);
           return await measured({ mode: 'delta', transcripts, onIndexed });

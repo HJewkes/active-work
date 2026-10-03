@@ -17,7 +17,7 @@ import { preserveUnreachable, replayPreserved, type ReplaySummary } from './pres
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
 import { runDeltaPass } from './delta-pass.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
-import { retiredSessions, sealedFilter } from './retired.js';
+import { restoreUnvisited, retiredSessions, sealedFilter, unvisitedOk } from './retired.js';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 import { atomicWrite } from '../utils/fs-atomic.js';
 import { isLockContention } from './scheduler.js';
@@ -73,6 +73,8 @@ export interface RefreshOptions {
    * Defaults to true; the daemon sweeps only now and then (TP-343).
    */
   episodeSweep?: boolean;
+  /** Absolute paths the watcher reported since the last pass; the sealed filter never hides these. */
+  dirtyPaths?: readonly string[];
   /** Active-work root the task resolver reads; defaults to `getActiveRoot()`. */
   taskRoot?: string;
   /**
@@ -321,8 +323,15 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     // A rebuild has just reset every row, so nothing is sealed yet.
     const unsealed = options.full
       ? discovered
-      : await sealedFilter(graph, discovered, retiredSessions());
+      : await sealedFilter(
+          graph,
+          discovered,
+          retiredSessions(),
+          undefined,
+          new Set(options.dirtyPaths),
+        );
     const visiting = unsealed.slice(0, options.limit ?? unsealed.length);
+    const unvisited = unvisitedOk(graph, discovered, visiting);
     const verify = options.verifyHashes ?? options.full ?? false;
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
@@ -340,6 +349,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),
       facetLimit: options.facetLimit,
     });
+    const restored = restoreUnvisited(graph, unvisited);
     phases.corpus = lap();
     // After the rollup, because segmentation reads the wake causes it derives.
     const episodes = await refreshEpisodes(
@@ -384,7 +394,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       unchanged: summary.unchanged,
       quarantined: summary.quarantined,
       missing: summary.missing,
-      reconciledMissing: summary.markedMissing,
+      reconciledMissing: summary.markedMissing - restored,
       facetsBackfilled: summary.facetsBackfilled,
       facetBacklog: summary.facetBacklog,
       ...episodes,
