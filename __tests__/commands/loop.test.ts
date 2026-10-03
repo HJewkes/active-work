@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import loopOpenCmd from '../../src/commands/loop-open.js';
 import loopResolveCmd from '../../src/commands/loop-resolve.js';
-import { NotFoundError, ValidationError } from '../../src/errors.js';
+import { NotFoundError, UsageError, ValidationError } from '../../src/errors.js';
 import { SessionFrontmatterSchema } from '../../src/schemas/session.js';
 import {
   deriveOpenLoops,
@@ -17,6 +17,7 @@ import type { CommandContext } from '../../src/registry/index.js';
 import { withTempActiveRoot } from '../setup/test-helpers.js';
 
 const SLUG = 'sample-initiative';
+const BAD_SLUGS = ['..', '.', 'a/b', 'Bad Slug', '../outside'];
 
 function makeCtx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
@@ -122,6 +123,16 @@ describe('loop.open', () => {
       const args = loopOpenCmd.args.parse({ slug: 'no-such-initiative', text: 'x' });
 
       await expect(loopOpenCmd.run(args, makeCtx(root))).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+  it.each(BAD_SLUGS)('refuses the slug %j before touching the filesystem', async (slug) => {
+    await withTempActiveRoot(async (root) => {
+      await fs.mkdir(path.join(root, 'a', 'b'), { recursive: true });
+      await fs.writeFile(path.join(root, 'a', 'b', 'brief.md'), '# nested\n');
+      const args = loopOpenCmd.args.parse({ slug, text: 'x' });
+
+      await expect(loopOpenCmd.run(args, makeCtx(root))).rejects.toBeInstanceOf(UsageError);
+      await expect(fs.access(path.join(root, 'a', 'b', 'sessions'))).rejects.toThrow();
     });
   });
 });
@@ -256,6 +267,16 @@ describe('loop.resolve', () => {
 
       expect(await findDanglingResolves(initiativeDir(root))).toEqual([]);
       expect(await deriveOpenLoops(initiativeDir(root), { now: new Date() })).toEqual([]);
+    });
+  });
+});
+
+describe('loop.resolve slug validation', () => {
+  it.each(BAD_SLUGS)('refuses the slug %j', async (slug) => {
+    await withTempActiveRoot(async (root) => {
+      const args = loopResolveCmd.args.parse({ slug, id: 'n1' });
+
+      await expect(loopResolveCmd.run(args, makeCtx(root))).rejects.toBeInstanceOf(UsageError);
     });
   });
 });

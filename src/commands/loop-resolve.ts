@@ -8,6 +8,7 @@ import {
 import { loadSessionsFromDir } from '../sessions/open-loops.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
+import { assertValidSlug } from '../utils/slug.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z
@@ -64,6 +65,7 @@ export default defineCommand<Args, Result>({
     usage: 'active-work loop resolve <slug> <id> [--outcome done|abandoned] [--note <text>]',
   },
   async run(args, ctx) {
+    assertValidSlug(args.slug);
     const target = { slug: args.slug, activeRoot: ctx.activeRoot };
     await assertInitiativeExists(target);
     const resolution = {

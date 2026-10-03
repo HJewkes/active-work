@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import loopsCmd from '../../src/commands/loops.js';
+import { UsageError } from '../../src/errors.js';
 import type { NextStep } from '../../src/schemas/session.js';
 import { clearPrStateCache } from '../../src/sessions/loop-pr-state.js';
 import { writeSessionFile } from '../../src/sessions/session-file.js';
@@ -229,6 +230,16 @@ describe('loops --due', () => {
 
       expect(result.open).toEqual([]);
       expect(result.resolved).toEqual([]);
+    });
+  });
+});
+
+describe('loops slug validation', () => {
+  it.each(['..', '.', 'a/b', 'Bad Slug'])('refuses the slug %j', async (slug) => {
+    await withTempActiveRoot(async (root) => {
+      const run = loopsCmd.run(loopsCmd.args.parse({ slug }), makeCtx(root));
+
+      await expect(run).rejects.toBeInstanceOf(UsageError);
     });
   });
 });

@@ -3,6 +3,7 @@ import { NextStepSchema, type NextStep } from '../schemas/session.js';
 import { assertInitiativeExists, recordLoopOpen } from '../sessions/loop-ledger.js';
 import { getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
+import { assertValidSlug } from '../utils/slug.js';
 import { defineCommand } from '../registry/index.js';
 import { slugifyLabel } from './source-add.js';
 
@@ -95,6 +96,7 @@ export default defineCommand<Args, Result>({
       'active-work loop open <slug> --text <text> [--kind prose|task|pr] [--ref <task-id|pr>] [--due <iso>] [--id <id>]',
   },
   async run(args, ctx) {
+    assertValidSlug(args.slug);
     const target = { slug: args.slug, activeRoot: ctx.activeRoot };
     await assertInitiativeExists(target);
     const step = toStep(args);
