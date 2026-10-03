@@ -1,10 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
 import { z } from 'zod';
 import { BriefFrontmatterSchema, type BriefFrontmatter } from '../schemas/brief.js';
 import { ArtifactsSchema } from '../schemas/artifacts.js';
-import { writeFrontmatter } from '../utils/gray-matter-io.js';
+import { parseFrontmatter, writeFrontmatter } from '../utils/gray-matter-io.js';
 import { writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { validateSlug, derivePrefix } from '../utils/slug.js';
@@ -52,8 +51,7 @@ async function computeNextRank(activeRoot: string): Promise<number> {
     } catch {
       continue;
     }
-    const parsed = matter(raw);
-    const data = parsed.data as Record<string, unknown>;
+    const { data } = parseFrontmatter(raw);
     if (data.state === 'focused' && typeof data.rank === 'number' && data.rank > max) {
       max = data.rank;
     }

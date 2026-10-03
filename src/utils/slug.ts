@@ -1,3 +1,5 @@
+import { UsageError } from '../errors.js';
+
 const SLUG_PATTERN = /^[a-z][a-z0-9-]*[a-z0-9]$/;
 const MIN_LEN = 2;
 const MAX_LEN = 60;
@@ -35,6 +37,12 @@ export function validateSlug(s: string): SlugValidation {
     };
   }
   return { ok: true };
+}
+
+/** Throw a UsageError unless `slug` is a valid slug, so it cannot name a path outside the root. */
+export function assertValidSlug(slug: string): void {
+  const check = validateSlug(slug);
+  if (!check.ok) throw new UsageError(`Invalid slug '${slug}': ${check.error}`);
 }
 
 /**

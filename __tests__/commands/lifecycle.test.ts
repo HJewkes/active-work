@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '../../src/utils/gray-matter-io.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
 import newCmd from '../../src/commands/new.js';
 import setCmd from '../../src/commands/set.js';
@@ -43,7 +43,7 @@ describe('new', () => {
       expect((await fs.stat(path.join(root, 'alpha-init', 'sources'))).isDirectory()).toBe(true);
 
       const raw = await fs.readFile(briefPath, 'utf8');
-      const parsed = matter(raw);
+      const parsed = parseFrontmatter(raw);
       const result = BriefFrontmatterSchema.safeParse(parsed.data);
       expect(result.success).toBe(true);
       if (result.success) {
@@ -100,7 +100,7 @@ describe('set', () => {
 
       await setCmd.run({ slug: 'sf', field: 'owner', value: 'henry' }, ctxFor(root));
 
-      const parsed = matter(await fs.readFile(briefPath, 'utf8'));
+      const parsed = parseFrontmatter(await fs.readFile(briefPath, 'utf8'));
       expect((parsed.data as Record<string, unknown>).owner).toBe('henry');
       expect((parsed.data as Record<string, unknown>).updated).toBe(today());
     });
@@ -117,7 +117,9 @@ describe('set', () => {
         { slug: 'nest', field: 'worktrees.main.path', value: '~/new-path' },
         ctxFor(root),
       );
-      const parsed = matter(await fs.readFile(path.join(root, 'nest', 'brief.md'), 'utf8'));
+      const parsed = parseFrontmatter(
+        await fs.readFile(path.join(root, 'nest', 'brief.md'), 'utf8'),
+      );
       expect(parsed.data).not.toHaveProperty('worktrees');
 
       // The real registration is untouched.
@@ -160,7 +162,7 @@ describe('touch', () => {
       const out = await touchCmd.run({ slug: 'tch' }, ctxFor(root));
       expect(out.updated).toBe(today());
 
-      const parsed = matter(await fs.readFile(briefPath, 'utf8'));
+      const parsed = parseFrontmatter(await fs.readFile(briefPath, 'utf8'));
       expect((parsed.data as Record<string, unknown>).updated).toBe(today());
     });
   });

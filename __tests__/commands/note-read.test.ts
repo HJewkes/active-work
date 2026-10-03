@@ -71,6 +71,20 @@ describe('note.read', () => {
     });
   });
 
+  it('rejects a ---js note as invalid without running it', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await put(
+        root,
+        'sources/notes/2026-01-05-js.md',
+        '---js\n{ kind: (globalThis.__awNoteProbe = 42) }\n---\nbody\n',
+      );
+      await expect(noteReadCmd.run({ slug: SLUG, note: '2026-01-05-js.md' }, ctx)).rejects.toThrow(
+        /Not a valid note: .*language "js" is not allowed/,
+      );
+      expect((globalThis as Record<string, unknown>).__awNoteProbe).toBeUndefined();
+    });
+  });
+
   it('reports a missing note as not found', async () => {
     await withEmptyActiveRoot(async (root) => {
       await put(root, 'brief.md', '# Garden\n');

@@ -10,6 +10,45 @@ export interface FrontmatterFile<T> {
   body: string;
 }
 
+const ALLOWED_LANGUAGES: ReadonlySet<string> = new Set(['yaml', 'yml', 'json']);
+
+function refuseLanguage(language: string) {
+  const refuse = (): never => {
+    throw new Error(
+      `Invalid frontmatter: language "${language}" is not allowed (only yaml and json)`,
+    );
+  };
+  return { parse: refuse, stringify: refuse };
+}
+
+// gray-matter evals `---js` blocks by default; these overrides keep untrusted files inert.
+const SAFE_OPTIONS = {
+  language: 'yaml',
+  engines: Object.fromEntries(
+    ['js', 'javascript', 'coffee', 'coffeescript', 'cson'].map((name) => [
+      name,
+      refuseLanguage(name),
+    ]),
+  ),
+};
+
+/**
+ * Split a markdown string into frontmatter data and body. The only gray-matter
+ * parse entry point in the codebase: it throws on any frontmatter language
+ * other than yaml or json instead of executing it.
+ */
+export function parseFrontmatter(raw: string): { data: Record<string, unknown>; content: string } {
+  const parsed = matter(raw, SAFE_OPTIONS);
+  const language = parsed.language.toLowerCase();
+  if (!ALLOWED_LANGUAGES.has(language)) refuseLanguage(language).parse();
+  return { data: parsed.data, content: parsed.content };
+}
+
+/** Prepend `data` as YAML frontmatter to `body`, parsing `body` with the same safe options. */
+export function stringifyFrontmatter(body: string, data: object): string {
+  return matter.stringify(body, data, SAFE_OPTIONS);
+}
+
 /**
  * Read a markdown file with YAML frontmatter and validate the frontmatter
  * against `schema`.
@@ -22,7 +61,7 @@ export async function readFrontmatter<T>(
   schema: ZodType<T>,
 ): Promise<FrontmatterFile<T>> {
   const raw = await fs.readFile(filePath, 'utf8');
-  const parsed = matter(raw);
+  const parsed = parseFrontmatter(raw);
   const coerced = coerceDates(parsed.data);
   const result = schema.safeParse(coerced);
   if (!result.success) {
@@ -41,7 +80,7 @@ export async function readRawFrontmatter(
   filePath: string,
 ): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
   const raw = await fs.readFile(filePath, 'utf8');
-  const parsed = matter(raw);
+  const parsed = parseFrontmatter(raw);
   const coerced = coerceDates(parsed.data) as Record<string, unknown>;
   return {
     frontmatter: { ...coerced },
@@ -63,7 +102,7 @@ export async function writeFrontmatter<T>(
   if (!result.success) {
     throw new Error(`Frontmatter validation failed for ${filePath}: ${result.error.message}`);
   }
-  const stringified = matter.stringify(body, result.data as object);
+  const stringified = stringifyFrontmatter(body, result.data as object);
   await atomicWrite(filePath, stringified);
   const artifact = classifyStructuredArtifact(filePath);
   if (artifact) await recordArtifactHash(artifact.initiativeDir, artifact.relPath, stringified);

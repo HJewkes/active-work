@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { listInitiativeSlugs, resolveLaunchCwd } from '../commands/_open-helpers.js';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 
 export interface ResolvedSessionLocation {
   cwd: string;
@@ -37,7 +37,7 @@ async function findInActiveWork(
       } catch {
         continue;
       }
-      const { data } = matter(raw);
+      const { data } = parseFrontmatter(raw);
       if (data.session_id === sessionId) {
         return { slug, cwd: resolveLaunchCwd(activeRoot, slug) };
       }

@@ -243,4 +243,18 @@ describe('malformed files', () => {
     expect(entry!.reason).toContain('kind:');
     expect(entry!.reason).toContain('title:');
   });
+
+  it('reports a ---js note as malformed without running it', async () => {
+    writeFile(
+      root,
+      'beta/sources/notes/2026-09-12-js.md',
+      '---js\n{ kind: (globalThis.__awIndexProbe = 42) }\n---\n\nbody\n',
+    );
+
+    const summary = await refreshWorkspace(graph, { activeRoot: root });
+    const entry = summary.malformed.find((m) => m.path.endsWith('2026-09-12-js.md'));
+
+    expect((globalThis as Record<string, unknown>).__awIndexProbe).toBeUndefined();
+    expect(entry?.reason).toMatch(/language "js" is not allowed/);
+  });
 });

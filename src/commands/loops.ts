@@ -12,6 +12,7 @@ import {
 import { findMergedPrLoops } from '../sessions/loop-pr-state.js';
 import { loadTasks } from '../lint/load-tasks.js';
 import type { Task } from '../schemas/task.js';
+import { assertValidSlug } from '../utils/slug.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({
@@ -151,6 +152,7 @@ export default defineCommand<Args, Result>({
     usage: 'active-work loops <slug> [--state open|resolved|abandoned|all] [--due] [--offline]',
   },
   async run(args, ctx) {
+    assertValidSlug(args.slug);
     const initiativeDir = path.join(ctx.activeRoot, args.slug);
     const [loaded, tasks] = await Promise.all([
       loadSessionsFromDir(initiativeDir),

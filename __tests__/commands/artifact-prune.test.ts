@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '../../src/utils/gray-matter-io.js';
 import YAML from 'yaml';
 import artifactPrune from '../../src/commands/artifact-prune.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
@@ -41,7 +41,7 @@ async function scaffold(activeRoot: string, slug: string, artifacts: Artifacts):
     task_prefix: 'PR',
   };
   BriefFrontmatterSchema.parse(frontmatter);
-  await fs.writeFile(path.join(dir, 'brief.md'), matter.stringify(`# ${slug}\n`, frontmatter));
+  await fs.writeFile(path.join(dir, 'brief.md'), stringifyFrontmatter(`# ${slug}\n`, frontmatter));
   await fs.writeFile(
     path.join(dir, 'artifacts.yml'),
     YAML.stringify(ArtifactsSchema.parse(artifacts)),

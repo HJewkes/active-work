@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { ExclusionPolicy } from '@titan-design/decider';
-import matter from 'gray-matter';
 import { z } from 'zod';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 
 /**
  * Initiatives the owner marked human-only hold personal data, so their
@@ -20,7 +20,7 @@ export function charterPath(activeRoot: string): string {
 export async function loadHumanOnlyInitiatives(activeRoot: string): Promise<ReadonlySet<string>> {
   const file = charterPath(activeRoot);
   try {
-    const parsed = CharterSchema.parse(matter(await fs.readFile(file, 'utf8')).data);
+    const parsed = CharterSchema.parse(parseFrontmatter(await fs.readFile(file, 'utf8')).data);
     return new Set(parsed.human_only_initiatives);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

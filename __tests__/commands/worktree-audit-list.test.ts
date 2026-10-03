@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '../../src/utils/gray-matter-io.js';
 import worktreeSetDefault from '../../src/commands/worktree-set-default.js';
 import audit from '../../src/commands/audit.js';
 import list from '../../src/commands/list.js';
@@ -54,7 +54,7 @@ async function scaffoldInitiative(
   // Validate via schema so test inputs stay consistent with production.
   BriefFrontmatterSchema.parse(frontmatter);
   const briefPath = path.join(dir, 'brief.md');
-  await fs.writeFile(briefPath, matter.stringify(body, frontmatter));
+  await fs.writeFile(briefPath, stringifyFrontmatter(body, frontmatter));
   // Registered worktrees moved to artifacts.yml in v4 (AW-67); callers still
   // describe them in the label-keyed shape the brief used.
   const worktrees = Object.entries(input.worktrees ?? {}).map(([name, entry]) => ({

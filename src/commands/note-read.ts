@@ -1,9 +1,9 @@
-import matter from 'gray-matter';
 import { z } from 'zod';
 import { UsageError, ValidationError } from '../errors.js';
 import { NoteFrontmatterSchema, NoteKindSchema } from '../schemas/note.js';
 import { readInitiativeFile } from '../sources/read.js';
 import { coerceDates } from '../utils/coerce-dates.js';
+import { parseFrontmatter } from '../utils/gray-matter-io.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { validateSlug } from '../utils/slug.js';
 import { itemId } from '../workspace-index/wire.js';
@@ -41,7 +41,13 @@ function requestedPath(note: string): string {
 }
 
 function parseNote(relativePath: string, content: string) {
-  const parsed = matter(content);
+  let parsed: ReturnType<typeof parseFrontmatter>;
+  try {
+    parsed = parseFrontmatter(content);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new ValidationError(`Not a valid note: ${relativePath}: ${reason}`);
+  }
   const result = NoteFrontmatterSchema.safeParse(coerceDates(parsed.data));
   if (!result.success) {
     throw new ValidationError(`Not a valid note: ${relativePath}: ${result.error.message}`);

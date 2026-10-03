@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '../../src/utils/gray-matter-io.js';
 import YAML from 'yaml';
 import worktreeSet from '../../src/commands/worktree-set.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
@@ -33,7 +33,7 @@ async function scaffold(
     task_prefix: 'WT',
   };
   BriefFrontmatterSchema.parse(frontmatter);
-  await fs.writeFile(path.join(dir, 'brief.md'), matter.stringify(`# ${slug}\n`, frontmatter));
+  await fs.writeFile(path.join(dir, 'brief.md'), stringifyFrontmatter(`# ${slug}\n`, frontmatter));
   const entries = Object.entries(worktrees ?? {}).map(([name, entry]) => ({
     path: entry.path,
     repo: entry.path,
