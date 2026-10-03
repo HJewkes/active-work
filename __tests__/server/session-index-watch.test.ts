@@ -4,8 +4,27 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { startSessionIndexWatch } from '../../src/server/session-index-watch.js';
+import type * as MachinePressureModule from '../../src/utils/machine-pressure.js';
+import { FIXTURE_LINES, SESSION, renderTranscript } from '../session-index/fixture.js';
+import type * as PrOutcomesModule from '../../src/session-index/pr-outcomes.js';
 import type * as RefreshModule from '../../src/session-index/refresh.js';
 import type { RefreshOptions, RefreshSummary } from '../../src/session-index/refresh.js';
+
+const probe = vi.hoisted(() => ({
+  reads: [] as { swapUsedPct: number; pressureLevel: number }[],
+}));
+
+// The real probe would run sysctl; each read pops a scripted sample, then the machine is calm.
+vi.mock('../../src/utils/machine-pressure.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof MachinePressureModule>()),
+  readMachinePressure: async () => probe.reads.shift() ?? { swapUsedPct: 0, pressureLevel: 1 },
+}));
+
+// A fixture transcript carries a PR url; keep the pass off the real `gh`.
+vi.mock('../../src/session-index/pr-outcomes.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof PrOutcomesModule>()),
+  ghPrResolver: () => async () => new Map(),
+}));
 
 const log = { info: vi.fn(), warn: vi.fn() };
 
@@ -15,6 +34,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   log.info.mockClear();
   log.warn.mockClear();
+  probe.reads.length = 0;
   home = mkdtempSync(path.join(os.tmpdir(), 'aw-index-watch-'));
   process.env.HOME = home;
 });
@@ -97,7 +117,11 @@ describe('startSessionIndexWatch', () => {
         sweeps.push(options.episodeSweep);
         const outcome = outcomes[sweeps.length - 1] ?? null;
         if (outcome instanceof Error) return Promise.reject(outcome);
-        return Promise.resolve({ episodeBacklog: outcome } as RefreshSummary);
+        return Promise.resolve({
+          episodeBacklog: outcome,
+          errors: [],
+          phases: {},
+        } as unknown as RefreshSummary);
       },
     }));
     vi.stubEnv('AW_INDEX_POLL_MS', '1');
@@ -121,5 +145,66 @@ describe('startSessionIndexWatch', () => {
       true,
       false,
     ]);
+  });
+
+  describe('with transcripts on disk', () => {
+    beforeEach(() => {
+      const project = path.join(home, '.claude', 'projects', 'demo');
+      mkdirSync(project, { recursive: true });
+      for (const n of [1, 2, 3]) {
+        const body = renderTranscript(FIXTURE_LINES).replaceAll(SESSION, `sess-watch-${n}`);
+        writeFileSync(path.join(project, `t${n}.jsonl`), body, 'utf8');
+      }
+      vi.stubEnv('CLAUDE_CONFIG_DIRS', path.join(home, '.claude'));
+      vi.stubEnv('AW_INDEX_POLL_MS', '3600000');
+    });
+
+    const passLines = () =>
+      log.info.mock.calls.filter(([, msg]) => msg === 'session index pass').map(([obj]) => obj);
+
+    it('logs one session index pass line with what the pass opened and read', async () => {
+      const watcher = startSessionIndexWatch(log);
+      await vi.waitFor(() => expect(passLines()).toHaveLength(1), { timeout: 10_000 });
+      await watcher!.close();
+
+      expect(passLines()[0]).toMatchObject({
+        kind: 'full',
+        transcripts: 3,
+        scanned: 3,
+        filesOpened: 3,
+        bytesRead: expect.any(Number),
+        durationMs: expect.any(Number),
+        maxStallMs: expect.any(Number),
+        phases: expect.objectContaining({
+          discover: expect.any(Number),
+          corpus: expect.any(Number),
+        }),
+        errors: [],
+        errorCount: 0,
+      });
+      expect((passLines()[0] as { bytesRead: number }).bytesRead).toBeGreaterThan(0);
+    });
+
+    it('logs one pause and one resume while memory pressure holds the pass', async () => {
+      vi.stubEnv('AW_INDEX_GATE_RECHECK_MS', '1');
+      probe.reads.push(
+        { swapUsedPct: 80, pressureLevel: 1 },
+        { swapUsedPct: 80, pressureLevel: 1 },
+        { swapUsedPct: 10, pressureLevel: 1 },
+      );
+
+      const watcher = startSessionIndexWatch(log);
+      await vi.waitFor(() => expect(passLines()).toHaveLength(1), { timeout: 10_000 });
+      await watcher!.close();
+
+      const messages = log.info.mock.calls.map(([, msg]) => msg as string);
+      expect(messages.filter((msg) => msg.startsWith('session index paused: '))).toEqual([
+        'session index paused: swap 80% used (limit 60%)',
+      ]);
+      expect(messages.filter((msg) => msg === 'session index resumed')).toHaveLength(1);
+      expect(messages.indexOf('session index resumed')).toBeLessThan(
+        messages.indexOf('session index pass'),
+      );
+    });
   });
 });

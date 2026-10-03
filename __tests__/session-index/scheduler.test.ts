@@ -24,6 +24,69 @@ function fakeClock() {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('RefreshScheduler', () => {
+  it('a held gate defers the pass, keeps it pending, and reports one hold and one resume', async () => {
+    const clock = fakeClock();
+    const run = vi.fn(async () => summary);
+    const decisions = [true, true, true, false].map((hold) => ({
+      hold,
+      reason: hold ? 'swap 70% used' : undefined,
+    }));
+    const pendingWhileHeld: boolean[] = [];
+    const gate = vi.fn(async () => {
+      const decision = decisions.shift() ?? { hold: false };
+      if (decision.hold)
+        pendingWhileHeld.push(scheduler.status().pending && run.mock.calls.length === 0);
+      return decision;
+    });
+    const onHoldChange = vi.fn();
+    const scheduler = new RefreshScheduler(run, {
+      ...clock,
+      gate,
+      gateRecheckMs: 60_000,
+      onHoldChange,
+    });
+
+    scheduler.trigger();
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    await settle();
+
+    expect(gate).toHaveBeenCalledTimes(4);
+    expect(clock.sleeps).toEqual([60_000, 60_000, 60_000]);
+    expect(pendingWhileHeld).toEqual([true, true, true]);
+    expect(onHoldChange.mock.calls).toEqual([
+      [true, 'swap 70% used'],
+      [false, undefined],
+    ]);
+  });
+
+  it('runs a pass without a hold report when the gate never holds', async () => {
+    const run = vi.fn(async () => summary);
+    const onHoldChange = vi.fn();
+    const scheduler = new RefreshScheduler(run, {
+      gate: async () => ({ hold: false }),
+      onHoldChange,
+    });
+
+    scheduler.trigger();
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+
+    expect(onHoldChange).not.toHaveBeenCalled();
+  });
+
+  it('close() ends a hold without running the pass', async () => {
+    const run = vi.fn(async () => summary);
+    const scheduler = new RefreshScheduler(run, {
+      gate: async () => ({ hold: true, reason: 'pressure' }),
+      gateRecheckMs: 60_000,
+    });
+
+    scheduler.trigger();
+    await settle();
+    await scheduler.close();
+
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('runs a burst of 100 triggers as one run plus one trailing run a full window later', async () => {
     const clock = fakeClock();
     const run = vi.fn(async () => summary);

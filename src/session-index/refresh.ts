@@ -72,6 +72,27 @@ export interface RefreshOptions {
   yieldPoint?: () => Promise<void>;
 }
 
+/** Offset advance per transcript row; a row whose offset fell was re-read from byte 0. */
+function bytesAdvanced(before: Map<number, number>, after: Map<number, number>): number {
+  let total = 0;
+  for (const [sourceId, offset] of after) {
+    const was = before.get(sourceId) ?? 0;
+    total += offset >= was ? offset - was : offset;
+  }
+  return total;
+}
+
+/** Each call returns the milliseconds since the previous one (or since creation). */
+function lapTimer(): () => number {
+  let last = Date.now();
+  return () => {
+    const now = Date.now();
+    const lap = now - last;
+    last = now;
+    return lap;
+  };
+}
+
 const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export interface RefreshSummary {
@@ -81,6 +102,12 @@ export interface RefreshSummary {
   transcripts: number;
   /** Transcripts this pass actually visited (differs under `--limit`). */
   scanned: number;
+  /** Transcripts the pass read bytes from: indexed, rewound or quarantined. */
+  filesOpened: number;
+  /** Bytes the watermarks advanced this pass, counting a rewound file from byte 0. */
+  bytesRead: number;
+  /** Milliseconds spent in each phase: discover, corpus, episodes, workspace, preserve. */
+  phases: Record<string, number>;
   indexed: number;
   /** Transcripts re-read from byte 0 because the source was rewritten. */
   rewound: number;
@@ -162,6 +189,8 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
   const graph = options.graph ?? openGraph(options.dbPath ?? defaultGraphPath());
   const owned = options.graph === undefined;
   const yieldPoint = options.yieldPoint ?? yieldToEventLoop;
+  const lap = lapTimer();
+  const phases: Record<string, number> = {};
 
   try {
     if (options.full) {
@@ -182,6 +211,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
 
     syncPrices(graph, PRICE_TABLE, { tableVersion: PRICE_TABLE_VERSION });
     const offsetsBefore = snapshotOffsets(graph);
+    phases.discover = lap();
     const prErrors: string[] = [];
     const summary = await refreshCorpus(graph, visiting, {
       full: options.full,
@@ -194,6 +224,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
         : ghPrResolver(graph, { run: options.runGh, errors: prErrors }),
       facetLimit: options.facetLimit,
     });
+    phases.corpus = lap();
     // After the rollup, because segmentation reads the wake causes it derives.
     const episodes = await refreshEpisodes(
       graph,
@@ -203,6 +234,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
       options.episodeSweep,
     );
     await yieldPoint();
+    phases.episodes = lap();
 
     // After the transcripts, so `mentions` and the task join see the rows the
     // transcript pass just wrote.
@@ -213,17 +245,23 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
           full: options.full,
         });
 
+    phases.workspace = lap();
+
     // Last, and unconditionally: idempotent, one statement per preserved row,
     // and running it every pass means a partial or accidental delete heals
     // itself rather than waiting for someone to notice it.
     await yieldPoint();
     const preserved = replayPreserved(graph);
+    phases.preserve = lap();
 
     return {
       startedAt,
       durationMs: Date.now() - started,
       transcripts: discovered.length,
       scanned: visiting.length,
+      filesOpened: summary.indexed + summary.rewound + summary.quarantined,
+      bytesRead: bytesAdvanced(offsetsBefore, snapshotOffsets(graph)),
+      phases,
       indexed: summary.indexed,
       rewound: summary.rewound,
       unchanged: summary.unchanged,

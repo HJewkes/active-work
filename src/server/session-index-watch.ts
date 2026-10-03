@@ -13,9 +13,11 @@ import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
+import { readMachinePressure, shouldHold } from '../utils/machine-pressure.js';
 import { readerGate } from '../session-index/reader-gate.js';
-import { runRefresh, withRefreshLock } from '../session-index/refresh.js';
+import { runRefresh, withRefreshLock, type RefreshSummary } from '../session-index/refresh.js';
 import {
+  DEFAULT_GATE_RECHECK_MS,
   DEFAULT_MIN_INTERVAL_MS,
   RefreshScheduler,
   type SchedulerStatus,
@@ -62,6 +64,24 @@ export async function yieldToReaders(): Promise<void> {
 
 /** A held lock is routine on a busy machine; log the first skip and then one in this many. */
 const LOCK_SKIP_LOG_EVERY = 60;
+
+/** How many of a pass's errors the log line carries; the count covers the rest. */
+const LOGGED_ERRORS = 5;
+
+function passLogLine(summary: RefreshSummary, maxStallMs: number): object {
+  return {
+    kind: 'full',
+    transcripts: summary.transcripts,
+    scanned: summary.scanned,
+    filesOpened: summary.filesOpened,
+    bytesRead: summary.bytesRead,
+    durationMs: summary.durationMs,
+    maxStallMs,
+    phases: summary.phases,
+    errors: summary.errors.slice(0, LOGGED_ERRORS),
+    errorCount: summary.errors.length,
+  };
+}
 
 /** Every this many passes the daemon checks all sessions for stale episodes, not only touched ones. */
 const EPISODE_SWEEP_EVERY = 10;
@@ -165,6 +185,7 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
         runRefresh({ graph, yieldPoint: yieldToReaders, episodeSweep: sweep.next() }),
       );
       lastMaxLoopStallMs = measured.maxStallMs;
+      log.info(passLogLine(measured.result, measured.maxStallMs), 'session index pass');
       sweep.settle(measured.result.episodeBacklog);
       return measured.result;
     } catch (err) {
@@ -175,6 +196,10 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
   const scheduler = new RefreshScheduler(() => withRefreshLock(pass), {
     onError: (err) => log.warn({ err }, 'session index refresh failed'),
     minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
+    gate: async () => shouldHold(await readMachinePressure()),
+    gateRecheckMs: envInt('AW_INDEX_GATE_RECHECK_MS', DEFAULT_GATE_RECHECK_MS),
+    onHoldChange: (held, reason) =>
+      log.info({ reason }, held ? `session index paused: ${reason}` : 'session index resumed'),
     onLockSkip: (skips) => {
       if (skips % LOCK_SKIP_LOG_EVERY === 1) {
         log.info({ skips }, 'session index refresh skipped: lock held elsewhere; will retry');
