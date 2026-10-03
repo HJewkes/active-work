@@ -92,4 +92,27 @@ describe('context.related', () => {
       message: 'EACCES: permission denied',
     });
   });
+
+  it('a stale index still returns hits, with a degraded index entry', async () => {
+    const log = recorder();
+
+    const result = await runRelated(
+      { for: 'the alpha lesson', initiative: 'alpha' },
+      { activeRoot: root, dbPath, hitLog: log.writer, ensureFresh: async () => 'stale' },
+    );
+
+    expect(result.hits.length).toBeGreaterThan(0);
+    expect(result.degraded).toContainEqual(
+      expect.objectContaining({ source: 'index', reason: 'stale' }),
+    );
+  });
+
+  it('a fresh index adds no degraded index entry', async () => {
+    const result = await runRelated(
+      { for: 'the alpha lesson', initiative: 'alpha' },
+      { activeRoot: root, dbPath, hitLog: recorder().writer, ensureFresh: async () => 'fresh' },
+    );
+
+    expect(result.degraded.filter((entry) => entry.source === 'index')).toEqual([]);
+  });
 });

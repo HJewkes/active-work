@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,8 @@ import { FIXTURE_LINES, SESSION, renderTranscript } from '../session-index/fixtu
 import type * as PrOutcomesModule from '../../src/session-index/pr-outcomes.js';
 import type * as RefreshModule from '../../src/session-index/refresh.js';
 import type { RefreshOptions, RefreshSummary } from '../../src/session-index/refresh.js';
+import { createDirtySet } from '../../src/session-index/dirty-set.js';
+import type { WorkspaceGraph } from '../../src/session-index/graph.js';
 
 const probe = vi.hoisted(() => ({
   reads: [] as { swapUsedPct: number; pressureLevel: number }[],
@@ -169,6 +171,45 @@ describe('startSessionIndexWatch', () => {
     ]);
   });
 
+  it('a delta pass that meets the lock held keeps the dirty paths for the next pass', async () => {
+    const root = path.join(home, '.claude', 'projects');
+    vi.stubEnv('CLAUDE_CONFIG_DIRS', path.dirname(root));
+    const visited: string[][] = [];
+    let held = true;
+    vi.resetModules();
+    vi.doMock('../../src/session-index/refresh.js', async (importOriginal) => ({
+      ...(await importOriginal<typeof RefreshModule>()),
+      withRefreshLock: <T>(fn: () => Promise<T>, options?: { retries?: number }) => {
+        if (options?.retries === 0 && held) {
+          held = false;
+          return Promise.reject(Object.assign(new Error('held'), { code: 'ELOCKED' }));
+        }
+        return fn();
+      },
+      runRefresh: (options: RefreshOptions) => {
+        visited.push((options.transcripts ?? []).map((t) => t.absolutePath));
+        return Promise.resolve({
+          kind: 'delta',
+          errors: [],
+          phases: {},
+        } as unknown as RefreshSummary);
+      },
+    }));
+    const { passRunner } = await import('../../src/server/session-index-watch.js');
+    const dirty = createDirtySet();
+    dirty.add(root, path.join('demo', 't1.jsonl'));
+    const runner = passRunner({} as WorkspaceGraph, dirty, log, new AbortController().signal);
+
+    await expect(runner.run('delta')).rejects.toMatchObject({ code: 'ELOCKED' });
+    const sizeAfterSkip = dirty.size;
+    await runner.run('delta');
+    vi.doUnmock('../../src/session-index/refresh.js');
+
+    expect(sizeAfterSkip).toBe(1);
+    expect(visited).toEqual([[path.join(root, 'demo', 't1.jsonl')]]);
+    expect(dirty.size).toBe(0);
+  });
+
   describe('with transcripts on disk', () => {
     beforeEach(() => {
       const project = path.join(home, '.claude', 'projects', 'demo');
@@ -251,6 +292,31 @@ describe('startSessionIndexWatch', () => {
       expect(messages.indexOf('session index resumed')).toBeLessThan(
         messages.indexOf('session index pass'),
       );
+    });
+
+    it('a transcript append starts no pass; the poll does', async () => {
+      const debounceMs = 100;
+      vi.stubEnv('AW_INDEX_DEBOUNCE_MS', String(debounceMs));
+      vi.stubEnv('AW_INDEX_MIN_INTERVAL_MS', '1');
+      let pollTick: () => void = () => {};
+      const watcher = startSessionIndexWatch(log, {
+        startPoll: (tick) => {
+          pollTick = tick;
+          return () => {};
+        },
+      });
+      await vi.waitFor(() => expect(passLines()).toHaveLength(1), { timeout: 10_000 });
+
+      const transcript = path.join(home, '.claude', 'projects', 'demo', 't1.jsonl');
+      appendFileSync(transcript, renderTranscript(FIXTURE_LINES.slice(0, 1)), 'utf8');
+      await new Promise((resolve) => setTimeout(resolve, 3 * debounceMs));
+      const afterAppend = passLines().length;
+      pollTick();
+      await vi.waitFor(() => expect(passLines()).toHaveLength(2), { timeout: 10_000 });
+      await watcher!.close();
+
+      expect(afterAppend).toBe(1);
+      expect(passLines()[1]).toMatchObject({ kind: 'full' });
     });
   });
 });

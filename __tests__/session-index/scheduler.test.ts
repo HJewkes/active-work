@@ -223,4 +223,54 @@ describe('RefreshScheduler', () => {
 
     expect(clock.sleeps).toEqual([1_000, 2_000, 1_000]);
   });
+
+  describe('runNow', () => {
+    it('starts a delta pass inside the min-interval window and resolves fresh', async () => {
+      const run = vi.fn(async (_kind: string) => summary);
+      const scheduler = new RefreshScheduler(run, { minIntervalMs: 60_000 });
+      scheduler.trigger();
+      await vi.waitFor(() => expect(scheduler.status().running).toBe(false));
+
+      const freshness = await scheduler.runNow(500);
+
+      expect(freshness).toBe('fresh');
+      expect(run.mock.calls.map(([kind]) => kind)).toEqual(['full', 'delta']);
+      await scheduler.close();
+    });
+
+    it('resolves stale at the budget while a pass outlasts it', async () => {
+      let finish: () => void = () => {};
+      const run = vi.fn(
+        () => new Promise<RefreshSummary>((resolve) => (finish = () => resolve(summary))),
+      );
+      const scheduler = new RefreshScheduler(run);
+      scheduler.trigger();
+      await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+
+      const started = Date.now();
+      const freshness = await scheduler.runNow(50);
+
+      expect(freshness).toBe('stale');
+      expect(Date.now() - started).toBeGreaterThanOrEqual(40);
+      expect(run).toHaveBeenCalledTimes(1);
+      finish();
+      await scheduler.close();
+    });
+
+    it('reads a delta pass that meets the lock held as stale, without queueing a full pass', async () => {
+      const locked = Object.assign(new Error('held'), { code: 'ELOCKED' });
+      const run = vi.fn(async (kind: string) => {
+        if (kind === 'delta') throw locked;
+        return summary;
+      });
+      const onLockSkip = vi.fn();
+      const scheduler = new RefreshScheduler(run, { onLockSkip });
+
+      const freshness = await scheduler.runNow(500);
+
+      expect(freshness).toBe('stale');
+      expect(onLockSkip).not.toHaveBeenCalled();
+      expect(scheduler.status()).toMatchObject({ pending: false, lockSkips: 0 });
+    });
+  });
 });

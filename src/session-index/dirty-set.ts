@@ -11,6 +11,8 @@ export interface DirtySet {
   /** `null` means the platform coalesced the file name away: the whole root is suspect. */
   add(root: string, relPath: string | null): void;
   drain(): DrainedDirtySet;
+  /** Put back what a failed pass drained, so the next pass still sees it. */
+  restore(drained: DrainedDirtySet): void;
   readonly size: number;
 }
 
@@ -30,6 +32,10 @@ export function createDirtySet(): DirtySet {
       paths = new Set();
       unknownRoots = new Set();
       return drained;
+    },
+    restore(drained) {
+      for (const absolute of drained.paths) paths.add(absolute);
+      for (const root of drained.unknownRoots) unknownRoots.add(root);
     },
     get size() {
       return paths.size + unknownRoots.size;

@@ -5,6 +5,7 @@ import { NotFoundError } from '../errors.js';
 import { defaultGraphPath, openGraphReadOnly } from '../session-index/graph.js';
 import { runLiveness } from '../session-index/liveness.js';
 import { color } from '../utils/color.js';
+import { indexFreshness, READ_FRESH_BUDGET_MS } from '../session-index/freshness.js';
 
 /**
  * `active-work miner liveness` — which declared structures does nothing write?
@@ -107,6 +108,7 @@ export default defineCommand<Args, Result>({
     if (!existsSync(dbPath)) {
       throw new NotFoundError(`no session index at ${dbPath} — run \`active-work miner refresh\``);
     }
+    await indexFreshness.ensure(READ_FRESH_BUDGET_MS);
     const db = openGraphReadOnly(dbPath);
     try {
       const liveness = runLiveness(db);

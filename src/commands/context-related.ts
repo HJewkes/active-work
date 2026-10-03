@@ -21,6 +21,11 @@ import {
   relatedContext,
   type RelatedResult,
 } from '../search/related.js';
+import {
+  indexFreshness,
+  RELATED_FRESH_BUDGET_MS,
+  type EnsureFresh,
+} from '../session-index/freshness.js';
 import { readerGate } from '../session-index/reader-gate.js';
 import { nowIso } from '../utils/today.js';
 
@@ -80,10 +85,21 @@ export interface RelatedDeps {
   activeRoot: string;
   hitLog?: HitLogWriter;
   dbPath?: string;
+  /** Defaults to the process hook, which the daemon wires to its scheduler. */
+  ensureFresh?: EnsureFresh;
 }
+
+const STALE_INDEX = {
+  source: 'index',
+  reason: 'stale',
+  message: `the session index did not catch up within ${RELATED_FRESH_BUDGET_MS} ms; recent writes may be missing`,
+};
 
 /** The command's body, with the index and hit log injectable so tests never touch the live ones. */
 export async function runRelated(args: Args, deps: RelatedDeps): Promise<RelatedResult> {
+  // Before entering the gate, which would otherwise hold off the very pass this waits on.
+  const ensureFresh = deps.ensureFresh ?? ((budgetMs) => indexFreshness.ensure(budgetMs));
+  const freshness = await ensureFresh(RELATED_FRESH_BUDGET_MS).catch(() => 'stale' as const);
   // A daemon refresh pass holds off while this runs, so the request waits for one chunk at most.
   const release = readerGate.enter();
   try {
@@ -97,6 +113,7 @@ export async function runRelated(args: Args, deps: RelatedDeps): Promise<Related
       ...(args.classes !== undefined ? { classes: args.classes } : {}),
       ...(args.exclude !== undefined ? { exclude: args.exclude } : {}),
     });
+    if (freshness === 'stale') result.degraded.push({ ...STALE_INDEX });
     await logServed(args, result, deps.hitLog ?? fileHitLog());
     return result;
   } finally {

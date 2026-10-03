@@ -13,16 +13,24 @@ import { setImmediate as nextMacrotask } from 'node:timers/promises';
 import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { watchTree, type TreeWatcher } from '@titan-design/daemon';
 import { watchChangedPaths } from '../session-index/watch-paths.js';
-import type { DirtySet } from '../session-index/dirty-set.js';
-import { readRefreshLockHolder } from '../session-index/refresh.js';
+import { createDirtySet, type DirtySet } from '../session-index/dirty-set.js';
+import { transcriptsFromDirty } from '../session-index/delta-pass.js';
+import { indexFreshness } from '../session-index/freshness.js';
 import { openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { readMachinePressure, shouldHold } from '../utils/machine-pressure.js';
 import { readerGate } from '../session-index/reader-gate.js';
-import { runRefresh, withRefreshLock, type RefreshSummary } from '../session-index/refresh.js';
+import {
+  readRefreshLockHolder,
+  runRefresh,
+  withRefreshLock,
+  type RefreshOptions,
+  type RefreshSummary,
+} from '../session-index/refresh.js';
 import {
   DEFAULT_GATE_RECHECK_MS,
   DEFAULT_MIN_INTERVAL_MS,
   RefreshScheduler,
+  type PassKind,
   type SchedulerStatus,
 } from '../session-index/scheduler.js';
 
@@ -41,20 +49,26 @@ interface WatchLogger {
   warn(obj: object, msg: string): void;
 }
 
-/**
- * Transcript writes arrive continuously during an active session, so the
- * debounce is an order of magnitude longer than the live-reload watcher's:
- * coalescing two seconds of appends into one pass is the difference between
- * indexing and thrashing.
- */
+export interface SessionIndexWatchOptions {
+  /** Starts the backstop poll and returns its stop; injectable so a test can fire it by hand. */
+  startPoll?: (tick: () => void, intervalMs: number) => () => void;
+}
+
+/** Coalesces a burst of watcher events into one dirty-set update. */
 const DEFAULT_DEBOUNCE_MS = 2_000;
 
 /**
- * Fallback poll. `fs.watch` misses events on network filesystems and after a
- * watcher hits EMFILE, so the index converges on a timer even when no
- * notification ever arrives.
+ * Backstop full pass (TP-787). Readers refresh on demand, so the poll only
+ * catches what the watcher missed and runs the whole-corpus phases a delta
+ * pass skips. An explicit `AW_INDEX_POLL_MS` is taken as given.
  */
-const DEFAULT_POLL_MS = 60_000;
+const DEFAULT_POLL_MS = 10 * 60_000;
+
+function startIntervalPoll(tick: () => void, intervalMs: number): () => void {
+  const timer = setInterval(tick, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}
 
 /** The longest a pass waits on in-flight related requests before it resumes anyway. */
 export const IDLE_CAP_MS = 5_000;
@@ -186,44 +200,69 @@ function watchRoot(
   }
 }
 
-export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | null {
-  if (disabled()) {
-    log.info({}, 'session index watch disabled by AW_INDEX_WATCH=0');
-    return null;
-  }
+export interface PassRunner {
+  run(kind: PassKind): Promise<RefreshSummary>;
+  lastMaxLoopStallMs(): number | null;
+}
 
-  let graph: WorkspaceGraph;
-  try {
-    graph = openGraph();
-  } catch (err) {
-    log.warn({ err }, 'session index unavailable; transcript indexing disabled');
-    return null;
-  }
-
+/**
+ * Both kinds drain the dirty set only once the lock is held, and put it back if
+ * the pass fails, so no reported change is lost. A delta pass never waits on the
+ * lock: a reader is waiting on it, and the next pass picks the paths up.
+ */
+export function passRunner(
+  graph: WorkspaceGraph,
+  dirty: DirtySet,
+  log: WatchLogger,
+  signal: AbortSignal,
+): PassRunner {
   let lastMaxLoopStallMs: number | null = null;
   const sweep = episodeSweepPolicy();
-  const abort = new AbortController();
-  const pass = async () => {
+  const measured = async (options: RefreshOptions): Promise<RefreshSummary> => {
+    const { result, maxStallMs } = await measureLoopStall(() =>
+      runRefresh({ graph, yieldPoint: () => yieldToReaders(signal), ...options }),
+    );
+    lastMaxLoopStallMs = maxStallMs;
+    log.info(passLogLine(result, maxStallMs), 'session index pass');
+    return result;
+  };
+  const full = async (): Promise<RefreshSummary> => {
     try {
-      const measured = await measureLoopStall(() =>
-        runRefresh({
-          graph,
-          yieldPoint: () => yieldToReaders(abort.signal),
-          episodeSweep: sweep.next(),
-        }),
-      );
-      lastMaxLoopStallMs = measured.maxStallMs;
-      log.info(passLogLine(measured.result, measured.maxStallMs), 'session index pass');
-      sweep.settle(measured.result.episodeBacklog);
-      return measured.result;
+      const result = await measured({ episodeSweep: sweep.next() });
+      sweep.settle(result.episodeBacklog);
+      return result;
     } catch (err) {
       sweep.failed();
       throw err;
     }
   };
-  const scheduler = new RefreshScheduler(() => withRefreshLock(pass, { signal: abort.signal }), {
+  const run = (kind: PassKind): Promise<RefreshSummary> =>
+    withRefreshLock(
+      async () => {
+        const drained = dirty.drain();
+        try {
+          if (kind === 'full') return await full();
+          const roots = claudeTranscriptRoots();
+          const transcripts = await transcriptsFromDirty(graph, drained, roots);
+          return await measured({ mode: 'delta', transcripts });
+        } catch (err) {
+          dirty.restore(drained);
+          throw err;
+        }
+      },
+      kind === 'delta' ? { retries: 0, signal } : { signal },
+    );
+  return { run, lastMaxLoopStallMs: () => lastMaxLoopStallMs };
+}
+
+function createScheduler(
+  runner: PassRunner,
+  log: WatchLogger,
+  signal: AbortSignal,
+): RefreshScheduler {
+  return new RefreshScheduler((kind) => runner.run(kind), {
     onError: (err) => {
-      if (!abort.signal.aborted) log.warn({ err }, 'session index refresh failed');
+      if (!signal.aborted) log.warn({ err }, 'session index refresh failed');
     },
     minIntervalMs: envInt('AW_INDEX_MIN_INTERVAL_MS', DEFAULT_MIN_INTERVAL_MS),
     gate: async () => shouldHold(await readMachinePressure()),
@@ -241,24 +280,62 @@ export function startSessionIndexWatch(log: WatchLogger): SessionIndexWatcher | 
       }
     },
   });
+}
 
+/** Readers refresh before they read; nothing to index and nothing running means already fresh. */
+function installFreshness(scheduler: RefreshScheduler, dirty: DirtySet): () => void {
+  return indexFreshness.install((budgetMs) =>
+    dirty.size === 0 && !scheduler.status().running
+      ? Promise.resolve('fresh')
+      : scheduler.runNow(budgetMs),
+  );
+}
+
+export function startSessionIndexWatch(
+  log: WatchLogger,
+  options: SessionIndexWatchOptions = {},
+): SessionIndexWatcher | null {
+  if (disabled()) {
+    log.info({}, 'session index watch disabled by AW_INDEX_WATCH=0');
+    return null;
+  }
+
+  let graph: WorkspaceGraph;
+  try {
+    graph = openGraph();
+  } catch (err) {
+    log.warn({ err }, 'session index unavailable; transcript indexing disabled');
+    return null;
+  }
+
+  const dirty = createDirtySet();
+  const abort = new AbortController();
+  const runner = passRunner(graph, dirty, log, abort.signal);
+  const scheduler = createScheduler(runner, log, abort.signal);
+  const uninstall = installFreshness(scheduler, dirty);
+
+  // The watcher only records what changed; a reader or the poll runs the pass.
   const watchers = claudeTranscriptRoots().flatMap(({ root }) => {
-    const watcher = watchRoot(root, () => scheduler.trigger(), log);
+    const watcher = watchRoot(root, () => {}, log, dirty);
     return watcher ? [watcher] : [];
   });
 
-  const poll = setInterval(() => scheduler.trigger(), envInt('AW_INDEX_POLL_MS', DEFAULT_POLL_MS));
-  poll.unref();
+  const startPoll = options.startPoll ?? startIntervalPoll;
+  const stopPoll = startPoll(
+    () => scheduler.trigger(),
+    envInt('AW_INDEX_POLL_MS', DEFAULT_POLL_MS),
+  );
 
   // Un-awaited: a cold corpus takes tens of seconds to index and the daemon
   // must be answering on its port long before that finishes.
   scheduler.trigger();
 
   return {
-    status: () => ({ ...scheduler.status(), lastMaxLoopStallMs }),
+    status: () => ({ ...scheduler.status(), lastMaxLoopStallMs: runner.lastMaxLoopStallMs() }),
     async close(): Promise<void> {
+      uninstall();
       abort.abort(new Error('session index watcher closed'));
-      clearInterval(poll);
+      stopPoll();
       for (const watcher of watchers) watcher.close();
       await scheduler.close();
       graph.db.close();
