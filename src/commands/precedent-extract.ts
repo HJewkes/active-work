@@ -1,28 +1,34 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
-import { extractPrecedents } from '../precedent/extract.js';
+import { extractPrecedents } from '../decider/extract.js';
 import { getActiveRoot } from '../utils/paths.js';
 
 /**
  * `active-work precedent extract` — index the human's answers as precedents.
  *
- * Reads `AskUserQuestion` calls located by the miner graph, `kind: decision`
- * notes, imported `feedback` memories and agent-chat queue answers, and
- * appends one row per answered question to `<initiative>/sources/precedents.jsonl`
- * (or the root-level `.precedents.jsonl`). Safe to re-run: rows are keyed and
- * a key already on disk is never written twice.
+ * Feeds the `@titan-design/decider` ledger (`.decider/decider.sqlite3` in the
+ * active root) from the v1 `precedents.jsonl` files, `AskUserQuestion` calls in
+ * transcripts the miner graph located, `kind: decision` notes, imported
+ * `feedback` memories and agent-chat queue answers. Each source resumes from
+ * its watermark and rows are keyed, so a re-run writes nothing twice.
  */
 
 const ArgsSchema = z.object({});
 type Args = z.infer<typeof ArgsSchema>;
 
-const ResultSchema = z.object({
-  askCalls: z.number(),
+const SourceSummarySchema = z.object({
+  source: z.string(),
+  read: z.number(),
+  written: z.number(),
   alreadyIndexed: z.number(),
+  excluded: z.record(z.string(), z.number()),
   pending: z.number(),
-  written: z.object({ transcript: z.number(), note: z.number(), queue: z.number() }),
-  files: z.array(z.string()),
   errors: z.array(z.string()),
+});
+
+const ResultSchema = z.object({
+  ledger: z.string(),
+  sources: z.array(SourceSummarySchema),
 });
 type Result = z.infer<typeof ResultSchema>;
 

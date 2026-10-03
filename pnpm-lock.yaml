@@ -23,6 +23,9 @@ importers:
       '@titan-design/daemon':
         specifier: ^0.1.4
         version: 0.1.4(zod@4.4.3)
+      '@titan-design/decider':
+        specifier: 0.3.0
+        version: 0.3.0(zod@4.4.3)
       '@titan-design/locator':
         specifier: ^0.2.1
         version: 0.2.1
@@ -702,12 +705,27 @@ packages:
       zod:
         optional: true
 
+  '@titan-design/agent-protocol@0.4.0':
+    resolution: {integrity: sha512-b8RGZOcPnz5t/6GPUL+kRySW6ufrK2/5fMpTp5e0G14umcBW4wFH3n9a36KFI+ubEyom06Ik4Cdi0rNY52VzGw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
   '@titan-design/cluster@0.1.2':
     resolution: {integrity: sha512-P7nSpd9JqXMaCIigow5njjbKym+heLVYSUuAVY201VrTFtvERdjtM8gL8AhamHo85dzdFLa6C2KrzZiWt8pnHg==}
     engines: {node: '>=20'}
 
   '@titan-design/daemon@0.1.4':
     resolution: {integrity: sha512-iveaVe6Xax8Rq1ZhmR+k9qtlM0t5/cwOls41RPgya6xqXvr+rG6sNW3tbLRhmHLKw+cXtUlCNmUpzD9TiH38DA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@titan-design/decider@0.3.0':
+    resolution: {integrity: sha512-ISSk3z6RFOUOiNgy/l62LzPRcbxxNUi7FMU6aAaVTwcK26o3sSsWWv/Cjzz4sb+VNo0/7AYo2mEzqMmMRHmJcA==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -729,6 +747,12 @@ packages:
   '@titan-design/locator@0.2.1':
     resolution: {integrity: sha512-iu4LaYpsAmZBD0V8bS7dnxH4c++CnaXOEGneIueJ/G5wX+U/LLTEYc8CmMdt9y3AVwwqTr4/qRyRLFSwFXoiHg==}
     engines: {node: '>=20'}
+
+  '@titan-design/memory@0.1.2':
+    resolution: {integrity: sha512-dAzQUFY8zi6jM2+cbdZREz0QHFzqpANP+/zpIdI8NIYyFYZCINhD4u458n++dzTiGsGkchBrJ/FkFhZta7dDlg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
 
   '@titan-design/registry@0.1.0':
     resolution: {integrity: sha512-nToBr0tzcU1hH36vbFXTNKk07QxctX/nxRpMwzNZUXWaE502JgSrcZrgnkEriTzKOL6NZh2+Bqygh6Z8TkYqZw==}
@@ -771,6 +795,10 @@ packages:
 
   '@titan-design/session-read@0.7.0':
     resolution: {integrity: sha512-Z9ho2YjVR5Y/KopvRTzSLwYtTzMggfrtRO9qHFfH+4SjkvAyaUE+m/gGunT5Ic9ZCjKpxWk75tct9fXgVy64Lg==}
+    engines: {node: '>=20'}
+
+  '@titan-design/session-read@0.8.1':
+    resolution: {integrity: sha512-vAx0Wq35oYIEFZxwiwaXjYhWH/te3bvT7nBSIWecWOJlquyBwiYJC4KTwBsLbsMXQcXWToqRW8d5i18UfvIVyw==}
     engines: {node: '>=20'}
 
   '@titan-design/store-sqlite@0.3.1':
@@ -2454,6 +2482,11 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yocto-queue@0.1.0:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
@@ -2869,6 +2902,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
+  '@titan-design/agent-protocol@0.4.0(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
   '@titan-design/cluster@0.1.2': {}
 
   '@titan-design/daemon@0.1.4(zod@4.4.3)':
@@ -2882,11 +2919,31 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
+  '@titan-design/decider@0.3.0(zod@4.4.3)':
+    dependencies:
+      '@titan-design/locator': 0.2.1
+      '@titan-design/memory': 0.1.2(zod@4.4.3)
+      '@titan-design/session-read': 0.8.1(zod@4.4.3)
+      '@titan-design/store-sqlite': 0.3.1
+      yaml: 2.9.1
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - '@huggingface/transformers'
+
   '@titan-design/egress-scan@0.2.0': {}
 
   '@titan-design/embed@0.2.0': {}
 
   '@titan-design/locator@0.2.1': {}
+
+  '@titan-design/memory@0.1.2(zod@4.4.3)':
+    dependencies:
+      '@titan-design/embed': 0.2.0
+      '@titan-design/retrieval': 0.3.0
+      '@titan-design/store-sqlite': 0.3.1
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - '@huggingface/transformers'
 
   '@titan-design/registry@0.1.0(zod@4.4.3)':
     dependencies:
@@ -2933,6 +2990,13 @@ snapshots:
   '@titan-design/session-read@0.7.0(zod@4.4.3)':
     dependencies:
       '@titan-design/agent-protocol': 0.3.0(zod@4.4.3)
+      '@titan-design/locator': 0.2.1
+    transitivePeerDependencies:
+      - zod
+
+  '@titan-design/session-read@0.8.1(zod@4.4.3)':
+    dependencies:
+      '@titan-design/agent-protocol': 0.4.0(zod@4.4.3)
       '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
       - zod
@@ -4658,6 +4722,8 @@ snapshots:
   wrappy@1.0.2: {}
 
   yaml@2.9.0: {}
+
+  yaml@2.9.1: {}
 
   yocto-queue@0.1.0: {}
 
