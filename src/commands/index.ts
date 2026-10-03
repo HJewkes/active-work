@@ -31,6 +31,8 @@ import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
 
 // Sessions
+import loopOpen from './loop-open.js';
+import loopResolve from './loop-resolve.js';
 import loops from './loops.js';
 import facetAdd from './facet-add.js';
 import facetList from './facet-list.js';
@@ -130,6 +132,8 @@ const ALL_COMMANDS: AnyCommand[] = [
   sessionList,
   sessionsBrowser,
   loops,
+  loopOpen,
+  loopResolve,
   preflight,
   resume,
   wrap,
