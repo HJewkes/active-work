@@ -10,6 +10,7 @@ import { FIXTURE_LINES, SESSION, renderTranscript } from '../session-index/fixtu
 import type * as PrOutcomesModule from '../../src/session-index/pr-outcomes.js';
 import type * as RefreshModule from '../../src/session-index/refresh.js';
 import type { RefreshOptions, RefreshSummary } from '../../src/session-index/refresh.js';
+import { RefreshScheduler } from '../../src/session-index/scheduler.js';
 import { createDirtySet } from '../../src/session-index/dirty-set.js';
 import type { WorkspaceGraph } from '../../src/session-index/graph.js';
 
@@ -233,6 +234,43 @@ describe('startSessionIndexWatch', () => {
     vi.doUnmock('../../src/session-index/refresh.js');
 
     expect(onIndexed).toHaveBeenCalledTimes(1);
+  });
+
+  it('runNow reads stale at once while a full pass waits on a lock another process holds', async () => {
+    vi.resetModules();
+    const { passRunner } = await import('../../src/server/session-index-watch.js');
+    let entered = (): void => {};
+    let letGo = (): void => {};
+    const inside = new Promise<void>((resolve) => (entered = resolve));
+    const held = withRefreshLock(async () => {
+      entered();
+      await new Promise<void>((resolve) => (letGo = resolve));
+    });
+    await inside;
+    const abort = new AbortController();
+    const runner = passRunner({} as WorkspaceGraph, createDirtySet(), log, abort.signal);
+    const waiting = vi.fn();
+    const scheduler = new RefreshScheduler(
+      (kind, onIndexed, onLockWait) =>
+        runner.run(kind, onIndexed, (isWaiting) => {
+          if (isWaiting) waiting();
+          onLockWait(isWaiting);
+        }),
+      { minIntervalMs: 1 },
+    );
+    scheduler.trigger();
+    await vi.waitFor(() => expect(waiting).toHaveBeenCalled());
+
+    const started = Date.now();
+    const freshness = await scheduler.runNow(800);
+    const elapsedMs = Date.now() - started;
+    abort.abort(new Error('test over'));
+    await scheduler.close();
+    letGo();
+    await held;
+
+    expect(freshness).toBe('stale');
+    expect(elapsedMs).toBeLessThan(50);
   });
 
   describe('with transcripts on disk', () => {

@@ -99,7 +99,11 @@ async function withinBudget(
 }
 
 /** Lets a pass tell the scheduler its index writes are committed before it finishes. */
-export type PassRun = (kind: PassKind, onIndexed: () => void) => Promise<RefreshSummary>;
+export type PassRun = (
+  kind: PassKind,
+  onIndexed: () => void,
+  onLockWait: (waiting: boolean) => void,
+) => Promise<RefreshSummary>;
 
 interface Execution {
   /** Resolves true when the pass succeeded. */
@@ -108,6 +112,8 @@ interface Execution {
   indexed: Promise<boolean>;
   /** Set when the pass reports its writes committed, so its drain is already behind it. */
   pastIndexed: boolean;
+  /** True while the pass waits on a refresh lock another process holds; it indexes nothing yet. */
+  lockWaiting: boolean;
 }
 
 export class RefreshScheduler {
@@ -163,11 +169,13 @@ export class RefreshScheduler {
   /**
    * Resolves true once a pass that drained after this call has indexed. A delta
    * already past its index step drained before changes still waiting, so those
-   * need a follow-up pass once it ends (TP-893).
+   * need a follow-up pass once it ends (TP-893). A pass waiting on another
+   * process's lock reads `false` at once: it may wait far past any budget (TP-876).
    */
   private async indexedSinceNow(expired: () => boolean): Promise<boolean> {
     const current = this.executing;
     if (!current) return this.execute('delta').indexed;
+    if (current.lockWaiting) return false;
     if (!current.pastIndexed || !this.options.hasUndrained?.()) return current.indexed;
     await current.done;
     if (this.closed || expired()) return false;
@@ -178,12 +186,20 @@ export class RefreshScheduler {
   private execute(kind: PassKind): Execution {
     let markIndexed = (): void => {};
     const marked = new Promise<true>((resolve) => (markIndexed = () => resolve(true)));
-    const execution: Execution = { done: marked, indexed: marked, pastIndexed: false };
+    const execution: Execution = {
+      done: marked,
+      indexed: marked,
+      pastIndexed: false,
+      lockWaiting: false,
+    };
     const onIndexed = (): void => {
       execution.pastIndexed = true;
       markIndexed();
     };
-    execution.done = this.attempt(kind, onIndexed).finally(() => {
+    const onLockWait = (waiting: boolean): void => {
+      execution.lockWaiting = waiting;
+    };
+    execution.done = this.attempt(kind, onIndexed, onLockWait).finally(() => {
       if (this.executing === execution) this.executing = null;
     });
     execution.indexed = Promise.race([marked, execution.done]);
@@ -256,9 +272,13 @@ export class RefreshScheduler {
    * delta pass that meets the lock held elsewhere just reports failure: the
    * reader it serves must not wait, and the poll retries.
    */
-  private async attempt(kind: PassKind, onIndexed: () => void): Promise<boolean> {
+  private async attempt(
+    kind: PassKind,
+    onIndexed: () => void,
+    onLockWait: (waiting: boolean) => void,
+  ): Promise<boolean> {
     try {
-      this.last = await this.run(kind, onIndexed);
+      this.last = await this.run(kind, onIndexed, onLockWait);
       this.lastError = null;
       this.consecutiveErrors = 0;
       this.lockSkips = 0;
