@@ -41,10 +41,10 @@ describe('inventory', () => {
       const res = await inventoryCmd.run({}, ctx());
       const garden = res.initiatives.find((row) => row.slug === 'garden')!;
 
-      expect(garden.classes.task.files).toBe(2);
-      expect(garden.classes.note.files).toBe(1);
-      expect(garden.classes.source.files).toBe(1);
-      expect(garden.classes.nested_source).toEqual({
+      expect(garden.classes.tasks.files).toBe(2);
+      expect(garden.classes.notes.files).toBe(1);
+      expect(garden.classes.sources.files).toBe(1);
+      expect(garden.classes.nested_sources).toEqual({
         files: 3,
         bytes: 7,
         newest_mtime: '2026-03-01T00:00:00.000Z',
@@ -69,7 +69,7 @@ describe('inventory', () => {
       expect(empty.total).toEqual({ files: 0, bytes: 0, newest_mtime: null });
       const summed = res.initiatives.reduce((n, row) => n + row.total.files, 0);
       expect(res.totals.total.files).toBe(summed);
-      expect(res.totals.classes.nested_source.files).toBe(4); // garden 3 plus the charter
+      expect(res.totals.classes.nested_sources.files).toBe(4); // garden 3 plus the charter
     });
   });
 

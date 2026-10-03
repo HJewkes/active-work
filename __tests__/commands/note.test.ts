@@ -189,10 +189,11 @@ describe('note.list', () => {
       await writeNoteIn(root, 'beta', '2026-01-05-bad.md', '---\nkind: mystery\n---\nnope\n');
 
       const res = await noteListCmd.run({ all_initiatives: true }, ctx);
-      expect(res.notes.map((n) => [n.slug, n.title])).toEqual([
-        ['beta', 'B'],
-        ['alpha', 'A'],
+      expect(res.notes.map((n) => n.id)).toEqual([
+        'beta:notes:2026-03-01-b.md',
+        'alpha:notes:2026-01-02-a.md',
       ]);
+      expect(res.notes.every((n) => n.mtime !== null)).toBe(true);
       expect(res.errors.map((e) => [e.slug, e.filename])).toEqual([['beta', '2026-01-05-bad.md']]);
     });
   });

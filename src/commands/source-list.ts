@@ -4,6 +4,7 @@ import { inferType, listSources, readTitle, type SourceEntry } from '../sources/
 import { lintSources } from '../lint/sources.js';
 import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
 import { scanNestedSources, type InventoryFile } from '../workspace-index/inventory.js';
+import { itemId, mtimeOf } from '../workspace-index/wire.js';
 import { defineCommand } from '../registry/index.js';
 import { resolveListSlugs } from './_list-scope.js';
 
@@ -17,14 +18,19 @@ const ArgsSchema = z.object({
 });
 
 const SourceEntrySchema = z.object({
+  // `<slug>:sources:<filename>`, unique across initiatives.
+  id: z.string(),
   slug: z.string(),
   // Relative to `sources/`: a bare filename at the top level, `<dir>/.../<file>` when nested.
   filename: z.string(),
+  // Absolute, top-level and nested alike.
   path: z.string(),
   type: SourceTypeSchema,
   title: z.string(),
   // Under a `sources/` subdirectory: listed by path, not in the search index.
   nested: z.boolean(),
+  // ISO timestamp; null only when the file vanished mid-listing.
+  mtime: z.string().nullable(),
 });
 
 const ResultSchema = z.object({
@@ -39,8 +45,9 @@ type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 type Entry = z.infer<typeof SourceEntrySchema>;
 
-function topLevelEntry(slug: string, entry: SourceEntry): Entry {
-  return { slug, ...entry, nested: false };
+async function topLevelEntry(slug: string, entry: SourceEntry): Promise<Entry> {
+  const id = itemId(slug, 'sources', entry.filename);
+  return { id, slug, ...entry, nested: false, mtime: await mtimeOf(entry.path) };
 }
 
 /** Titles come from markdown headings only; other nested files are named by their path. */
@@ -48,12 +55,22 @@ async function nestedEntry(slug: string, sourcesDir: string, file: InventoryFile
   const filename = path.relative(sourcesDir, file.absolutePath).split(path.sep).join('/');
   const base = path.basename(filename);
   const title = base.endsWith('.md') ? await readTitle(file.absolutePath, base) : filename;
-  return { slug, filename, path: file.absolutePath, type: inferType(base), title, nested: true };
+  return {
+    id: itemId(slug, 'sources', filename),
+    slug,
+    filename,
+    path: file.absolutePath,
+    type: inferType(base),
+    title,
+    nested: true,
+    mtime: file.mtime,
+  };
 }
 
 async function entriesForSlug(slug: string, nested: boolean): Promise<Entry[]> {
   const initiativeDir = getInitiativeDir(slug);
-  const top = (await listSources(initiativeDir)).map((entry) => topLevelEntry(slug, entry));
+  const listed = await listSources(initiativeDir);
+  const top = await Promise.all(listed.map((entry) => topLevelEntry(slug, entry)));
   if (!nested) return top;
   const sourcesDir = path.join(initiativeDir, 'sources');
   const files = await scanNestedSources(getActiveRoot(), slug);

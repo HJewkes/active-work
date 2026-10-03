@@ -29,6 +29,7 @@ describe('note.read', () => {
       ]) {
         const res = await noteReadCmd.run({ slug: SLUG, note: form }, ctx);
         expect(res).toEqual({
+          id: `${SLUG}:notes:${FILENAME}`,
           slug: SLUG,
           filename: FILENAME,
           path: `sources/notes/${FILENAME}`,

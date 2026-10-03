@@ -3,11 +3,8 @@ import { loadHumanOnlyInitiatives } from '../decider/human-only.js';
 import { listInitiativeSlugs } from '../lint/index.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { scanInventory } from '../workspace-index/inventory.js';
-import {
-  INVENTORY_CLASSES,
-  summarizeInventory,
-  totalInventory,
-} from '../workspace-index/inventory-summary.js';
+import { summarizeInventory, totalInventory } from '../workspace-index/inventory-summary.js';
+import { WIRE_CLASSES, type WireClass } from '../workspace-index/wire.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({}).strict();
@@ -19,8 +16,8 @@ const StatSchema = z.object({
 });
 
 const ClassesSchema = z.object(
-  Object.fromEntries(INVENTORY_CLASSES.map((cls) => [cls, StatSchema])) as Record<
-    (typeof INVENTORY_CLASSES)[number],
+  Object.fromEntries(WIRE_CLASSES.map((cls) => [cls, StatSchema])) as Record<
+    WireClass,
     typeof StatSchema
   >,
 );

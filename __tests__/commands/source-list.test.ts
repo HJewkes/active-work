@@ -101,6 +101,7 @@ describe('source.list', () => {
       const nested = await sourceListCmd.run({ slug: SLUG, nested: true }, ctx);
 
       expect(flat.sources.map((s) => s.filename)).toEqual(['deepdive-a.md']);
+      expect(nested.sources.find((s) => s.nested)!.id).toBe(`${SLUG}:sources:research/deep/x.md`);
       expect(nested.sources.map((s) => [s.filename, s.title, s.nested])).toEqual([
         ['deepdive-a.md', 'deepdive-a.md', false],
         ['research/deep/x.md', 'Deep X', true],
@@ -117,10 +118,13 @@ describe('source.list', () => {
       }
 
       const res = await sourceListCmd.run({ all_initiatives: true }, ctx);
-      expect(res.sources.map((s) => [s.slug, s.filename])).toEqual([
-        ['alpha', 'pr-1-alpha.md'],
-        ['beta', 'pr-1-beta.md'],
+      expect(res.sources.map((s) => s.id)).toEqual([
+        'alpha:sources:pr-1-alpha.md',
+        'beta:sources:pr-1-beta.md',
       ]);
+      expect(res.sources.every((s) => s.mtime !== null && !Number.isNaN(Date.parse(s.mtime)))).toBe(
+        true,
+      );
     });
   });
 

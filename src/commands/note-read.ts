@@ -6,6 +6,7 @@ import { readInitiativeFile } from '../sources/read.js';
 import { coerceDates } from '../utils/coerce-dates.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { validateSlug } from '../utils/slug.js';
+import { itemId } from '../workspace-index/wire.js';
 import { defineCommand } from '../registry/index.js';
 
 const NOTES_PREFIX = 'sources/notes/';
@@ -16,6 +17,8 @@ const ArgsSchema = z.object({
 });
 
 const ResultSchema = z.object({
+  // `<slug>:notes:<filename>`, the same id `note.list` returns.
+  id: z.string(),
   slug: z.string(),
   filename: z.string(),
   // Relative to the initiative directory, `/`-separated.
@@ -64,9 +67,11 @@ export default defineCommand<Args, Result>({
       throw new UsageError(`Not a note under ${NOTES_PREFIX}: ${file.path}`);
     }
     const { frontmatter, body } = parseNote(file.path, file.content);
+    const filename = file.path.slice(NOTES_PREFIX.length);
     return {
+      id: itemId(args.slug, 'notes', filename),
       slug: args.slug,
-      filename: file.path.slice(NOTES_PREFIX.length),
+      filename,
       path: file.path,
       ...frontmatter,
       body,

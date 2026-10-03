@@ -1,4 +1,5 @@
-import type { InventoryClass, InventoryFile } from './inventory.js';
+import type { InventoryFile } from './inventory.js';
+import { WIRE_CLASSES, wireClass, type WireClass } from './wire.js';
 
 /** File count, total bytes and newest mtime over a set of files. */
 export interface InventoryStat {
@@ -17,18 +18,9 @@ export interface InitiativeInventory {
   /** Listed in the charter's `human_only_initiatives`: keep out of fixtures and exports. */
   human_only: boolean;
   total: InventoryStat;
-  classes: Record<InventoryClass, InventoryStat>;
+  classes: Record<WireClass, InventoryStat>;
   nested_dirs: NestedDirStat[];
 }
-
-export const INVENTORY_CLASSES: readonly InventoryClass[] = [
-  'initiative',
-  'task',
-  'session',
-  'note',
-  'source',
-  'nested_source',
-];
 
 function emptyStat(): InventoryStat {
   return { files: 0, bytes: 0, newest_mtime: null };
@@ -40,9 +32,9 @@ function addFile(stat: InventoryStat, file: InventoryFile): void {
   if (stat.newest_mtime === null || file.mtime > stat.newest_mtime) stat.newest_mtime = file.mtime;
 }
 
-function emptyClasses(): Record<InventoryClass, InventoryStat> {
-  return Object.fromEntries(INVENTORY_CLASSES.map((cls) => [cls, emptyStat()])) as Record<
-    InventoryClass,
+function emptyClasses(): Record<WireClass, InventoryStat> {
+  return Object.fromEntries(WIRE_CLASSES.map((cls) => [cls, emptyStat()])) as Record<
+    WireClass,
     InventoryStat
   >;
 }
@@ -73,7 +65,7 @@ function summarizeInitiative(
   const classes = emptyClasses();
   for (const file of files) {
     addFile(total, file);
-    addFile(classes[file.class], file);
+    addFile(classes[wireClass(file.class)], file);
   }
   return {
     slug,
@@ -109,13 +101,13 @@ function mergeStat(into: InventoryStat, from: InventoryStat): void {
 /** Sums across initiatives, per class and overall. */
 export function totalInventory(rows: readonly InitiativeInventory[]): {
   total: InventoryStat;
-  classes: Record<InventoryClass, InventoryStat>;
+  classes: Record<WireClass, InventoryStat>;
 } {
   const total = emptyStat();
   const classes = emptyClasses();
   for (const row of rows) {
     mergeStat(total, row.total);
-    for (const cls of INVENTORY_CLASSES) mergeStat(classes[cls], row.classes[cls]);
+    for (const cls of WIRE_CLASSES) mergeStat(classes[cls], row.classes[cls]);
   }
   return { total, classes };
 }

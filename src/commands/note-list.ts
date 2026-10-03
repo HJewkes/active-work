@@ -3,6 +3,7 @@ import { NoteKindSchema } from '../schemas/note.js';
 import { loadNotesFromDir, type LoadedNote } from '../notes/note-file.js';
 import { getInitiativeDir } from '../utils/paths.js';
 import { defineCommand } from '../registry/index.js';
+import { itemId, mtimeOf } from '../workspace-index/wire.js';
 import { resolveListSlugs } from './_list-scope.js';
 
 const ArgsSchema = z.object({
@@ -12,13 +13,18 @@ const ArgsSchema = z.object({
 });
 
 const NoteEntrySchema = z.object({
+  // `<slug>:notes:<filename>`, unique across initiatives.
+  id: z.string(),
   slug: z.string(),
   filename: z.string(),
+  // Absolute.
   path: z.string(),
   kind: NoteKindSchema,
   title: z.string(),
   created: z.string(),
   tags: z.array(z.string()).optional(),
+  // ISO timestamp; null only when the file vanished mid-listing.
+  mtime: z.string().nullable(),
 });
 
 const ResultSchema = z.object({
@@ -31,8 +37,9 @@ const ResultSchema = z.object({
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 
-function toEntry(slug: string, note: LoadedNote): z.infer<typeof NoteEntrySchema> {
+async function toEntry(slug: string, note: LoadedNote): Promise<z.infer<typeof NoteEntrySchema>> {
   return {
+    id: itemId(slug, 'notes', note.filename),
     slug,
     filename: note.filename,
     path: note.path,
@@ -40,6 +47,7 @@ function toEntry(slug: string, note: LoadedNote): z.infer<typeof NoteEntrySchema
     title: note.frontmatter.title,
     created: note.frontmatter.created,
     ...(note.frontmatter.tags ? { tags: note.frontmatter.tags } : {}),
+    mtime: await mtimeOf(note.path),
   };
 }
 
@@ -47,7 +55,7 @@ async function listForSlug(slug: string, kind: Args['kind']): Promise<Result> {
   const { notes, malformed } = await loadNotesFromDir(getInitiativeDir(slug));
   const selected = kind ? notes.filter((note) => note.frontmatter.kind === kind) : notes;
   return {
-    notes: selected.map((note) => toEntry(slug, note)),
+    notes: await Promise.all(selected.map((note) => toEntry(slug, note))),
     errors: malformed.map((entry) => ({ slug, filename: entry.file, error: entry.reason })),
   };
 }
