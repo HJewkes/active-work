@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { loadHumanOnlyInitiatives } from '../decider/human-only.js';
 import { listInitiativeSlugs } from '../lint/index.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { scanInventory } from '../workspace-index/inventory.js';
 import { summarizeInventory, totalInventory } from '../workspace-index/inventory-summary.js';
 import { WIRE_CLASSES, type WireClass } from '../workspace-index/wire.js';
 import { defineCommand } from '../registry/index.js';
+import { humanOnlyPredicate } from './_list-scope.js';
 
 const ArgsSchema = z.object({}).strict();
 
@@ -39,20 +39,6 @@ const ResultSchema = z.object({
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
-
-/** Fails closed: an unreadable charter flags every initiative, so nothing personal leaks into an export. */
-async function humanOnlyPredicate(
-  activeRoot: string,
-  warnings: string[],
-): Promise<{ known: boolean; isHumanOnly: (slug: string) => boolean }> {
-  try {
-    const humanOnly = await loadHumanOnlyInitiatives(activeRoot);
-    return { known: true, isHumanOnly: (slug) => humanOnly.has(slug) };
-  } catch (err) {
-    warnings.push(err instanceof Error ? err.message : String(err));
-    return { known: false, isHumanOnly: () => true };
-  }
-}
 
 export default defineCommand<Args, Result>({
   name: 'inventory',

@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { NoteKindSchema } from '../schemas/note.js';
 import { loadNotesFromDir, type LoadedNote } from '../notes/note-file.js';
-import { getInitiativeDir } from '../utils/paths.js';
+import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
 import { defineCommand } from '../registry/index.js';
 import { itemId, mtimeOf } from '../workspace-index/wire.js';
-import { resolveListSlugs } from './_list-scope.js';
+import { humanOnlyPredicate, resolveListSlugs } from './_list-scope.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1).optional(),
@@ -23,6 +23,8 @@ const NoteEntrySchema = z.object({
   title: z.string(),
   created: z.string(),
   tags: z.array(z.string()).optional(),
+  // The charter marks the initiative human-only; true for all when the charter is unreadable.
+  human_only: z.boolean(),
   // ISO timestamp; null only when the file vanished mid-listing.
   mtime: z.string().nullable(),
 });
@@ -32,12 +34,16 @@ const ResultSchema = z.object({
   // Unreadable files are reported, never dropped: a note that silently
   // disappears is exactly the knowledge loss notes exist to prevent.
   errors: z.array(z.object({ slug: z.string(), filename: z.string(), error: z.string() })),
+  // False when the charter is unreadable; every note is then flagged human_only.
+  human_only_known: z.boolean(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
+type Entry = z.infer<typeof NoteEntrySchema>;
+type SlugListing = Pick<Result, 'notes' | 'errors'>;
 
-async function toEntry(slug: string, note: LoadedNote): Promise<z.infer<typeof NoteEntrySchema>> {
+async function toEntry(slug: string, note: LoadedNote, humanOnly: boolean): Promise<Entry> {
   return {
     id: itemId(slug, 'notes', note.filename),
     slug,
@@ -47,21 +53,26 @@ async function toEntry(slug: string, note: LoadedNote): Promise<z.infer<typeof N
     title: note.frontmatter.title,
     created: note.frontmatter.created,
     ...(note.frontmatter.tags ? { tags: note.frontmatter.tags } : {}),
+    human_only: humanOnly,
     mtime: await mtimeOf(note.path),
   };
 }
 
-async function listForSlug(slug: string, kind: Args['kind']): Promise<Result> {
+async function listForSlug(
+  slug: string,
+  kind: Args['kind'],
+  humanOnly: boolean,
+): Promise<SlugListing> {
   const { notes, malformed } = await loadNotesFromDir(getInitiativeDir(slug));
   const selected = kind ? notes.filter((note) => note.frontmatter.kind === kind) : notes;
   return {
-    notes: await Promise.all(selected.map((note) => toEntry(slug, note))),
+    notes: await Promise.all(selected.map((note) => toEntry(slug, note, humanOnly))),
     errors: malformed.map((entry) => ({ slug, filename: entry.file, error: entry.reason })),
   };
 }
 
 /** Across initiatives, newest first on `created`, then filename for a stable order. */
-function newestFirst(a: z.infer<typeof NoteEntrySchema>, b: z.infer<typeof NoteEntrySchema>) {
+function newestFirst(a: Entry, b: Entry) {
   return b.created.localeCompare(a.created) || b.filename.localeCompare(a.filename);
 }
 
@@ -86,13 +97,19 @@ export default defineCommand<Args, Result>({
     usage:
       'active-work note list <slug>|--all-initiatives [--kind process|gotcha|fyi|decision|plan]',
   },
-  async run(args) {
-    const slugs = await resolveListSlugs('note.list', args);
-    const perSlug = await Promise.all(slugs.map((slug) => listForSlug(slug, args.kind)));
+  async run(args, ctx) {
+    const [slugs, humanOnly] = await Promise.all([
+      resolveListSlugs('note.list', args),
+      humanOnlyPredicate(getActiveRoot(), ctx.warnings),
+    ]);
+    const perSlug = await Promise.all(
+      slugs.map((slug) => listForSlug(slug, args.kind, humanOnly.isHumanOnly(slug))),
+    );
     const notes = perSlug.flatMap((r) => r.notes);
     return {
       notes: slugs.length > 1 ? notes.sort(newestFirst) : notes,
       errors: perSlug.flatMap((r) => r.errors),
+      human_only_known: humanOnly.known,
     };
   },
 });
