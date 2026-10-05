@@ -50,6 +50,11 @@ describe('spawnerOf', () => {
     expect(spawnerOf('zz-fix-parser')).toBe('zz');
   });
 
+  it('merges numbered seats of one prefix', () => {
+    expect(spawnerOf('vw385')).toBe('vw');
+    expect(spawnerOf('vw467-fix')).toBe('vw');
+  });
+
   it('leaves a name with no prefix unattributed', () => {
     expect(spawnerOf('plain')).toBe('unattributed');
     expect(spawnerOf(null)).toBe('unattributed');
@@ -81,9 +86,27 @@ describe('renderWorkerRollup', () => {
   it('prints one roll-up line per spawner then caps the exceptions', () => {
     const inputs = Array.from({ length: 10 }, (_, i) => stub('aa-w', i));
     const lines = renderWorkerRollup(buildWorkerRollup(inputs), 5);
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toBe('- aa: 10 workers — 0 merged, 0 open PR, 10 no report, 0 concerns');
-    expect(lines[4]).toBe('  - +7 more exceptions');
+  });
+
+  it('puts each exception directly under its own spawner', () => {
+    const inputs = [stub('aa-w', 1), stub('bb-w', 2), stub('bb-x', 3)];
+    const lines = renderWorkerRollup(buildWorkerRollup(inputs), 5);
+    expect(lines.map((l) => l.replace(/ — .*|2026-06-01 /g, '').trim())).toEqual([
+      '- bb: 2 workers',
+      '- bb-x',
+      '- bb-w',
+      '- aa: 1 worker',
+      '- aa-w',
+    ]);
+  });
+
+  it('bounds each spawner exception list and counts the rest', () => {
+    const inputs = Array.from({ length: 20 }, (_, i) => stub('aa-w', i));
+    const [spawner] = buildWorkerRollup(inputs).spawners;
+    expect(spawner?.exceptions).toHaveLength(3);
+    expect(spawner?.exceptions_omitted).toBe(17);
   });
 });
 

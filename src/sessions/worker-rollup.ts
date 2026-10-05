@@ -20,7 +20,8 @@ export const UNATTRIBUTED = 'unattributed';
 const MAX_EXCEPTION_SUMMARY = 100;
 
 const STUB_PATTERN = /^Peer "([^"]*)"[^\n]*?(?:exited with|exit inferred)/;
-const SPAWNER_PATTERN = /^([A-Za-z0-9]+)-/;
+const SPAWNER_PATTERN = /^([A-Za-z]+)[\d-]/;
+const MAX_EXCEPTIONS_PER_SPAWNER = 3;
 
 export const WorkerOutcomeSchema = z.enum(['merged', 'open_pr', 'no_report', 'concerns']);
 export type WorkerOutcome = z.infer<typeof WorkerOutcomeSchema>;
@@ -41,6 +42,7 @@ export const SpawnerRollupSchema = z.object({
   no_report: z.number().int(),
   concerns: z.number().int(),
   exceptions: z.array(WorkerExceptionSchema),
+  exceptions_omitted: z.number().int(),
 });
 
 export const WorkerRollupSchema = z.object({
@@ -85,7 +87,8 @@ export function sessionKindOf(input: RollupInput): SessionKind {
 
 /**
  * Agent names start with the spawner's seat prefix (`tc-` for titan-coord),
- * so the spawner is the name's leading token before its first `-`. A name
+ * so the spawner is the name's leading letters when a digit or `-` follows
+ * (`vw385` and `vw467` are both `vw`). A name
  * without that shape cannot be attributed.
  */
 export function spawnerOf(agent: string | null): string {
@@ -102,6 +105,7 @@ function emptyRollup(spawner: string): SpawnerRollup {
     no_report: 0,
     concerns: 0,
     exceptions: [],
+    exceptions_omitted: 0,
   };
 }
 
@@ -123,13 +127,17 @@ export function buildWorkerRollup(inputs: RollupInput[]): WorkerRollup {
     const entry = bySpawner.get(spawner) ?? emptyRollup(spawner);
     entry.total += 1;
     entry.no_report += 1;
-    entry.exceptions.push({
-      session_id: input.sessionId,
-      ended: input.ended,
-      agent: agent || null,
-      outcome: 'no_report',
-      summary: firstLineOf(input.body),
-    });
+    if (entry.exceptions.length < MAX_EXCEPTIONS_PER_SPAWNER) {
+      entry.exceptions.push({
+        session_id: input.sessionId,
+        ended: input.ended,
+        agent: agent || null,
+        outcome: 'no_report',
+        summary: firstLineOf(input.body),
+      });
+    } else {
+      entry.exceptions_omitted += 1;
+    }
     bySpawner.set(spawner, entry);
   }
   return { spawners: [...bySpawner.values()].sort(compareSpawners) };
@@ -155,22 +163,20 @@ function exceptionLine(entry: WorkerException): string {
 }
 
 /**
- * Render the roll-up in at most `lineBudget` lines: one line per spawner, then
- * the exceptions that still fit, the last slot summarising any it dropped.
+ * Render the roll-up in at most `lineBudget` lines: one line per spawner, each
+ * followed by its own exceptions while room remains.
  */
 export function renderWorkerRollup(rollup: WorkerRollup, lineBudget: number): string[] {
   const { spawners } = rollup;
   if (spawners.length === 0 || lineBudget < 1) return [];
   if (spawners.length > lineBudget) {
     const shown = spawners.slice(0, lineBudget - 1).map(rollupLine);
-    const hidden = spawners.length - shown.length;
-    return [...shown, `- +${hidden} more spawners`];
+    return [...shown, `- +${spawners.length - shown.length} more spawners`];
   }
-  const lines = spawners.map(rollupLine);
-  const exceptions = spawners.flatMap((s) => s.exceptions);
-  const room = lineBudget - lines.length;
-  if (exceptions.length <= room) return [...lines, ...exceptions.map(exceptionLine)];
-  if (room < 1) return lines;
-  const shown = exceptions.slice(0, room - 1).map(exceptionLine);
-  return [...lines, ...shown, `  - +${exceptions.length - shown.length} more exceptions`];
+  let room = lineBudget - spawners.length;
+  return spawners.flatMap((entry) => {
+    const shown = entry.exceptions.slice(0, room);
+    room -= shown.length;
+    return [rollupLine(entry), ...shown.map(exceptionLine)];
+  });
 }
