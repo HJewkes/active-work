@@ -25,6 +25,16 @@ async function writeSourcesIn(root: string, slugs: string[]): Promise<void> {
   }
 }
 
+async function writeDriftingSourcesIn(root: string, slugs: string[]): Promise<void> {
+  await writeSourcesIn(root, slugs);
+  for (const slug of slugs) {
+    await fs.writeFile(path.join(root, slug, 'sources', `pr-2-${slug}.md`), '# PR\n', 'utf8');
+    const brief = ['---', 'schema_version: 1', 'title: T', 'state: focused', '---'];
+    brief.push('## References', `- sources/pr-1-${slug}.md`, '');
+    await fs.writeFile(path.join(root, slug, 'brief.md'), brief.join('\n'), 'utf8');
+  }
+}
+
 async function writeCharter(root: string, humanOnly: string[]): Promise<void> {
   const file = path.join(root, 'claude-channels', 'sources', 'autonomy', 'charter.md');
   await fs.mkdir(path.dirname(file), { recursive: true });
@@ -96,7 +106,8 @@ describe('source.list', () => {
       );
       const res = await sourceListCmd.run({ slug: SLUG }, ctx);
       expect(res.drift).toHaveLength(1);
-      expect(res.drift[0]).toContain('sources/deepdive-forgotten.md');
+      expect(res.drift[0]).toMatchObject({ slug: SLUG });
+      expect(res.drift[0]!.path).toContain('sources/deepdive-forgotten.md');
     });
   });
 
@@ -165,17 +176,50 @@ describe('source.list', () => {
     });
   });
 
-  it('flags every source and warns when the charter is unreadable', async () => {
+  it.each([
+    ['malformed', '---\nhuman_only_initiatives: not-a-list\n---\n'],
+    ['missing', null],
+  ])(
+    'flags every source and drift row and warns when the charter is %s',
+    async (_label, charterBody) => {
+      await withEmptyActiveRoot(async (root) => {
+        await writeDriftingSourcesIn(root, ['alpha', 'beta']);
+        if (charterBody !== null) {
+          const charter = path.join(root, 'claude-channels', 'sources', 'autonomy', 'charter.md');
+          await fs.mkdir(path.dirname(charter), { recursive: true });
+          await fs.writeFile(charter, charterBody, 'utf8');
+        }
+        const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+
+        const res = await sourceListCmd.run({ all_initiatives: true }, context);
+
+        expect(res.human_only_known).toBe(false);
+        expect(res.sources).toHaveLength(4);
+        expect(res.sources.every((s) => s.human_only)).toBe(true);
+        expect(res.drift.map((d) => [d.slug, d.human_only])).toEqual([
+          ['alpha', true],
+          ['beta', true],
+        ]);
+        const warning = context.warnings.join('\n');
+        expect(warning).toMatch(/Cannot read human_only_initiatives from .*charter\.md/);
+        expect(warning).toMatch(/every initiative is flagged human_only/);
+        expect(warning).not.toMatch(/precedents are withheld/);
+      });
+    },
+  );
+
+  it('flags drift rows from the human-only initiative only', async () => {
     await withEmptyActiveRoot(async (root) => {
-      await writeSourcesIn(root, ['alpha', 'beta']);
-      const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+      await writeDriftingSourcesIn(root, ['alpha', 'beta']);
+      await writeCharter(root, ['beta']);
 
-      const res = await sourceListCmd.run({ all_initiatives: true }, context);
+      const res = await sourceListCmd.run({ all_initiatives: true }, ctx);
 
-      expect(res.human_only_known).toBe(false);
-      expect(res.sources).toHaveLength(2);
-      expect(res.sources.every((s) => s.human_only)).toBe(true);
-      expect(context.warnings.join('\n')).toMatch(/human_only_initiatives/);
+      expect(res.drift.map((d) => [d.slug, d.human_only])).toEqual([
+        ['alpha', false],
+        ['beta', true],
+      ]);
+      expect(res.drift[0]!.path).toContain('sources/pr-2-alpha.md');
     });
   });
 

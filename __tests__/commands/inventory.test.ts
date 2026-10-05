@@ -95,7 +95,7 @@ describe('inventory', () => {
 
       expect(res.human_only_known).toBe(false);
       expect(res.initiatives.every((row) => row.human_only)).toBe(true);
-      expect(context.warnings.join('\n')).toMatch(/human_only_initiatives/);
+      expect(context.warnings.join('\n')).toMatch(/every initiative is flagged human_only/);
     });
   });
 

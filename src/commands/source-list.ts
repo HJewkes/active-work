@@ -35,12 +35,18 @@ const SourceEntrySchema = z.object({
   mtime: z.string().nullable(),
 });
 
+const DriftEntrySchema = z.object({
+  path: z.string(),
+  slug: z.string(),
+  // Same flag as the sources: true for all when the charter is unreadable.
+  human_only: z.boolean(),
+});
+
 const ResultSchema = z.object({
   sources: z.array(SourceEntrySchema),
   // Drift between the directory and brief.md's hand-written references. Empty
-  // when the brief keeps no reference list at all. Prefixed `<slug>: ` when
-  // more than one initiative is listed.
-  drift: z.array(z.string()),
+  // when the brief keeps no reference list at all. `path` is the finding text.
+  drift: z.array(DriftEntrySchema),
   // False when the charter is unreadable; every source is then flagged human_only.
   human_only_known: z.boolean(),
 });
@@ -48,6 +54,7 @@ const ResultSchema = z.object({
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 type Entry = z.infer<typeof SourceEntrySchema>;
+type DriftEntry = z.infer<typeof DriftEntrySchema>;
 
 type UnflaggedEntry = Omit<Entry, 'human_only'>;
 
@@ -92,9 +99,9 @@ async function entriesForSlug(slug: string, nested: boolean, humanOnly: boolean)
   return entries.map((entry) => ({ ...entry, human_only: humanOnly }));
 }
 
-async function driftForSlug(slug: string, prefixed: boolean): Promise<string[]> {
+async function driftForSlug(slug: string, humanOnly: boolean): Promise<DriftEntry[]> {
   const findings = await lintSources(slug, getInitiativeDir(slug));
-  return findings.map((finding) => (prefixed ? `${slug}: ${finding.message}` : finding.message));
+  return findings.map((finding) => ({ path: finding.message, slug, human_only: humanOnly }));
 }
 
 export default defineCommand<Args, Result>({
@@ -128,10 +135,9 @@ export default defineCommand<Args, Result>({
       humanOnlyPredicate(getActiveRoot(), ctx.warnings),
     ]);
     const nested = args.nested ?? false;
-    const prefixed = slugs.length > 1;
     const [entries, drift] = await Promise.all([
       Promise.all(slugs.map((slug) => entriesForSlug(slug, nested, humanOnly.isHumanOnly(slug)))),
-      Promise.all(slugs.map((slug) => driftForSlug(slug, prefixed))),
+      Promise.all(slugs.map((slug) => driftForSlug(slug, humanOnly.isHumanOnly(slug)))),
     ]);
     const sources = entries.flat();
     return {
