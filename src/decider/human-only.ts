@@ -32,13 +32,36 @@ export class HumanOnlyUnreadableError extends Error {
 
 export async function loadHumanOnlyInitiatives(activeRoot: string): Promise<ReadonlySet<string>> {
   const file = charterPath(activeRoot);
+  let data: Record<string, unknown>;
   try {
-    const parsed = CharterSchema.parse(parseFrontmatter(await fs.readFile(file, 'utf8')).data);
-    return new Set(parsed.human_only_initiatives);
+    data = parseFrontmatter(await fs.readFile(file, 'utf8')).data;
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    throw new HumanOnlyUnreadableError(file, reason);
+    throw new HumanOnlyUnreadableError(file, readFailureReason(err));
   }
+  const parsed = CharterSchema.safeParse(data);
+  if (!parsed.success) throw new HumanOnlyUnreadableError(file, schemaFailureReason(data));
+  return new Set(parsed.data.human_only_initiatives);
+}
+
+// Reasons are a fixed vocabulary: js-yaml and zod messages can quote charter text, and
+// these reasons reach list, inventory and decider warnings.
+function readFailureReason(err: unknown): string {
+  if (!(err instanceof Error)) return 'unreadable';
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT') return 'missing file';
+  if (typeof code === 'string' && /^E[A-Z]+$/.test(code)) return `unreadable (${code})`;
+  if (err.name === 'YAMLException') return yamlSyntaxReason(err);
+  return 'unreadable';
+}
+
+function yamlSyntaxReason(err: Error): string {
+  const line = (err as { mark?: { line?: unknown } }).mark?.line;
+  return typeof line === 'number' ? `YAML syntax error at line ${line + 1}` : 'YAML syntax error';
+}
+
+function schemaFailureReason(data: unknown): string {
+  const hasKey = typeof data === 'object' && data !== null && 'human_only_initiatives' in data;
+  return hasKey ? 'wrong type for human_only_initiatives' : 'missing key human_only_initiatives';
 }
 
 export function exclusionPolicy(humanOnly: ReadonlySet<string>): ExclusionPolicy {
