@@ -23,6 +23,7 @@ const NoteEntrySchema = z.object({
   title: z.string(),
   created: z.string(),
   tags: z.array(z.string()).optional(),
+  read_if: z.string().optional(),
   // The charter marks the initiative human-only; true for all when the charter is unreadable.
   human_only: z.boolean(),
   // ISO timestamp; null only when the file vanished mid-listing.
@@ -61,6 +62,7 @@ async function toEntry(slug: string, note: LoadedNote, humanOnly: boolean): Prom
     title: note.frontmatter.title,
     created: note.frontmatter.created,
     ...(note.frontmatter.tags ? { tags: note.frontmatter.tags } : {}),
+    ...(note.frontmatter.read_if !== undefined ? { read_if: note.frontmatter.read_if } : {}),
     human_only: humanOnly,
     mtime: await mtimeOf(note.path),
   };

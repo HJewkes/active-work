@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import noteAddCmd from '../../src/commands/note-add.js';
 import noteListCmd from '../../src/commands/note-list.js';
+import noteReadCmd from '../../src/commands/note-read.js';
 import { NOTE_TITLE_MAX_LENGTH, NoteFrontmatterSchema } from '../../src/schemas/note.js';
 import { readFrontmatter } from '../../src/utils/gray-matter-io.js';
 import { today } from '../../src/utils/today.js';
@@ -137,6 +138,48 @@ describe('note.add', () => {
         noteAddCmd.run({ slug: 'does-not-exist', kind: 'fyi', title: 'Nope', body: 'x' }, ctx),
       ).rejects.toThrow(/not found/i);
     });
+  });
+});
+
+describe('note read_if round trip', () => {
+  it.each([
+    { scenario: 'without --read-if', input: {}, expected: {} },
+    {
+      scenario: 'with --read-if',
+      input: { read_if: '  rotating the sample keys ' },
+      expected: { read_if: 'rotating the sample keys' },
+    },
+  ])('add then list and read $scenario', async ({ input, expected }) => {
+    await withTempActiveRoot(async () => {
+      const args = noteAddCmd.args.parse({
+        slug: SLUG,
+        kind: 'process',
+        title: 'Sample rotation',
+        body: 'Sample body.',
+        ...input,
+      });
+
+      const added = await noteAddCmd.run(args, ctx);
+      const listed = await noteListCmd.run({ slug: SLUG }, ctx);
+      const read = await noteReadCmd.run({ slug: SLUG, note: added.filename }, ctx);
+
+      for (const result of [added, listed.notes[0]!, read]) {
+        expect(result).toMatchObject(expected);
+        expect('read_if' in result).toBe('read_if' in expected);
+      }
+    });
+  });
+
+  it('refuses a multi-line --read-if', () => {
+    const result = noteAddCmd.args.safeParse({
+      slug: SLUG,
+      kind: 'fyi',
+      title: 'Sample',
+      body: 'x',
+      read_if: 'one\ntwo',
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

@@ -190,4 +190,33 @@ describe('bootstrap durable notes', () => {
       expect(prompt).not.toContain('Barely matched');
     });
   });
+
+  it.each([
+    {
+      scenario: 'without read_if renders exactly as before',
+      extra: '',
+      line: '- [gotcha] Sample gotcha (2026-07-01)',
+    },
+    {
+      scenario: 'with read_if appends the condition',
+      extra: 'read_if: touching the sample widget\n',
+      line: '- [gotcha] Sample gotcha (2026-07-01) (read if: touching the sample widget)',
+    },
+  ])('a note $scenario', async ({ extra, line }) => {
+    await withTempActiveRoot(async (root) => {
+      await writeNote(
+        root,
+        '2026-07-01-sample-gotcha.md',
+        `---\nkind: gotcha\ntitle: Sample gotcha\ncreated: '2026-07-01'\n${extra}---\n\nbody\n`,
+      );
+
+      const { prompt } = await assembleBootstrap({
+        activeRoot: root,
+        slug: SLUG,
+        ...offlineOpts,
+      });
+
+      expect(prompt).toContain(`# Durable notes (1)\n${line}\n`);
+    });
+  });
 });

@@ -93,6 +93,32 @@ describe('relatedContext', () => {
     expect(result.hits.map((hit) => hit.path)).not.toContain(archive);
   });
 
+  it.each([
+    { scenario: 'declares none', frontmatter: '', expected: {} },
+    {
+      scenario: 'declares a read_if condition',
+      frontmatter: 'read_if: changing the sample pipeline\n',
+      expected: { readIf: 'changing the sample pipeline' },
+    },
+    {
+      scenario: 'declares an invalid read_if',
+      frontmatter: `read_if: ${'x'.repeat(161)}\n`,
+      expected: {},
+    },
+  ])('a note hit whose file $scenario', async ({ frontmatter, expected }) => {
+    writeFile(
+      root,
+      'alpha/sources/notes/2026-09-02-alpha-lesson.md',
+      `---\nkind: process\ntitle: The alpha lesson\ncreated: 2026-09-02\n${frontmatter}---\n\nThe alpha lesson body.\n`,
+    );
+
+    const result = await related({ text: 'the alpha lesson', initiative: 'alpha' });
+
+    const hit = result.hits.find((h) => h.ref === 'note:alpha/2026-09-02-alpha-lesson.md');
+    expect(hit).toMatchObject(expected);
+    expect('readIf' in hit!).toBe('readIf' in expected);
+  });
+
   it('carries the winning span as a byte range into the file', async () => {
     const result = await related({ text: 'the alpha lesson', initiative: 'alpha' });
     const [top] = result.hits;

@@ -27,6 +27,7 @@ const ResultSchema = z.object({
   title: z.string(),
   created: z.string(),
   tags: z.array(z.string()).optional(),
+  read_if: z.string().optional(),
   body: z.string(),
   // True when the file exceeded the read cap and `body` holds only its head.
   truncated: z.boolean(),

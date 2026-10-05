@@ -86,7 +86,7 @@ Auto-prompt the wrap when you detect the user winding down ("I'm done", "let's s
 - The most recent session summary
 - The top N open tasks (rank-sorted)
 - Recently-done tasks from the last 14 days, if any
-- **Durable notes** — newest first, capped by count and never expired by age
+- **Durable notes** — newest first, capped by count and never expired by age. A note that declares `read_if` (one line, at most 160 chars; `active-work note add --read-if <condition>`) shows it as `(read if: <condition>)` after its kind, title and date, and on its `see:` lines; skip a note whose condition does not apply
 - Open artifacts with status
 - A context block with today's date, bootstrap time, and time since the last session
 

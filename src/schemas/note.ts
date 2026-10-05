@@ -37,11 +37,28 @@ export const NoteKindSchema = z.enum(['process', 'gotcha', 'fyi', 'decision', 'p
  */
 export const NOTE_TITLE_MAX_LENGTH = 120;
 
+/**
+ * `read_if` is rendered beside the note's line in every bootstrap, so it has
+ * to stay one short line. A longer or multi-line value is refused rather than
+ * cut, because a truncated condition can say the opposite of the whole one.
+ */
+export const NOTE_READ_IF_MAX_LENGTH = 160;
+
+export const NoteReadIfSchema = z
+  .string()
+  .trim()
+  .min(1, { message: 'read_if must not be empty' })
+  .max(NOTE_READ_IF_MAX_LENGTH, {
+    message: `read_if must be at most ${NOTE_READ_IF_MAX_LENGTH} characters`,
+  })
+  .refine((value) => !/[\r\n]/.test(value), { message: 'read_if must be a single line' });
+
 export const NoteFrontmatterSchema = z.object({
   kind: NoteKindSchema,
   title: z.string().min(1),
   created: isoDate,
   tags: z.array(z.string().min(1)).optional(),
+  read_if: NoteReadIfSchema.optional(),
 });
 
 export type NoteKind = z.infer<typeof NoteKindSchema>;

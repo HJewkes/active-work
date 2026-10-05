@@ -56,6 +56,8 @@ const HitSchema = z.object({
   excerpt: z.string().nullable(),
   byteOffset: z.number().nullable(),
   byteLength: z.number().nullable(),
+  // A note's read_if condition; absent when the note declares none.
+  readIf: z.string().optional(),
 });
 
 const ResultSchema = z.object({
