@@ -1,4 +1,4 @@
-import { loadHumanOnlyInitiatives } from '../decider/human-only.js';
+import { HumanOnlyUnreadableError, loadHumanOnlyInitiatives } from '../decider/human-only.js';
 import { UsageError } from '../errors.js';
 import { listInitiativeSlugs } from '../lint/index.js';
 import { getActiveRoot } from '../utils/paths.js';
@@ -26,6 +26,13 @@ export async function resolveListSlugs(command: string, scope: ListScope): Promi
   return [scope.slug];
 }
 
+function unreadableCharterWarning(err: unknown): string {
+  if (err instanceof HumanOnlyUnreadableError) {
+    return `Cannot read human_only_initiatives from ${err.file}; every initiative is flagged human_only: ${err.reason}`;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Fails closed: an unreadable charter flags every initiative, so nothing personal leaks into an export. */
 export async function humanOnlyPredicate(
   activeRoot: string,
@@ -35,7 +42,7 @@ export async function humanOnlyPredicate(
     const humanOnly = await loadHumanOnlyInitiatives(activeRoot);
     return { known: true, isHumanOnly: (slug) => humanOnly.has(slug) };
   } catch (err) {
-    warnings.push(err instanceof Error ? err.message : String(err));
+    warnings.push(unreadableCharterWarning(err));
     return { known: false, isHumanOnly: () => true };
   }
 }

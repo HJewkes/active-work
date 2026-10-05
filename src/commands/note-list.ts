@@ -33,7 +33,15 @@ const ResultSchema = z.object({
   notes: z.array(NoteEntrySchema),
   // Unreadable files are reported, never dropped: a note that silently
   // disappears is exactly the knowledge loss notes exist to prevent.
-  errors: z.array(z.object({ slug: z.string(), filename: z.string(), error: z.string() })),
+  errors: z.array(
+    z.object({
+      slug: z.string(),
+      filename: z.string(),
+      error: z.string(),
+      // Same flag as the notes: a malformed note's filename can name personal data too.
+      human_only: z.boolean(),
+    }),
+  ),
   // False when the charter is unreadable; every note is then flagged human_only.
   human_only_known: z.boolean(),
 });
@@ -67,7 +75,12 @@ async function listForSlug(
   const selected = kind ? notes.filter((note) => note.frontmatter.kind === kind) : notes;
   return {
     notes: await Promise.all(selected.map((note) => toEntry(slug, note, humanOnly))),
-    errors: malformed.map((entry) => ({ slug, filename: entry.file, error: entry.reason })),
+    errors: malformed.map((entry) => ({
+      slug,
+      filename: entry.file,
+      error: entry.reason,
+      human_only: humanOnly,
+    })),
   };
 }
 

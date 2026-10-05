@@ -17,6 +17,19 @@ export function charterPath(activeRoot: string): string {
   return path.join(activeRoot, 'claude-channels', 'sources', 'autonomy', 'charter.md');
 }
 
+/** Carries the file and reason so each caller words its own consequence. */
+export class HumanOnlyUnreadableError extends Error {
+  constructor(
+    readonly file: string,
+    readonly reason: string,
+  ) {
+    super(
+      `Cannot read human_only_initiatives from ${file}; precedents are withheld until it is readable: ${reason}`,
+    );
+    this.name = 'HumanOnlyUnreadableError';
+  }
+}
+
 export async function loadHumanOnlyInitiatives(activeRoot: string): Promise<ReadonlySet<string>> {
   const file = charterPath(activeRoot);
   try {
@@ -24,9 +37,7 @@ export async function loadHumanOnlyInitiatives(activeRoot: string): Promise<Read
     return new Set(parsed.human_only_initiatives);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Cannot read human_only_initiatives from ${file}; precedents are withheld until it is readable: ${reason}`,
-    );
+    throw new HumanOnlyUnreadableError(file, reason);
   }
 }
 
