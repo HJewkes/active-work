@@ -1,7 +1,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { NOTE_TITLE_MAX_LENGTH, NoteKindSchema } from '../schemas/note.js';
+import {
+  NOTE_READ_IF_MAX_LENGTH,
+  NOTE_TITLE_MAX_LENGTH,
+  NoteKindSchema,
+  NoteReadIfSchema,
+} from '../schemas/note.js';
 import { writeNoteFile } from '../notes/note-file.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
@@ -22,6 +27,7 @@ const ArgsSchema = z
     body: z.string().optional(),
     body_file: z.string().optional(),
     tags: z.array(z.string().min(1)).optional(),
+    read_if: NoteReadIfSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const hasBody = value.body !== undefined;
@@ -47,6 +53,7 @@ const ResultSchema = z.object({
   filename: z.string(),
   kind: NoteKindSchema,
   title: z.string(),
+  read_if: z.string().optional(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -77,9 +84,13 @@ export default defineCommand<Args, Result>({
         description: 'Path to a file containing the markdown body',
       },
       tags: { long: '--tags', description: 'Comma-separated tags' },
+      read_if: {
+        long: '--read-if',
+        description: `One-line condition, at most ${NOTE_READ_IF_MAX_LENGTH} chars, for when a session should read this note; shown beside it in the bootstrap`,
+      },
     },
     usage:
-      'active-work note add <slug> --kind <process|gotcha|fyi|decision> --title <text> (--body <text> | --body-file <path>) [--tags a,b]',
+      'active-work note add <slug> --kind <process|gotcha|fyi|decision> --title <text> (--body <text> | --body-file <path>) [--tags a,b] [--read-if <condition>]',
   },
   async run(args) {
     const initiativeDir = getInitiativeDir(args.slug);
@@ -95,11 +106,17 @@ export default defineCommand<Args, Result>({
       title: args.title,
       created: today(),
       ...(args.tags && args.tags.length > 0 ? { tags: args.tags } : {}),
+      ...(args.read_if !== undefined ? { read_if: args.read_if } : {}),
     };
 
     return withFileLock(getLockPath(args.slug), async () => {
       const written = await writeNoteFile(initiativeDir, frontmatter, body);
-      return { ...written, kind: args.kind, title: args.title };
+      return {
+        ...written,
+        kind: args.kind,
+        title: args.title,
+        ...(args.read_if !== undefined ? { read_if: args.read_if } : {}),
+      };
     });
   },
 });

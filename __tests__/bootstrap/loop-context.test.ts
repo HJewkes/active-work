@@ -144,4 +144,20 @@ describe('renderSeeLine', () => {
       '    see: note:alpha/y.md "Local lesson"',
     );
   });
+
+  it.each([
+    { scenario: 'without read_if', extra: {}, line: '    see: note:alpha/z.md "Sample lesson"' },
+    {
+      scenario: 'with read_if',
+      extra: { readIf: 'editing the sample parser' },
+      line: '    see: note:alpha/z.md "Sample lesson" (read if: editing the sample parser)',
+    },
+  ])('renders a note hit $scenario', ({ extra, line }) => {
+    const rendered = renderSeeLine(
+      { ...hit('note:alpha/z.md', 'alpha', 'Sample lesson'), ...extra },
+      'alpha',
+    );
+
+    expect(rendered).toBe(line);
+  });
 });

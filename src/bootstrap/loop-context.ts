@@ -1,3 +1,4 @@
+import { readIfSuffix } from '../notes/read-if.js';
 import type { OpenLoop } from '../sessions/open-loops.js';
 import {
   RELATED_DEFAULT_CLASSES,
@@ -48,7 +49,7 @@ export interface LoopContextInput {
 export function renderSeeLine(hit: RelatedHit, slug: string): string {
   const foreign =
     hit.initiative !== null && hit.initiative !== slug ? `[from \`${hit.initiative}\`] ` : '';
-  return `    see: ${foreign}${hit.ref} "${hit.title ?? hit.ref}"`;
+  return `    see: ${foreign}${hit.ref} "${hit.title ?? hit.ref}"${readIfSuffix(hit.readIf)}`;
 }
 
 /** The loop's own session record and the task it targets are what the loop already is. */

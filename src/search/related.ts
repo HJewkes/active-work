@@ -1,9 +1,13 @@
 import { existsSync } from 'node:fs';
+import { NoteReadIfSchema } from '../schemas/note.js';
 import { defaultGraphPath, openGraph, type WorkspaceGraph } from '../session-index/graph.js';
 import { deriveQuery, type DerivedQuery } from './derive-query.js';
 import { graphDocumentFrequency } from './document-frequency.js';
 import { searchWorkspace } from './index.js';
 import type { ResolvedHit } from './resolve.js';
+import { readRawFrontmatter } from '../utils/gray-matter-io.js';
+import { getActiveRoot } from '../utils/paths.js';
+import { toAbsolute } from '../workspace-index/refs.js';
 
 /**
  * One query in, one bounded block of openable hits out, empty when anything
@@ -38,7 +42,10 @@ export const RELATED_DEFAULT_CLASSES = ['notes', 'sources', 'tasks', 'sessions']
 export type RelatedHit = Pick<
   ResolvedHit,
   'ref' | 'class' | 'initiative' | 'title' | 'path' | 'excerpt' | 'byteOffset' | 'byteLength'
->;
+> & {
+  /** A note's `read_if` condition. Absent when it declares none or its file will not read. */
+  readIf?: string;
+};
 
 export interface RelatedDegradation {
   source: string;
@@ -99,6 +106,31 @@ function toRelatedHit(hit: ResolvedHit): RelatedHit {
 }
 
 /**
+ * The index carries no frontmatter beyond the title, so a note's condition is
+ * read from its file. Fails open: a hit whose file is gone or whose condition
+ * is invalid is served exactly as it would be without one.
+ */
+async function readIfOf(hit: RelatedHit, activeRoot: string): Promise<string | undefined> {
+  if (hit.class !== 'notes' || hit.path === null) return undefined;
+  try {
+    const { frontmatter } = await readRawFrontmatter(toAbsolute(activeRoot, hit.path));
+    const parsed = NoteReadIfSchema.safeParse(frontmatter.read_if);
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function withReadIf(hits: RelatedHit[], activeRoot: string): Promise<RelatedHit[]> {
+  return Promise.all(
+    hits.map(async (hit) => {
+      const readIf = await readIfOf(hit, activeRoot);
+      return readIf === undefined ? hit : { ...hit, readIf };
+    }),
+  );
+}
+
+/**
  * Handoff archives restate session records, which have their own class, and
  * were served 15 times and opened 0 times in the week to 2026-09-23 (TP-331).
  * `search` still finds them; only the unasked-for related block drops them.
@@ -138,10 +170,11 @@ async function searchOpenIndex(
   });
   const kept = result.hits
     .filter((hit) => !exclude.has(hit.ref) && servedByRelated(hit))
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(toRelatedHit);
   return {
     hits: withinBudget(
-      kept.map(toRelatedHit),
+      await withReadIf(kept, input.activeRoot ?? getActiveRoot()),
       input.budget ?? RELATED_DEFAULT_BUDGET,
       input.render ?? defaultRender,
     ),

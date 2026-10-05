@@ -20,6 +20,7 @@ import {
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
 import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
+import { readIfSuffix } from '../notes/read-if.js';
 import { indexFreshness, READ_FRESH_BUDGET_MS } from '../session-index/freshness.js';
 import { rankNotes, subjectOf, type NoteRanking, type NoteRelevance } from './rank-notes.js';
 import {
@@ -488,8 +489,8 @@ function renderRecentlyDone(
 const DURABLE_NOTES_LIMIT = 12;
 
 function renderNoteLine(note: LoadedNote): string {
-  const { kind, title, created } = note.frontmatter;
-  return `- [${kind}] ${title} (${created})`;
+  const { kind, title, created, read_if: readIf } = note.frontmatter;
+  return `- [${kind}] ${title} (${created})${readIfSuffix(readIf)}`;
 }
 
 function renderDurableNotes(

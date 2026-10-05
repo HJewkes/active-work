@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { runRelated } from '../../src/commands/context-related.js';
+import contextRelatedCmd, { runRelated } from '../../src/commands/context-related.js';
 import type { HitLogEntry, HitLogWriter } from '../../src/search/hit-log.js';
-import { refreshInto, scaffold } from '../workspace-index/fixture.js';
+import { refreshInto, scaffold, writeFile } from '../workspace-index/fixture.js';
 
 /**
  * `context.related` as the spawn broker calls it: naming a trigger is what
@@ -114,5 +114,30 @@ describe('context.related', () => {
     );
 
     expect(result.degraded.filter((entry) => entry.source === 'index')).toEqual([]);
+  });
+
+  it.each([
+    { scenario: 'omits readIf for a note without read_if', frontmatter: '', expected: undefined },
+    {
+      scenario: 'carries readIf for a note with read_if',
+      frontmatter: 'read_if: migrating the sample store\n',
+      expected: 'migrating the sample store',
+    },
+  ])('the served response $scenario', async ({ frontmatter, expected }) => {
+    writeFile(
+      root,
+      'alpha/sources/notes/2026-09-02-alpha-lesson.md',
+      `---\nkind: process\ntitle: The alpha lesson\ncreated: 2026-09-02\n${frontmatter}---\n\nThe alpha lesson body.\n`,
+    );
+
+    const result = await runRelated(
+      { for: 'the alpha lesson', initiative: 'alpha' },
+      { activeRoot: root, dbPath, hitLog: recorder().writer },
+    );
+    const served = contextRelatedCmd.result.parse(result);
+
+    const note = served.hits.find((hit) => hit.ref === 'note:alpha/2026-09-02-alpha-lesson.md');
+    expect(note?.readIf).toBe(expected);
+    expect(note && 'readIf' in note).toBe(expected !== undefined);
   });
 });
