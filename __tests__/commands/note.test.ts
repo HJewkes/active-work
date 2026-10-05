@@ -31,6 +31,13 @@ function noteFixture(kind: string, title: string, created: string): string {
   return `---\nkind: ${kind}\ntitle: ${title}\ncreated: '${created}'\n---\n\n${title} body\n`;
 }
 
+async function writeCharter(root: string, humanOnly: string[]): Promise<void> {
+  const file = path.join(root, 'claude-channels', 'sources', 'autonomy', 'charter.md');
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const list = `human_only_initiatives: ${JSON.stringify(humanOnly)}\n`;
+  await fs.writeFile(file, `---\n${list}---\nCharter\n`, 'utf8');
+}
+
 describe('note.add', () => {
   it('round-trips through the validating writer', async () => {
     await withTempActiveRoot(async (root) => {
@@ -178,7 +185,7 @@ describe('note.list', () => {
   it('returns empty when the notes directory is absent', async () => {
     await withTempActiveRoot(async () => {
       const res = await noteListCmd.run({ slug: SLUG }, ctx);
-      expect(res).toEqual({ notes: [], errors: [] });
+      expect(res).toMatchObject({ notes: [], errors: [] });
     });
   });
 
@@ -195,6 +202,54 @@ describe('note.list', () => {
       ]);
       expect(res.notes.every((n) => n.mtime !== null)).toBe(true);
       expect(res.errors.map((e) => [e.slug, e.filename])).toEqual([['beta', '2026-01-05-bad.md']]);
+    });
+  });
+
+  it('flags notes from a human-only initiative across initiatives', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeNoteIn(root, 'alpha', '2026-01-02-a.md', noteFixture('fyi', 'A', '2026-01-02'));
+      await writeNoteIn(root, 'beta', '2026-03-01-b.md', noteFixture('plan', 'B', '2026-03-01'));
+      await writeCharter(root, ['beta']);
+      const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+
+      const res = await noteListCmd.run({ all_initiatives: true }, context);
+
+      expect(res.human_only_known).toBe(true);
+      expect(res.notes.map((n) => [n.slug, n.human_only])).toEqual([
+        ['beta', true],
+        ['alpha', false],
+      ]);
+      expect(context.warnings).toEqual([]);
+    });
+  });
+
+  it('flags every note and warns when the charter is unreadable', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeNoteIn(root, 'alpha', '2026-01-02-a.md', noteFixture('fyi', 'A', '2026-01-02'));
+      await writeNoteIn(root, 'beta', '2026-03-01-b.md', noteFixture('plan', 'B', '2026-03-01'));
+      const charter = path.join(root, 'claude-channels', 'sources', 'autonomy', 'charter.md');
+      await fs.mkdir(path.dirname(charter), { recursive: true });
+      await fs.writeFile(charter, '---\nhuman_only_initiatives: not-a-list\n---\n', 'utf8');
+      const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+
+      const res = await noteListCmd.run({ all_initiatives: true }, context);
+
+      expect(res.human_only_known).toBe(false);
+      expect(res.notes).toHaveLength(2);
+      expect(res.notes.every((n) => n.human_only)).toBe(true);
+      expect(context.warnings.join('\n')).toMatch(/human_only_initiatives/);
+    });
+  });
+
+  it('flags a single human-only initiative listed by slug', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeNoteIn(root, 'beta', '2026-03-01-b.md', noteFixture('plan', 'B', '2026-03-01'));
+      await writeCharter(root, ['beta']);
+
+      const res = await noteListCmd.run({ slug: 'beta' }, ctx);
+
+      expect(res.human_only_known).toBe(true);
+      expect(res.notes.map((n) => n.human_only)).toEqual([true]);
     });
   });
 

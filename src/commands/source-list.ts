@@ -6,7 +6,7 @@ import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
 import { scanNestedSources, type InventoryFile } from '../workspace-index/inventory.js';
 import { itemId, mtimeOf } from '../workspace-index/wire.js';
 import { defineCommand } from '../registry/index.js';
-import { resolveListSlugs } from './_list-scope.js';
+import { humanOnlyPredicate, resolveListSlugs } from './_list-scope.js';
 
 const SourceTypeSchema = z.enum(['pr', 'deepdive', 'session', 'pointer']);
 
@@ -29,6 +29,8 @@ const SourceEntrySchema = z.object({
   title: z.string(),
   // Under a `sources/` subdirectory: listed by path, not in the search index.
   nested: z.boolean(),
+  // The charter marks the initiative human-only; true for all when the charter is unreadable.
+  human_only: z.boolean(),
   // ISO timestamp; null only when the file vanished mid-listing.
   mtime: z.string().nullable(),
 });
@@ -39,19 +41,27 @@ const ResultSchema = z.object({
   // when the brief keeps no reference list at all. Prefixed `<slug>: ` when
   // more than one initiative is listed.
   drift: z.array(z.string()),
+  // False when the charter is unreadable; every source is then flagged human_only.
+  human_only_known: z.boolean(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 type Entry = z.infer<typeof SourceEntrySchema>;
 
-async function topLevelEntry(slug: string, entry: SourceEntry): Promise<Entry> {
+type UnflaggedEntry = Omit<Entry, 'human_only'>;
+
+async function topLevelEntry(slug: string, entry: SourceEntry): Promise<UnflaggedEntry> {
   const id = itemId(slug, 'sources', entry.filename);
   return { id, slug, ...entry, nested: false, mtime: await mtimeOf(entry.path) };
 }
 
 /** Titles come from markdown headings only; other nested files are named by their path. */
-async function nestedEntry(slug: string, sourcesDir: string, file: InventoryFile): Promise<Entry> {
+async function nestedEntry(
+  slug: string,
+  sourcesDir: string,
+  file: InventoryFile,
+): Promise<UnflaggedEntry> {
   const filename = path.relative(sourcesDir, file.absolutePath).split(path.sep).join('/');
   const base = path.basename(filename);
   const title = base.endsWith('.md') ? await readTitle(file.absolutePath, base) : filename;
@@ -67,7 +77,7 @@ async function nestedEntry(slug: string, sourcesDir: string, file: InventoryFile
   };
 }
 
-async function entriesForSlug(slug: string, nested: boolean): Promise<Entry[]> {
+async function unflaggedEntries(slug: string, nested: boolean): Promise<UnflaggedEntry[]> {
   const initiativeDir = getInitiativeDir(slug);
   const listed = await listSources(initiativeDir);
   const top = await Promise.all(listed.map((entry) => topLevelEntry(slug, entry)));
@@ -75,6 +85,11 @@ async function entriesForSlug(slug: string, nested: boolean): Promise<Entry[]> {
   const sourcesDir = path.join(initiativeDir, 'sources');
   const files = await scanNestedSources(getActiveRoot(), slug);
   return [...top, ...(await Promise.all(files.map((f) => nestedEntry(slug, sourcesDir, f))))];
+}
+
+async function entriesForSlug(slug: string, nested: boolean, humanOnly: boolean): Promise<Entry[]> {
+  const entries = await unflaggedEntries(slug, nested);
+  return entries.map((entry) => ({ ...entry, human_only: humanOnly }));
 }
 
 async function driftForSlug(slug: string, prefixed: boolean): Promise<string[]> {
@@ -107,17 +122,22 @@ export default defineCommand<Args, Result>({
     usage:
       'active-work source list <slug>|--all-initiatives [--type pr|deepdive|session|pointer] [--nested]',
   },
-  async run(args) {
-    const slugs = await resolveListSlugs('source.list', args);
+  async run(args, ctx) {
+    const [slugs, humanOnly] = await Promise.all([
+      resolveListSlugs('source.list', args),
+      humanOnlyPredicate(getActiveRoot(), ctx.warnings),
+    ]);
+    const nested = args.nested ?? false;
     const prefixed = slugs.length > 1;
     const [entries, drift] = await Promise.all([
-      Promise.all(slugs.map((slug) => entriesForSlug(slug, args.nested ?? false))),
+      Promise.all(slugs.map((slug) => entriesForSlug(slug, nested, humanOnly.isHumanOnly(slug)))),
       Promise.all(slugs.map((slug) => driftForSlug(slug, prefixed))),
     ]);
     const sources = entries.flat();
     return {
       sources: args.type ? sources.filter((entry) => entry.type === args.type) : sources,
       drift: drift.flat(),
+      human_only_known: humanOnly.known,
     };
   },
 });

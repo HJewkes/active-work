@@ -18,6 +18,20 @@ async function writeSourceFiles(root: string, names: string[]): Promise<string> 
   return dir;
 }
 
+async function writeSourcesIn(root: string, slugs: string[]): Promise<void> {
+  for (const slug of slugs) {
+    await fs.mkdir(path.join(root, slug, 'sources'), { recursive: true });
+    await fs.writeFile(path.join(root, slug, 'sources', `pr-1-${slug}.md`), '# PR\n', 'utf8');
+  }
+}
+
+async function writeCharter(root: string, humanOnly: string[]): Promise<void> {
+  const file = path.join(root, 'claude-channels', 'sources', 'autonomy', 'charter.md');
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const list = `human_only_initiatives: ${JSON.stringify(humanOnly)}\n`;
+  await fs.writeFile(file, `---\n${list}---\nCharter\n`, 'utf8');
+}
+
 describe('source.list', () => {
   it.each(['..', '.', 'Bad Slug', 'a/b'])('refuses the invalid slug %j', async (slug) => {
     await withEmptyActiveRoot(async () => {
@@ -90,7 +104,7 @@ describe('source.list', () => {
     await withTempActiveRoot(async (root) => {
       await fs.rm(path.join(root, SLUG, 'sources'), { recursive: true, force: true });
       const res = await sourceListCmd.run({ slug: SLUG }, ctx);
-      expect(res).toEqual({ sources: [], drift: [] });
+      expect(res).toMatchObject({ sources: [], drift: [] });
     });
   });
 
@@ -131,6 +145,49 @@ describe('source.list', () => {
       expect(res.sources.every((s) => s.mtime !== null && !Number.isNaN(Date.parse(s.mtime)))).toBe(
         true,
       );
+    });
+  });
+
+  it('flags sources from a human-only initiative across initiatives', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeSourcesIn(root, ['alpha', 'beta']);
+      await writeCharter(root, ['beta']);
+      const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+
+      const res = await sourceListCmd.run({ all_initiatives: true }, context);
+
+      expect(res.human_only_known).toBe(true);
+      expect(res.sources.map((s) => [s.slug, s.human_only])).toEqual([
+        ['alpha', false],
+        ['beta', true],
+      ]);
+      expect(context.warnings).toEqual([]);
+    });
+  });
+
+  it('flags every source and warns when the charter is unreadable', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeSourcesIn(root, ['alpha', 'beta']);
+      const context = { activeRoot: '', warnings: [] as string[], format: 'json' as const };
+
+      const res = await sourceListCmd.run({ all_initiatives: true }, context);
+
+      expect(res.human_only_known).toBe(false);
+      expect(res.sources).toHaveLength(2);
+      expect(res.sources.every((s) => s.human_only)).toBe(true);
+      expect(context.warnings.join('\n')).toMatch(/human_only_initiatives/);
+    });
+  });
+
+  it('flags a single human-only initiative listed by slug', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      await writeSourcesIn(root, ['beta']);
+      await writeCharter(root, ['beta']);
+
+      const res = await sourceListCmd.run({ slug: 'beta' }, ctx);
+
+      expect(res.human_only_known).toBe(true);
+      expect(res.sources.map((s) => s.human_only)).toEqual([true]);
     });
   });
 
