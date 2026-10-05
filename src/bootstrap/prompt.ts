@@ -19,6 +19,12 @@ import {
   type OpenLoop,
   type ResolvedLoop,
 } from '../sessions/open-loops.js';
+import {
+  buildWorkerRollup,
+  isWorkerRecord,
+  renderWorkerRollup,
+  type RollupInput,
+} from '../sessions/worker-rollup.js';
 import { loadNotesFromDir, type LoadedNote, type LoadedNotes } from '../notes/note-file.js';
 import { readIfSuffix } from '../notes/read-if.js';
 import { indexFreshness, READ_FRESH_BUDGET_MS } from '../session-index/freshness.js';
@@ -1029,13 +1035,28 @@ function selectParallelSessions(
   );
 }
 
+const WORKER_ROLLUP_MAX_LINES = 5;
+
+function toRollupInput(s: LoadedSession): RollupInput {
+  return {
+    sessionId: s.frontmatter.session_id,
+    ended: s.frontmatter.ended,
+    track: s.frontmatter.track,
+    body: s.body,
+  };
+}
+
 function renderParallelSessions(sessions: LoadedSession[]): string | null {
   if (sessions.length === 0) return null;
-  const lines = sessions.map((s) => {
+  const workers = sessions.filter((s) => isWorkerRecord(toRollupInput(s)));
+  const others = sessions.filter((s) => !workers.includes(s));
+  const lines = others.map((s) => {
     const { ended, session_id, track } = s.frontmatter;
     const summary = firstLine(s.body) ?? '_(empty session body)_';
     return `- ${endedDate(ended)} (${track}, ${session_id}) — ${summary}`;
   });
+  const rollup = buildWorkerRollup(workers.map(toRollupInput));
+  lines.push(...renderWorkerRollup(rollup, WORKER_ROLLUP_MAX_LINES));
   return `# Parallel sessions since then\n${lines.join('\n')}`;
 }
 
