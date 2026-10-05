@@ -5,22 +5,33 @@ import { SessionFrontmatterSchema } from '../schemas/session.js';
 import type { SessionFrontmatter } from '../schemas/session.js';
 import { getInitiativeDir } from '../utils/paths.js';
 import { parseFrontmatter } from '../utils/gray-matter-io.js';
+import {
+  SESSION_KINDS,
+  WorkerRollupSchema,
+  buildWorkerRollup,
+  sessionKindOf,
+  type RollupInput,
+  type SessionKind,
+} from '../sessions/worker-rollup.js';
 import { defineCommand } from '../registry/index.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
   limit: z.number().int().positive().optional(),
+  kind: z.enum(SESSION_KINDS).optional(),
 });
 
 const SessionEntrySchema = z.object({
   filename: z.string(),
   frontmatter: SessionFrontmatterSchema,
   first_line: z.string(),
+  kind: z.enum(SESSION_KINDS),
 });
 
 const ResultSchema = z.object({
   sessions: z.array(SessionEntrySchema),
   errors: z.array(z.object({ filename: z.string(), error: z.string() })),
+  workers: WorkerRollupSchema,
 });
 
 const DEFAULT_LIMIT = 100;
@@ -40,6 +51,7 @@ interface ListEntry {
   filename: string;
   frontmatter: SessionFrontmatter;
   first_line: string;
+  kind: SessionKind;
 }
 
 interface ListError {
@@ -98,8 +110,12 @@ export default defineCommand({
         long: '--limit',
         description: `Maximum sessions to return (default ${DEFAULT_LIMIT})`,
       },
+      kind: {
+        long: '--kind',
+        description: `Only sessions of this kind (${SESSION_KINDS.join(', ')})`,
+      },
     },
-    usage: 'session.list <slug> [--limit N]',
+    usage: 'session.list <slug> [--limit N] [--kind worker|adhoc|sidecar|canonical]',
   },
   async run(args) {
     const limit = args.limit ?? DEFAULT_LIMIT;
@@ -107,17 +123,23 @@ export default defineCommand({
     const filenames = await listSessionFiles(sessionsDir);
 
     const entries: ListEntry[] = [];
+    const rollupInputs: RollupInput[] = [];
     const errors: ListError[] = [];
 
     for (const filename of filenames) {
       const fullPath = path.join(sessionsDir, filename);
       try {
         const { frontmatter, body } = await readSession(fullPath);
-        entries.push({
-          filename,
-          frontmatter,
-          first_line: extractFirstLine(body),
-        });
+        const input: RollupInput = {
+          sessionId: frontmatter.session_id,
+          ended: frontmatter.ended,
+          track: frontmatter.track,
+          body,
+        };
+        const kind = sessionKindOf(input);
+        if (args.kind !== undefined && kind !== args.kind) continue;
+        rollupInputs.push(input);
+        entries.push({ filename, frontmatter, first_line: extractFirstLine(body), kind });
       } catch (err) {
         errors.push({
           filename,
@@ -132,6 +154,10 @@ export default defineCommand({
       return bEnded - aEnded;
     });
 
-    return { sessions: entries.slice(0, limit), errors };
+    return {
+      sessions: entries.slice(0, limit),
+      errors,
+      workers: buildWorkerRollup(rollupInputs),
+    };
   },
 });
