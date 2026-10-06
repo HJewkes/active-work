@@ -220,6 +220,20 @@ describe('runDoctor', () => {
     expect(statusOf(report.checks, 'supervision')).toBe('warn');
   });
 
+  it('shows the unit path and active state for a supervisor', async () => {
+    const report = await runDoctor({
+      ...healthyDeps(),
+      supervisorActive: async () => ({
+        kind: 'systemd',
+        active: true,
+        path: '/h/.config/systemd/user/active-work.service',
+      }),
+    });
+    const check = report.checks.find((c) => c.name === 'supervision');
+    expect(check?.status).toBe('ok');
+    expect(check?.detail).toContain('/h/.config/systemd/user/active-work.service');
+  });
+
   it('treats a platform without supervisor integration as ok', async () => {
     const report = await runDoctor({
       ...healthyDeps(),

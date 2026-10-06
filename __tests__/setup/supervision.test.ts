@@ -21,3 +21,19 @@ describe('getSupervisor', () => {
     expect(getSupervisor('aix')).toBeNull();
   });
 });
+
+describe('Supervisor.render (print-only path)', () => {
+  it('renders the systemd unit without touching the host', () => {
+    const text = getSupervisor('linux')!.render({
+      cliEntry: '/x/cli.js',
+      paths: { activeRoot: '', stateRoot: '', configRoot: '', homeDir: '/tmp/u' },
+    });
+    expect(text).toContain('[Service]');
+    expect(text).toContain('/x/cli.js mcp serve');
+  });
+
+  it('renders the launchd plist on darwin', () => {
+    const text = getSupervisor('darwin')!.render({ cliEntry: '/x/cli.js' });
+    expect(text).toContain('<plist');
+  });
+});

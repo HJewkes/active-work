@@ -10,6 +10,7 @@ import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import { spawn as nodeSpawn } from 'node:child_process';
 import os from 'node:os';
+import { daemonPath } from './supervision-shared.js';
 import { STEP_SUPERVISION } from './supervision-systemd.js';
 import type { SetupDeps, StepPaths, StepResult } from './steps.js';
 
@@ -70,20 +71,6 @@ export interface PlistOptions {
   homeDir: string;
   port?: number;
   nodeBin?: string;
-}
-
-const SYSTEM_PATH_DIRS = [
-  '/opt/homebrew/bin',
-  '/usr/local/bin',
-  '/usr/bin',
-  '/bin',
-  '/usr/sbin',
-  '/sbin',
-];
-
-/** launchd starts jobs with a bare PATH; child tools such as `gh` need Homebrew's bin (TP-327). */
-function daemonPath(nodeBin: string): string {
-  return [...new Set([nodePath.dirname(nodeBin), ...SYSTEM_PATH_DIRS])].join(':');
 }
 
 /** Render the launchd plist for the daemon. */

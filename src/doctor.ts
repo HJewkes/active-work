@@ -64,7 +64,7 @@ export interface DoctorDeps {
   /** Probe the daemon; defaults to reading the pid file + `/health`. */
   probeDaemon?: () => Promise<DaemonProbe>;
   /** Whether a supervisor already owns the daemon; null when unsupported. */
-  supervisorActive?: () => Promise<{ kind: string; active: boolean } | null>;
+  supervisorActive?: () => Promise<{ kind: string; active: boolean; path?: string } | null>;
   /** Sweep session leases; defaults to the real `.sessions/` walk. */
   sweepLeases?: (activeRoot: string) => Promise<LeaseSweepResult>;
 }
@@ -118,10 +118,15 @@ async function defaultProbeDaemon(): Promise<DaemonProbe> {
 async function defaultSupervisorActive(): Promise<{
   kind: string;
   active: boolean;
+  path?: string;
 } | null> {
   const supervisor = getSupervisor();
   if (!supervisor) return null;
-  return { kind: supervisor.kind, active: await supervisor.isActive({}) };
+  return {
+    kind: supervisor.kind,
+    active: await supervisor.isActive({}),
+    path: supervisor.definitionPath(os.homedir()),
+  };
 }
 
 function parseMajor(version: string): number {
@@ -262,13 +267,18 @@ async function checkSupervisor(deps: DoctorDeps): Promise<DoctorCheck> {
       detail: `no supervisor integration for ${process.platform} (optional)`,
     };
   }
+  const where = result.path ? ` (${result.path})` : '';
   if (result.active) {
-    return { name: 'supervision', status: 'ok', detail: `${result.kind} agent is loaded` };
+    return {
+      name: 'supervision',
+      status: 'ok',
+      detail: `${result.kind} agent is loaded${where}`,
+    };
   }
   return {
     name: 'supervision',
     status: 'warn',
-    detail: `${result.kind} supervisor not active — re-run \`active-work setup\` to enable`,
+    detail: `${result.kind} supervisor not active${where} — re-run \`active-work setup\` to enable`,
   };
 }
 

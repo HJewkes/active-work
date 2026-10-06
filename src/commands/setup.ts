@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { runSetup } from '../setup/steps.js';
+import { getSupervisor } from '../setup/supervision.js';
 import { color } from '../utils/color.js';
 
 /**
@@ -14,6 +15,7 @@ import { color } from '../utils/color.js';
 const ArgsSchema = z.object({
   update: z.boolean().optional(),
   yes: z.boolean().optional(),
+  printSupervision: z.boolean().optional(),
 });
 type Args = z.infer<typeof ArgsSchema>;
 
@@ -28,6 +30,7 @@ const StepSchema = z.object({
 const ResultSchema = z.object({
   banner: z.string(),
   steps: z.array(StepSchema),
+  definition: z.string().optional(),
 });
 type Result = z.infer<typeof ResultSchema>;
 
@@ -59,10 +62,23 @@ export default defineCommand<Args, Result>({
         short: '-y',
         description: 'Skip all prompts; use defaults (no daemon, no ingestion).',
       },
+      printSupervision: {
+        long: '--print-supervision',
+        description:
+          'Print the systemd unit / launchd plist setup would install, then exit without changing anything.',
+      },
     },
   },
   async run(args, ctx) {
     const banner = color.bold('active-work setup');
+    if (args.printSupervision) {
+      const supervisor = getSupervisor();
+      if (!supervisor)
+        throw new Error(`no daemon supervisor is integrated for ${process.platform}`);
+      const definition = supervisor.render({});
+      if (ctx.format !== 'json') process.stdout.write(definition);
+      return { banner, steps: [], definition };
+    }
     if (ctx.format !== 'json') {
       process.stderr.write(banner + '\n');
     }

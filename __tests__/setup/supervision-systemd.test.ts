@@ -8,6 +8,7 @@ import {
   UNIT_NAME,
   getUnitPath,
   getUnitDir,
+  getLogDir,
   renderUnit,
   stepInstallSupervision,
   uninstallSupervision,
@@ -88,18 +89,24 @@ function restorePlatform(): void {
 
 describe('renderUnit', () => {
   it('produces a valid [Unit]/[Service]/[Install] structure', () => {
-    const unit = renderUnit({ cliEntry: '/opt/aw/dist/cli.js', nodeBin: '/usr/bin/node' });
+    const unit = renderUnit({
+      cliEntry: '/opt/aw/dist/cli.js',
+      homeDir: '/home/u',
+      nodeBin: '/usr/bin/node',
+    });
     expect(unit).toContain('[Unit]');
     expect(unit).toContain('[Service]');
     expect(unit).toContain('[Install]');
     expect(unit).toContain('ExecStart=/usr/bin/node /opt/aw/dist/cli.js mcp serve');
-    expect(unit).toContain('Restart=on-failure');
+    expect(unit).toContain('Restart=always');
+    expect(unit).toContain('RestartSec=5');
     expect(unit).toContain('WantedBy=default.target');
   });
 
   it('appends --port when overridden', () => {
     const unit = renderUnit({
       cliEntry: '/x/cli.js',
+      homeDir: '/home/u',
       nodeBin: '/x/node',
       port: 7777,
     });
@@ -109,9 +116,43 @@ describe('renderUnit', () => {
   it('quotes paths containing spaces', () => {
     const unit = renderUnit({
       cliEntry: '/path with spaces/cli.js',
+      homeDir: '/home/u',
       nodeBin: '/usr/bin/node',
     });
     expect(unit).toContain('ExecStart=/usr/bin/node "/path with spaces/cli.js" mcp serve');
+  });
+});
+
+describe('renderUnit environment and logs', () => {
+  const base = { cliEntry: '/x/cli.js', homeDir: '/home/u', nodeBin: '/opt/node/bin/node' };
+
+  it('sets a quoted PATH led by the node dir, like the plist', () => {
+    expect(renderUnit(base)).toContain(
+      'Environment="PATH=/opt/node/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+    );
+  });
+
+  it('bakes ACTIVE_ROOT when given, quoting a value with a space', () => {
+    const unit = renderUnit({ ...base, activeRoot: '/srv/aw data/root' });
+    expect(unit).toContain('Environment="ACTIVE_ROOT=/srv/aw data/root"');
+  });
+
+  it('writes no ACTIVE_ROOT line when unset', () => {
+    expect(renderUnit(base)).not.toContain('ACTIVE_ROOT');
+  });
+
+  it('doubles % so systemd does not expand it as a specifier', () => {
+    expect(renderUnit({ ...base, activeRoot: '/d/50%/aw' })).toContain('ACTIVE_ROOT=/d/50%%/aw');
+  });
+
+  it('appends stdout and stderr to daemon log files under the state dir', () => {
+    const unit = renderUnit(base);
+    expect(unit).toContain('StandardOutput=append:/home/u/.local/state/active-work/daemon.out.log');
+    expect(unit).toContain('StandardError=append:/home/u/.local/state/active-work/daemon.err.log');
+  });
+
+  it('adds no --port by default, matching the plist', () => {
+    expect(renderUnit(base)).toContain('mcp serve\n');
   });
 });
 
@@ -183,6 +224,17 @@ describe('stepInstallSupervision', () => {
     const content = await fs.readFile(unitPath, 'utf8');
     expect(content).toContain('ExecStart=');
     expect(content).toContain('/x/cli.js mcp serve');
+  });
+
+  it('creates the log dir and bakes ACTIVE_ROOT from the environment', async () => {
+    setPlatform('linux');
+    vi.stubEnv('ACTIVE_ROOT', '/data/Application Support/active-work');
+    const { spawn } = makeFakeSpawn();
+    await stepInstallSupervision({ paths, spawn, cliEntry: '/x/cli.js' });
+    vi.unstubAllEnvs();
+    expect(existsSync(getLogDir(paths.homeDir))).toBe(true);
+    const content = await fs.readFile(getUnitPath(paths.homeDir), 'utf8');
+    expect(content).toContain('Environment="ACTIVE_ROOT=/data/Application Support/active-work"');
   });
 
   it('still succeeds but notes when enabling linger fails', async () => {
@@ -301,7 +353,7 @@ describe('uninstallSupervision', () => {
     await fs.mkdir(getUnitDir(paths.homeDir), { recursive: true });
     await fs.writeFile(
       getUnitPath(paths.homeDir),
-      renderUnit({ cliEntry: '/x/cli.js', nodeBin: '/usr/bin/node' }),
+      renderUnit({ cliEntry: '/x/cli.js', homeDir: paths.homeDir, nodeBin: '/usr/bin/node' }),
       'utf8',
     );
     const { spawn, calls } = makeFakeSpawn();
