@@ -135,6 +135,7 @@ export default defineCommand({
           ended: frontmatter.ended,
           track: frontmatter.track,
           body,
+          ...(frontmatter.worker ? { kind: 'worker' as const, worker: frontmatter.worker } : {}),
         };
         const kind = sessionKindOf(input);
         if (args.kind !== undefined && kind !== args.kind) continue;

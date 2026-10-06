@@ -5,6 +5,7 @@ import {
   type NextStep,
   type SessionResolve,
 } from '../schemas/session.js';
+import type { WorkerRecord } from '../schemas/worker-record.js';
 import { getInitiativeDir } from '../utils/paths.js';
 import { writeFrontmatter } from '../utils/gray-matter-io.js';
 import { ValidationError } from '../errors.js';
@@ -19,6 +20,8 @@ export interface SessionWriteInput {
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
   no_loops?: true;
+  /** A spawned worker's facts; also stamps `kind: worker`. */
+  worker?: WorkerRecord;
   /**
    * Override the resolved active root. Migrations are handed the root they
    * operate on as an argument and must not fall back to the process-wide
@@ -117,6 +120,7 @@ export async function writeSessionFile(input: SessionWriteInput): Promise<Sessio
       next_steps: input.next_steps ?? [],
       resolves: input.resolves ?? [],
       ...(input.no_loops === true ? { no_loops: true } : {}),
+      ...(input.worker === undefined ? {} : { kind: 'worker', worker: input.worker }),
     },
     input.body,
     SessionFrontmatterSchema,

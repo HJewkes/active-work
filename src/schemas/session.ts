@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WorkerRecordSchema } from './worker-record.js';
 
 // Accepts standard ISO 8601 datetimes with timezone (Z or ±HH:MM), optional fractional seconds.
 const ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -98,6 +99,10 @@ export const SessionFrontmatterSchema = z
     // it. Built-in subagents are linked in the miner index instead, where the
     // relationship *is* derivable from the transcript tree.
     parent_session_id: SessionIdSchema.optional(),
+    // Written by `wrap --facts` for a spawned worker (TP-1709). Absent on every
+    // other record; readers then fall back to inferring the kind.
+    kind: z.literal('worker').optional(),
+    worker: WorkerRecordSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const started = new Date(value.started).getTime();
@@ -116,6 +121,13 @@ export const SessionFrontmatterSchema = z
         code: 'custom',
         path: ['no_loops'],
         message: 'no_loops cannot be set alongside next_steps or resolves',
+      });
+    }
+    if ((value.kind === 'worker') !== (value.worker !== undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['worker'],
+        message: 'kind: worker and the worker block are written together',
       });
     }
   });

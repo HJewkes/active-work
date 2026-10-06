@@ -89,6 +89,7 @@
     "@clack/prompts": "^1.4.0",
     "@hono/node-server": "^2.0.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@titan-design/agent-protocol": "^0.5.0",
     "@titan-design/cluster": "^0.1.2",
     "@titan-design/daemon": "^0.1.4",
     "@titan-design/decider": "0.3.0",
@@ -112,6 +113,10 @@
     "zod": "^4.4.3"
   },
   "pnpm": {
+    "overrides": {
+      "proxy-addr": "^2.0.8",
+      "tinypool": "^2.1.2"
+    },
     "onlyBuiltDependencies": [
       "better-sqlite3"
     ]

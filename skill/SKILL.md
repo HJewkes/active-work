@@ -68,6 +68,8 @@ Write `--next-steps` text that does **not** restate the task or PR the loop targ
 
 Every category needs an **explicit** answer. Omitting a flag is an error, not a shortcut — the assert-nothing forms (`--no-loops`, `--no-notes`, `--no-tasks`) exist so that "there was nothing here" is a claim you make deliberately rather than by forgetting. Use them only when they are actually true.
 
+`--facts <json>` is for recording a spawned worker, and `hooks agent-chat-complete` is what passes it. You do not pass it yourself. It stamps `kind: worker` and stores the object as the record's `worker` block. The object holds `facts`, the `WorkerFacts` from `@titan-design/agent-protocol/worker-facts` (agent, profile, spawner, exit, plus taskId, report, pr, tokens and costUsd when known). It can also hold `resolves`, the task ids the report names as closed, done or merged. A worker with no `facts.report` must carry `outcome: "exited-no-report"` and may carry `last_action`; a worker with a report must not carry an outcome. `authored` is optional (`continuations`, `open_questions`, `next_why`) and capped at 1,500 characters.
+
 **active-work is the source of truth — not `~/.claude` memory, not `CLAUDE.md`.** A process lesson written to memory is invisible to the next session on this initiative and to every other surface. File it as a note.
 
 Then report back plainly: the counts of what was filed and updated, and that you are ready to end. `wrap` returns exactly that receipt — relay it rather than re-deriving it.
