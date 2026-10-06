@@ -2,8 +2,7 @@
  * Linux user-level systemd supervision for the active-work daemon.
  *
  * Installs a `~/.config/systemd/user/active-work.service` unit that runs
- * `active-work mcp serve` in the foreground; systemd handles restart on
- * crash. Also enables lingering (`loginctl enable-linger`) so the daemon
+ * `active-work mcp serve` in the foreground; systemd restarts it on any exit. Also enables lingering (`loginctl enable-linger`) so the daemon
  * survives logout and starts at boot. On non-Linux platforms every step here
  * is a no-op.
  */
@@ -11,6 +10,7 @@ import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import { spawn as nodeSpawn } from 'node:child_process';
 import os from 'node:os';
+import { daemonPath } from './supervision-shared.js';
 import type { SetupDeps, StepPaths, StepResult } from './steps.js';
 
 export const UNIT_NAME = 'active-work.service';
@@ -52,13 +52,22 @@ export function getUnitPath(homeDir: string): string {
 
 export interface UnitOptions {
   cliEntry: string;
+  homeDir: string;
   port?: number;
   nodeBin?: string;
+  /** Baked in as ACTIVE_ROOT so Linux hosts can keep data outside the XDG default. */
+  activeRoot?: string;
+}
+
+/** Same file names as the launchd plist, under the XDG state dir the daemon's pid file already uses. */
+export function getLogDir(homeDir: string): string {
+  return nodePath.join(homeDir, '.local', 'state', 'active-work');
 }
 
 /** Render the systemd unit file content. */
 export function renderUnit(opts: UnitOptions): string {
   const node = opts.nodeBin ?? process.execPath;
+  const logDir = getLogDir(opts.homeDir);
   const args = ['mcp', 'serve'];
   if (opts.port !== undefined) {
     args.push('--port', String(opts.port));
@@ -75,14 +84,24 @@ export function renderUnit(opts: UnitOptions): string {
     '[Service]',
     'Type=simple',
     `ExecStart=${execStart}`,
-    'Restart=on-failure',
+    'Restart=always',
     'RestartSec=5',
     'Environment=NODE_ENV=production',
+    quoteEnv('PATH', daemonPath(node)),
+    ...(opts.activeRoot ? [quoteEnv('ACTIVE_ROOT', opts.activeRoot)] : []),
+    `StandardOutput=append:${nodePath.join(logDir, 'daemon.out.log')}`,
+    `StandardError=append:${nodePath.join(logDir, 'daemon.err.log')}`,
     '',
     '[Install]',
     'WantedBy=default.target',
     '',
   ].join('\n');
+}
+
+/** `Environment="KEY=value"`; `%` is a unit specifier, so it is doubled. */
+function quoteEnv(key: string, value: string): string {
+  const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%');
+  return `Environment="${key}=${escaped}"`;
 }
 
 function quoteIfNeeded(value: string): string {
@@ -164,10 +183,16 @@ export async function stepInstallSupervision(
   }
   const unitDir = getUnitDir(paths.homeDir);
   const unitPath = getUnitPath(paths.homeDir);
-  const desired = renderUnit({ cliEntry, port: opts.port });
+  const desired = renderUnit({
+    cliEntry,
+    homeDir: paths.homeDir,
+    port: opts.port,
+    activeRoot: process.env.ACTIVE_ROOT,
+  });
 
   try {
     await fs.mkdir(unitDir, { recursive: true });
+    await fs.mkdir(getLogDir(paths.homeDir), { recursive: true });
     let existing: string | null = null;
     try {
       existing = await fs.readFile(unitPath, 'utf8');
