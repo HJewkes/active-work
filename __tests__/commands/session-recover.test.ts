@@ -7,7 +7,8 @@ import sessionRecover, { recoverUnwrapped } from '../../src/commands/session-rec
 import open from '../../src/commands/open.js';
 import prompt from '../../src/commands/prompt.js';
 import sessionList from '../../src/commands/session-list.js';
-import type { RecoverTarget } from '../../src/sessions/recover-session.js';
+import { RECENT_WRITE_MS, type RecoverTarget } from '../../src/sessions/recover-session.js';
+import wrap from '../../src/commands/wrap.js';
 import { RECOVERED_FIRST_LINE } from '../../src/sessions/recovered-body.js';
 import type { CommandContext } from '../../src/registry/index.js';
 import { parseFrontmatter } from '../../src/utils/gray-matter-io.js';
@@ -37,11 +38,19 @@ function makeCtx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
 }
 
-function transcriptFor(activeRoot: string, sessionId: string, ageMs = 0): string {
+/** Older than the recency guard, so a transcript is recoverable unless a test says otherwise. */
+const QUIET_MS = RECENT_WRITE_MS + 60_000;
+
+function transcriptFor(
+  activeRoot: string,
+  sessionId: string,
+  ageMs = QUIET_MS,
+  entrypoint = 'cli',
+): string {
   const cwd = path.join(activeRoot, SLUG);
   const projectDir = path.join(claudeHome, 'projects', claudeProjectSlug(cwd));
-  const file = writeUnwrappedTranscript({ projectDir, sessionId, cwd });
   const when = new Date(Date.now() - ageMs);
+  const file = writeUnwrappedTranscript({ projectDir, sessionId, cwd, entrypoint, endsAt: when });
   utimesSync(file, when, when);
   return file;
 }
@@ -53,7 +62,36 @@ function target(activeRoot: string, live: string[] = []): RecoverTarget {
     track: 'canonical',
     roots: [{ root: path.join(claudeHome, 'projects'), account: 'default' }],
     liveSessionIds: () => Promise.resolve(new Set(live)),
+    now: new Date(),
   };
+}
+
+async function withConfigDirs(fn: () => Promise<void>): Promise<void> {
+  const previous = process.env.CLAUDE_CONFIG_DIRS;
+  process.env.CLAUDE_CONFIG_DIRS = claudeHome;
+  try {
+    await fn();
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIRS;
+    else process.env.CLAUDE_CONFIG_DIRS = previous;
+  }
+}
+
+async function wrapCanonical(activeRoot: string, ended: string): Promise<void> {
+  await wrap.run(
+    wrap.args.parse({
+      slug: SLUG,
+      session_id: 'wrapped-later',
+      started: ended,
+      ended,
+      track: 'canonical',
+      body: 'Wrapped after the older transcript ended.\n',
+      no_loops: true,
+      no_notes: true,
+      no_tasks: true,
+    }),
+    makeCtx(activeRoot),
+  );
 }
 
 async function readRecord(file: string): Promise<string> {
@@ -68,7 +106,7 @@ describe('session recover', () => {
   it('writes a generated record for the newest transcript with no record and no process', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       const transcript = transcriptFor(activeRoot, CRASHED);
-      const older = transcriptFor(activeRoot, OLDER, 60_000);
+      const older = transcriptFor(activeRoot, OLDER, QUIET_MS + 60_000);
 
       const result = await recoverUnwrapped(target(activeRoot), undefined);
 
@@ -83,7 +121,7 @@ describe('session recover', () => {
 
   it('lists the handoff file, filed tasks and last owner messages from the transcript', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      transcriptFor(activeRoot, CRASHED);
+      const transcript = transcriptFor(activeRoot, CRASHED);
 
       const result = await recoverUnwrapped(target(activeRoot), undefined);
 
@@ -95,15 +133,19 @@ describe('session recover', () => {
       expect(record).toContain('- worker-one: Pick up the first follow-up.');
       for (const message of OWNER_MESSAGES) expect(record).toContain(`> ${message}`);
       expect(record).toContain(`> ${LAST_ASSISTANT_TEXT}`);
-      const started = (await readFrontmatter(result.recovered!.path)).started;
-      expect(new Date(started as string).toISOString()).toBe('2026-10-05T21:00:01.000Z');
+      const lines = (await readRecord(transcript)).trim().split('\n');
+      const at = (raw: string | undefined) =>
+        (JSON.parse(raw ?? '{}') as { timestamp: string }).timestamp;
+      const { started, ended } = await readFrontmatter(result.recovered!.path);
+      expect(new Date(started as string).toISOString()).toBe(at(lines[0]));
+      expect(new Date(ended as string).toISOString()).toBe(at(lines.at(-1)));
     });
   });
 
   it('skips a transcript a running claude process still holds', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       transcriptFor(activeRoot, RUNNING);
-      transcriptFor(activeRoot, CRASHED, 60_000);
+      transcriptFor(activeRoot, CRASHED, QUIET_MS + 60_000);
 
       const result = await recoverUnwrapped(target(activeRoot, [RUNNING]), undefined);
 
@@ -112,14 +154,75 @@ describe('session recover', () => {
     });
   });
 
-  it('recovers nothing once every transcript has a record', async () => {
+  it('writes nothing on a second run and says why', async () => {
     await withTempActiveRoot(async (activeRoot) => {
       transcriptFor(activeRoot, CRASHED);
+      transcriptFor(activeRoot, OLDER, QUIET_MS + 60_000);
       await recoverUnwrapped(target(activeRoot), undefined);
+      const before = await fs.readdir(path.join(activeRoot, SLUG, 'sessions'));
 
       const again = await recoverUnwrapped(target(activeRoot), undefined);
 
-      expect(again).toEqual({ recovered: null, unrecorded: [], unrecorded_total: 0 });
+      expect(again.recovered).toBeNull();
+      expect(again.note).toMatch(/nothing was written/);
+      expect(await fs.readdir(path.join(activeRoot, SLUG, 'sessions'))).toEqual(before);
+    });
+  });
+
+  it('skips a transcript that ended before the newest record on its track', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      transcriptFor(activeRoot, OLDER, QUIET_MS + 60 * 60_000);
+      const ended = new Date(Date.now() - QUIET_MS - 30 * 60_000).toISOString();
+      await wrapCanonical(activeRoot, ended);
+
+      const result = await recoverUnwrapped(target(activeRoot), undefined);
+
+      expect(result.recovered).toBeNull();
+      expect(result.note).toContain(`newest canonical record (${ended})`);
+      expect(result.unrecorded).toEqual([{ session_id: OLDER, transcript: expect.any(String) }]);
+    });
+  });
+
+  it('skips a headless sdk-cli transcript', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      transcriptFor(activeRoot, RUNNING, QUIET_MS, 'sdk-cli');
+      transcriptFor(activeRoot, CRASHED, QUIET_MS + 60_000);
+
+      const result = await recoverUnwrapped(target(activeRoot), undefined);
+
+      expect(result.recovered?.session_id).toBe(CRASHED);
+    });
+  });
+
+  it('skips a transcript written in the last ten minutes, by default and by name', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      transcriptFor(activeRoot, RUNNING, 60_000);
+
+      const result = await recoverUnwrapped(target(activeRoot), undefined);
+
+      expect(result.recovered).toBeNull();
+      await expect(recoverUnwrapped(target(activeRoot), RUNNING)).rejects.toThrow(
+        /last 10 minutes/,
+      );
+    });
+  });
+
+  it('aborts without writing when a pid file cannot be parsed', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withConfigDirs(async () => {
+        transcriptFor(activeRoot, CRASHED);
+        await fs.mkdir(path.join(claudeHome, 'sessions'));
+        await fs.writeFile(path.join(claudeHome, 'sessions', '123.json'), '{truncated');
+
+        const run = sessionRecover.run(
+          sessionRecover.args.parse({ slug: SLUG }),
+          makeCtx(activeRoot),
+        );
+
+        await expect(run).rejects.toThrow(/123\.json is not valid JSON/);
+        const sessions = await fs.readdir(path.join(activeRoot, SLUG, 'sessions'));
+        expect(sessions.some((f) => f.includes(CRASHED))).toBe(false);
+      });
     });
   });
 
@@ -141,11 +244,9 @@ describe('session recover', () => {
 
   it('finds transcripts and live processes through CLAUDE_CONFIG_DIRS by default', async () => {
     await withTempActiveRoot(async (activeRoot) => {
-      const previous = process.env.CLAUDE_CONFIG_DIRS;
-      process.env.CLAUDE_CONFIG_DIRS = claudeHome;
-      try {
+      await withConfigDirs(async () => {
         transcriptFor(activeRoot, RUNNING);
-        transcriptFor(activeRoot, CRASHED, 60_000);
+        transcriptFor(activeRoot, CRASHED, QUIET_MS + 60_000);
         await fs.mkdir(path.join(claudeHome, 'sessions'));
         const pidFile = { pid: process.pid, sessionId: RUNNING };
         await fs.writeFile(path.join(claudeHome, 'sessions', 'x.json'), JSON.stringify(pidFile));
@@ -156,10 +257,7 @@ describe('session recover', () => {
         );
 
         expect(result.recovered?.session_id).toBe(CRASHED);
-      } finally {
-        if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIRS;
-        else process.env.CLAUDE_CONFIG_DIRS = previous;
-      }
+      });
     });
   });
 

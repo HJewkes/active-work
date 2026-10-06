@@ -7,6 +7,7 @@ import { liveSessionIdsFrom } from '../sessions/live-claude-sessions.js';
 import {
   findUnrecordedTranscripts,
   pickNamed,
+  pickNewest,
   writeRecoveredRecord,
   type RecoverTarget,
 } from '../sessions/recover-session.js';
@@ -33,6 +34,8 @@ const ResultSchema = z.object({
   // Other transcripts with no record and no live process, newest first, capped.
   unrecorded: z.array(z.object({ session_id: z.string(), transcript: z.string() })),
   unrecorded_total: z.number().int().nonnegative(),
+  // Why nothing was recovered; set only when `recovered` is null.
+  note: z.string().optional(),
 });
 
 const UNRECORDED_SHOWN = 10;
@@ -48,6 +51,7 @@ function defaultTarget(args: Args, activeRoot: string): RecoverTarget {
     track: args.track,
     roots,
     liveSessionIds: liveSessionIdsFrom(roots.map((r) => path.dirname(r.root))),
+    now: new Date(),
   };
 }
 
@@ -57,8 +61,10 @@ export async function recoverUnwrapped(
   sessionId: string | undefined,
 ): Promise<Result> {
   const found = await findUnrecordedTranscripts(target);
-  const chosen =
-    sessionId === undefined ? found.candidates[0] : pickNamed(found, sessionId, target.slug);
+  const { chosen, reason } =
+    sessionId === undefined
+      ? await pickNewest(target, found)
+      : { chosen: pickNamed(found, sessionId, target.slug), reason: undefined };
   const others = found.candidates.filter((t) => t !== chosen);
   const rest = {
     unrecorded: others
@@ -66,7 +72,7 @@ export async function recoverUnwrapped(
       .map((t) => ({ session_id: t.sessionId, transcript: t.path })),
     unrecorded_total: others.length,
   };
-  if (!chosen) return { recovered: null, ...rest };
+  if (!chosen) return { recovered: null, ...rest, ...(reason ? { note: reason } : {}) };
   const written = await writeRecoveredRecord(target, chosen);
   return {
     recovered: { session_id: chosen.sessionId, ...written, transcript: chosen.path },
@@ -78,8 +84,9 @@ export default defineCommand<Args, Result>({
   name: 'session.recover',
   description:
     'Rebuild the record of a session that ended without a wrap (a reboot, a crash, a closed ' +
-    "window) from its transcript, with no model call. Picks the initiative's newest transcript " +
-    'that has no session record and no running claude process, or the one --session names. ' +
+    "window) from its transcript, with no model call. Picks the initiative's newest interactive " +
+    'transcript that ended after its newest record on the track, has no record and no running ' +
+    'claude process, and was not written in the last 10 minutes; or the one --session names. ' +
     'The record is marked generated and names its transcript; open and prompt label it recovered.',
   args: ArgsSchema,
   result: ResultSchema,

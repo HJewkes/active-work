@@ -16,7 +16,13 @@ export interface UnwrappedTranscriptInput {
   sessionId: string;
   /** The initiative directory the session launched in. */
   cwd: string;
+  /** `cli` for an interactive session, `sdk-cli` for a headless one. */
+  entrypoint?: string;
+  /** When the last line was written; lines are one second apart before it. */
+  endsAt?: Date;
 }
+
+export const DEFAULT_ENDS_AT = new Date('2026-10-05T21:00:11.000Z');
 
 export const OWNER_MESSAGES = [
   'Write the handoff before the reboot.',
@@ -26,21 +32,18 @@ export const OWNER_MESSAGES = [
 
 export const LAST_ASSISTANT_TEXT = 'Handoff written, tasks filed, branch pushed.';
 
-let tick = 0;
+type Header = Pick<UnwrappedTranscriptInput, 'sessionId' | 'cwd'> & { entrypoint: string };
 
-function stamp(): string {
-  tick += 1;
-  return new Date(Date.UTC(2026, 9, 5, 21, 0, tick)).toISOString();
+function line(header: Header, type: 'user' | 'assistant', content: unknown) {
+  return { type, ...header, message: { role: type, content } };
 }
 
-function line(
-  sessionId: string,
-  cwd: string,
-  type: 'user' | 'assistant',
-  content: unknown,
-): Record<string, unknown> {
-  const timestamp = stamp();
-  return { type, sessionId, cwd, uuid: `u-${tick}`, timestamp, message: { role: type, content } };
+function stamped(lines: Record<string, unknown>[], endsAt: Date): Record<string, unknown>[] {
+  return lines.map((l, i) => ({
+    ...l,
+    uuid: `u-${i + 1}`,
+    timestamp: new Date(endsAt.getTime() - (lines.length - 1 - i) * 1000).toISOString(),
+  }));
 }
 
 function toolUse(id: string, name: string, input: Record<string, unknown>): unknown[] {
@@ -51,8 +54,9 @@ function bash(id: string, command: string): unknown[] {
   return toolUse(id, 'Bash', { command });
 }
 
-function body(sessionId: string, cwd: string): Record<string, unknown>[] {
-  const at = (type: 'user' | 'assistant', content: unknown) => line(sessionId, cwd, type, content);
+function body(header: Header): Record<string, unknown>[] {
+  const { cwd } = header;
+  const at = (type: 'user' | 'assistant', content: unknown) => line(header, type, content);
   return [
     at('user', OWNER_MESSAGES[0]),
     at(
@@ -88,10 +92,16 @@ function body(sessionId: string, cwd: string): Record<string, unknown>[] {
 
 /** Write the transcript and return its path. */
 export function writeUnwrappedTranscript(input: UnwrappedTranscriptInput): string {
-  tick = 0;
   mkdirSync(input.projectDir, { recursive: true });
   const file = path.join(input.projectDir, `${input.sessionId}.jsonl`);
-  const lines = body(input.sessionId, input.cwd).map((l) => JSON.stringify(l));
+  const header = {
+    sessionId: input.sessionId,
+    cwd: input.cwd,
+    entrypoint: input.entrypoint ?? 'cli',
+  };
+  const lines = stamped(body(header), input.endsAt ?? DEFAULT_ENDS_AT).map((l) =>
+    JSON.stringify(l),
+  );
   writeFileSync(file, `${lines.join('\n')}\n`, 'utf8');
   return file;
 }

@@ -57,9 +57,31 @@ describe('liveSessionIdsFrom', () => {
     expect(await probe()).toEqual(new Set(['unknown-comm']));
   });
 
-  it('skips malformed pid files and missing config dirs', async () => {
+  it('aborts on a pid file that is not valid JSON', async () => {
     writeFileSync(path.join(configDir, 'sessions', 'bad.json'), '{not json');
-    const probe = liveSessionIdsFrom([configDir, path.join(configDir, 'missing')], {
+    const probe = liveSessionIdsFrom([configDir], { isAlive: alive([]), getComm: () => null });
+
+    await expect(probe()).rejects.toThrow(/bad\.json is not valid JSON/);
+  });
+
+  it('aborts on a pid file without a pid and session id', async () => {
+    writeFileSync(path.join(configDir, 'sessions', 'odd.json'), JSON.stringify({ pid: 'x' }));
+    const probe = liveSessionIdsFrom([configDir], { isAlive: alive([]), getComm: () => null });
+
+    await expect(probe()).rejects.toThrow(/odd\.json has no numeric pid/);
+  });
+
+  it('aborts when the sessions directory cannot be listed', async () => {
+    const notADir = path.join(configDir, 'file-config');
+    mkdirSync(notADir);
+    writeFileSync(path.join(notADir, 'sessions'), 'not a directory');
+    const probe = liveSessionIdsFrom([notADir], { isAlive: alive([]), getComm: () => null });
+
+    await expect(probe()).rejects.toThrow(/could not be listed/);
+  });
+
+  it('treats a config dir with no sessions directory as having no live sessions', async () => {
+    const probe = liveSessionIdsFrom([path.join(configDir, 'missing')], {
       isAlive: alive([]),
       getComm: () => null,
     });

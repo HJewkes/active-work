@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { ValidationError } from '../errors.js';
 import { getProcessCommand, isProcessAlive } from '../server/lifecycle.js';
 
 /**
@@ -28,28 +29,59 @@ interface PidFile {
   sessionId: string;
 }
 
-function parsePidFile(raw: string): PidFile | null {
-  try {
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    const { pid, sessionId } = data;
-    if (typeof pid !== 'number' || typeof sessionId !== 'string') return null;
-    return { pid, sessionId };
-  } catch {
-    return null;
-  }
+function isMissing(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
+function unreadable(file: string, why: string): ValidationError {
+  return new ValidationError(
+    `Cannot tell whether a claude process holds a session: ${file} ${why}. ` +
+      'Nothing was recovered; fix or remove the file and run again.',
+  );
+}
+
+function parsePidFile(file: string, raw: string): PidFile {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw unreadable(file, 'is not valid JSON');
+  }
+  const { pid, sessionId } = (data ?? {}) as Record<string, unknown>;
+  if (typeof pid !== 'number' || typeof sessionId !== 'string') {
+    throw unreadable(file, 'has no numeric pid and string sessionId');
+  }
+  return { pid, sessionId };
+}
+
+/** A file gone between readdir and read is a process that just exited: dead, not unknown. */
+async function readPidFile(file: string): Promise<PidFile | null> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (isMissing(err)) return null;
+    throw unreadable(file, `could not be read (${(err as Error).message})`);
+  }
+  return parsePidFile(file, raw);
+}
+
+/**
+ * Fails closed: a pid file or directory that cannot be read aborts the run,
+ * since treating it as dead could recover a session that is still running.
+ */
 async function readPidFiles(configDir: string): Promise<PidFile[]> {
   const dir = path.join(configDir, 'sessions');
   let names: string[];
   try {
     names = await fs.readdir(dir);
-  } catch {
-    return [];
+  } catch (err) {
+    if (isMissing(err)) return [];
+    throw unreadable(dir, `could not be listed (${(err as Error).message})`);
   }
   const files: PidFile[] = [];
   for (const name of names.filter((n) => n.endsWith('.json'))) {
-    const parsed = parsePidFile(await fs.readFile(path.join(dir, name), 'utf8').catch(() => ''));
+    const parsed = await readPidFile(path.join(dir, name));
     if (parsed) files.push(parsed);
   }
   return files;

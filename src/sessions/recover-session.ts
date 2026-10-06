@@ -16,6 +16,7 @@ import {
 } from '@titan-design/session-read';
 import { NotFoundError, ValidationError } from '../errors.js';
 import type { LiveSessionIds } from './live-claude-sessions.js';
+import { loadSessionsFromDir } from './open-loops.js';
 import { renderRecoveredBody } from './recovered-body.js';
 import { writeSessionFile, type SessionWriteResult } from './session-file.js';
 
@@ -33,7 +34,15 @@ export interface RecoverTarget {
   track: 'canonical' | 'sidecar' | 'adhoc';
   roots: TranscriptRoot[];
   liveSessionIds: LiveSessionIds;
+  now: Date;
 }
+
+/** A transcript written this recently may belong to a session still mid-turn. */
+export const RECENT_WRITE_MS = 10 * 60_000;
+
+/** Claude stamps `entrypoint` on every line; the first few kilobytes always carry one. */
+const ENTRYPOINT_SCAN_BYTES = 64 * 1024;
+const HEADLESS_ENTRYPOINT = 'sdk-cli';
 
 async function transcriptsIn(root: TranscriptRoot, dir: string): Promise<InitiativeTranscript[]> {
   let names: string[];
@@ -82,6 +91,7 @@ export interface UnrecordedTranscripts {
   candidates: InitiativeTranscript[];
   recorded: Set<string>;
   live: Set<string>;
+  fresh: Set<string>;
   all: InitiativeTranscript[];
 }
 
@@ -90,15 +100,74 @@ export async function findUnrecordedTranscripts(
 ): Promise<UnrecordedTranscripts> {
   const all = await initiativeTranscripts(target);
   const filenames = await recordedFilenames(target.activeRoot, target.slug);
-  const recorded = new Set(
-    all.filter((t) => filenames.some((f) => f.includes(t.sessionId))).map((t) => t.sessionId),
-  );
+  const ids = (list: InitiativeTranscript[]) => new Set(list.map((t) => t.sessionId));
+  const recorded = ids(all.filter((t) => filenames.some((f) => f.includes(t.sessionId))));
+  const fresh = ids(all.filter((t) => target.now.getTime() - t.mtimeMs < RECENT_WRITE_MS));
   const live = await target.liveSessionIds();
-  const candidates = all.filter((t) => !recorded.has(t.sessionId) && !live.has(t.sessionId));
-  return { candidates, recorded, live, all };
+  const candidates = all.filter(
+    (t) => !recorded.has(t.sessionId) && !live.has(t.sessionId) && !fresh.has(t.sessionId),
+  );
+  return { candidates, recorded, live, fresh, all };
 }
 
-/** The named session, refused when it is recorded, running, or not this initiative's. */
+/** The `entrypoint` of the transcript's first line that has one; null when none does. */
+async function entrypointOf(file: string): Promise<string | null> {
+  const handle = await fs.open(file, 'r');
+  try {
+    const buffer = Buffer.alloc(ENTRYPOINT_SCAN_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, ENTRYPOINT_SCAN_BYTES, 0);
+    for (const line of buffer.toString('utf8', 0, bytesRead).split('\n')) {
+      const match = /"entrypoint":"([^"]+)"/.exec(line);
+      if (match) return match[1] ?? null;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** When the newest record on the target's track ended; null when it has none. */
+async function newestRecordEnded(target: RecoverTarget): Promise<number | null> {
+  const { sessions } = await loadSessionsFromDir(path.join(target.activeRoot, target.slug));
+  const ends = sessions
+    .filter((s) => s.frontmatter.track === target.track)
+    .map((s) => new Date(s.frontmatter.ended).getTime());
+  return ends.length === 0 ? null : Math.max(...ends);
+}
+
+export interface NewestPick {
+  chosen: InitiativeTranscript | undefined;
+  /** Why nothing was chosen. */
+  reason?: string;
+}
+
+/**
+ * The newest interactive transcript that ended after the newest record on the
+ * target's track. Older ones are history, not the last session, so a second
+ * run finds nothing rather than walking back through them. A transcript's
+ * mtime stands for when it ended.
+ */
+export async function pickNewest(
+  target: RecoverTarget,
+  found: UnrecordedTranscripts,
+): Promise<NewestPick> {
+  const since = await newestRecordEnded(target);
+  for (const t of found.candidates.filter((c) => since === null || c.mtimeMs > since)) {
+    if ((await entrypointOf(t.path)) !== HEADLESS_ENTRYPOINT) return { chosen: t };
+  }
+  const after =
+    since === null
+      ? ''
+      : ` ended after the newest ${target.track} record (${new Date(since).toISOString()})`;
+  return {
+    chosen: undefined,
+    reason:
+      `No unrecorded interactive transcript${after}; nothing was written. ` +
+      'Name an older one with --session.',
+  };
+}
+
+/** The named session, refused when it is recorded, running, fresh, or not this initiative's. */
 export function pickNamed(
   found: UnrecordedTranscripts,
   sessionId: string,
@@ -118,6 +187,12 @@ export function pickNamed(
   if (found.live.has(sessionId)) {
     throw new ValidationError(
       `Session ${sessionId} is still running in a claude process; wrap it there instead.`,
+    );
+  }
+  if (found.fresh.has(sessionId)) {
+    throw new ValidationError(
+      `Session ${sessionId} wrote its transcript in the last ${RECENT_WRITE_MS / 60_000} minutes ` +
+        'and may still be running; try again later.',
     );
   }
   return transcript;
