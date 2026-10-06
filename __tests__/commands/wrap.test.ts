@@ -88,6 +88,18 @@ async function readArtifacts(activeRoot: string): Promise<Record<string, unknown
   return YAML.parse(raw) as Record<string, unknown>;
 }
 
+const WORKER_FACTS = {
+  facts: {
+    agent: 'sc-sx-1-sample',
+    profile: 'implementer',
+    spawner: 'sample-coord',
+    taskId: 'SX-1',
+    report: { messageId: 'm-1', kind: 'status', text: 'Status: DONE\nSX-1 merged.' },
+    exit: { code: 0, signal: null, inferred: false },
+  },
+  resolves: ['SX-1'],
+};
+
 beforeEach(() => {
   setGitRunner(NO_GIT);
 });
@@ -331,6 +343,44 @@ describe('wrap', () => {
       await expect(
         wrap.run(baseArgs({ slug: 'no-such-initiative' }), makeCtx(activeRoot)),
       ).rejects.toThrow(/Initiative not found/);
+    });
+  });
+
+  it('stamps kind: worker and stores the --facts block it validated', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const facts = JSON.stringify(WORKER_FACTS);
+      const result = await wrap.run(
+        baseArgs({ track: 'adhoc', no_loops: true, facts }),
+        makeCtx(activeRoot),
+      );
+
+      const front = await readFrontmatter(result.path);
+      expect(front.kind).toBe('worker');
+      expect(front.worker).toMatchObject({ facts: { taskId: 'SX-1' }, resolves: ['SX-1'] });
+    });
+  });
+
+  it('accepts --facts without the optional authored block and rejects one over its cap', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const tooLong = { ...WORKER_FACTS, authored: { next_why: 'x'.repeat(1500) } };
+      await expect(
+        wrap.run(baseArgs({ no_loops: true, facts: JSON.stringify(tooLong) }), makeCtx(activeRoot)),
+      ).rejects.toThrow(/Invalid --facts: .*1500/s);
+    });
+  });
+
+  it('rejects --facts that claims no report alongside a report', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const contradictory = { ...WORKER_FACTS, outcome: 'exited-no-report' };
+      await expect(
+        wrap.run(
+          baseArgs({ no_loops: true, facts: JSON.stringify(contradictory) }),
+          makeCtx(activeRoot),
+        ),
+      ).rejects.toThrow(/contradicts a facts.report/);
+      await expect(
+        wrap.run(baseArgs({ no_loops: true, facts: '{nope' }), makeCtx(activeRoot)),
+      ).rejects.toThrow(/--facts must be a JSON object/);
     });
   });
 

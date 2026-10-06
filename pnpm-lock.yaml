@@ -17,6 +17,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@titan-design/agent-protocol':
+        specifier: ^0.5.0
+        version: 0.5.0(zod@4.4.3)
       '@titan-design/cluster':
         specifier: ^0.1.2
         version: 0.1.2
@@ -707,6 +710,15 @@ packages:
 
   '@titan-design/agent-protocol@0.4.0':
     resolution: {integrity: sha512-b8RGZOcPnz5t/6GPUL+kRySW6ufrK2/5fMpTp5e0G14umcBW4wFH3n9a36KFI+ubEyom06Ik4Cdi0rNY52VzGw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@titan-design/agent-protocol@0.5.0':
+    resolution: {integrity: sha512-I+DkBeGGUIEeEURHg9JnK8Eh2JV67mkYLHiK+PRADqlzePDy01/8DquBnDCmevgIHpX5OwCZL4+U7/TN9OGAHg==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -2903,6 +2915,10 @@ snapshots:
       zod: 4.4.3
 
   '@titan-design/agent-protocol@0.4.0(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
+  '@titan-design/agent-protocol@0.5.0(zod@4.4.3)':
     optionalDependencies:
       zod: 4.4.3
 

@@ -5,7 +5,9 @@ import sessionList from '../../src/commands/session-list.js';
 import { assembleBootstrap } from '../../src/bootstrap/prompt.js';
 import {
   buildWorkerRollup,
+  isWorkerRecord,
   renderWorkerRollup,
+  sessionKindOf,
   spawnerOf,
   type RollupInput,
 } from '../../src/sessions/worker-rollup.js';
@@ -20,6 +22,34 @@ const stub = (agent: string, minute: number): RollupInput => ({
   track: 'adhoc',
   body: `Peer "${agent}" (profile worker) (spawned via agent-chat) exited with code 0.\n`,
 });
+
+function factsRecord(
+  agent: string,
+  minute: number,
+  opts: { report?: string; pr?: boolean; lastAction?: string },
+): RollupInput {
+  const facts = {
+    agent,
+    profile: 'implementer',
+    spawner: 'sample-coord',
+    report: opts.report
+      ? { messageId: `m-${agent}`, kind: 'status' as const, text: opts.report }
+      : null,
+    pr: opts.pr ? { repo: 'example-org/sample-repo', number: minute } : null,
+    exit: { code: 0, signal: null, inferred: false },
+  };
+  const noReport = opts.report === undefined;
+  return {
+    sessionId: `${agent}-s${minute}`,
+    ended: `2026-06-01T10:${String(minute).padStart(2, '0')}:00Z`,
+    track: 'adhoc',
+    body: opts.report ?? `Peer "${agent}" sent no report (exit code 0).`,
+    kind: 'worker',
+    worker: noReport
+      ? { facts, outcome: 'exited-no-report', last_action: opts.lastAction }
+      : { facts },
+  };
+}
 
 function ctx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
@@ -79,6 +109,36 @@ describe('buildWorkerRollup', () => {
   it('ignores records that are not worker stubs', () => {
     const note: RollupInput = { ...stub('aa-one', 1), body: 'Hand-written wrap.\n' };
     expect(buildWorkerRollup([note]).spawners).toEqual([]);
+  });
+
+  it('attributes a facts record to its spawner and counts it by its report', () => {
+    const rollup = buildWorkerRollup([
+      factsRecord('w1', 1, { report: 'Status: DONE\nSX-1 merged.', pr: true }),
+      factsRecord('w2', 2, { report: 'Status: DONE\nPR open for review.', pr: true }),
+      factsRecord('w3', 3, { report: 'Status: BLOCKED\nNo access.' }),
+      factsRecord('w4', 4, { lastAction: 'Bash: pnpm test' }),
+    ]);
+
+    expect(rollup.spawners).toHaveLength(1);
+    expect(rollup.spawners[0]).toMatchObject({
+      spawner: 'sample-coord',
+      total: 4,
+      merged: 1,
+      open_pr: 1,
+      concerns: 1,
+      no_report: 1,
+    });
+    expect(rollup.spawners[0]?.exceptions.map((e) => [e.agent, e.outcome, e.summary])).toEqual([
+      ['w4', 'no_report', 'Bash: pnpm test'],
+      ['w3', 'concerns', 'Status: BLOCKED'],
+    ]);
+  });
+
+  it('lets an explicit kind win over the stub inference', () => {
+    const record = factsRecord('zz-not-a-prefix', 1, { report: 'Status: DONE' });
+    expect(isWorkerRecord(record)).toBe(true);
+    expect(sessionKindOf(record)).toBe('worker');
+    expect(buildWorkerRollup([record]).spawners[0]?.spawner).toBe('sample-coord');
   });
 });
 

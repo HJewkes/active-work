@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { WorkerRecord } from '../schemas/worker-record.js';
 
 /**
  * Worker-session roll-up (TP-1710). `active-work hooks agent-chat-complete`
@@ -7,10 +8,11 @@ import { z } from 'zod';
  * counts by outcome; `session list` returns the result as data and the
  * bootstrap renders the same value.
  *
- * Today's records carry no facts block, so every stub counts as "no report".
- * Records that hold a report (merged / open PR / concerns) are counted into
- * those buckets once the facts schema lands; the counts are already part of
- * the result shape so consumers need not change.
+ * A stub record carries no facts, so it counts as "no report". A record with
+ * a `worker` block (TP-1709) is attributed to `facts.spawner` and counted by
+ * its report: a concerning Status is "concerns", a PR the report does not call
+ * merged is "open PR", and any other report is "merged" (landed, nothing left
+ * open).
  */
 
 export const SESSION_KINDS = ['worker', 'adhoc', 'sidecar', 'canonical'] as const;
@@ -22,6 +24,8 @@ const MAX_EXCEPTION_SUMMARY = 100;
 const STUB_PATTERN = /^Peer "([^"]*)"[^\n]*?(?:exited with|exit inferred)/;
 const SPAWNER_PATTERN = /^([A-Za-z]+)[\d-]/;
 const MAX_EXCEPTIONS_PER_SPAWNER = 3;
+const CONCERNS_STATUS = /^Status:\s*(?:DONE_WITH_CONCERNS|BLOCKED|NEEDS_CONTEXT)\b/m;
+const MERGED_WORD = /\bmerged\b/i;
 
 export const WorkerOutcomeSchema = z.enum(['merged', 'open_pr', 'no_report', 'concerns']);
 export type WorkerOutcome = z.infer<typeof WorkerOutcomeSchema>;
@@ -59,6 +63,8 @@ export interface RollupInput {
   ended: string;
   track: 'canonical' | 'sidecar' | 'adhoc';
   body: string;
+  kind?: 'worker';
+  worker?: WorkerRecord;
 }
 
 function firstLineOf(body: string): string {
@@ -77,10 +83,10 @@ export function stubAgentName(body: string): string | null {
 }
 
 export function isWorkerRecord(input: RollupInput): boolean {
-  return stubAgentName(input.body) !== null;
+  return input.kind === 'worker' || stubAgentName(input.body) !== null;
 }
 
-/** A stub record is a worker; everything else is classified by its track. */
+/** An explicit `kind` wins; else a stub record is a worker and the rest go by track. */
 export function sessionKindOf(input: RollupInput): SessionKind {
   return isWorkerRecord(input) ? 'worker' : input.track;
 }
@@ -94,6 +100,42 @@ export function sessionKindOf(input: RollupInput): SessionKind {
 export function spawnerOf(agent: string | null): string {
   const match = agent ? SPAWNER_PATTERN.exec(agent) : null;
   return match ? (match[1] ?? UNATTRIBUTED) : UNATTRIBUTED;
+}
+
+interface WorkerView {
+  agent: string;
+  spawner: string;
+  outcome: WorkerOutcome;
+  summary: string;
+}
+
+function factsOutcome(worker: WorkerRecord): WorkerOutcome {
+  const text = worker.facts.report?.text;
+  if (text === undefined) return 'no_report';
+  if (CONCERNS_STATUS.test(text)) return 'concerns';
+  const merged = MERGED_WORD.test(text) || (worker.resolves?.length ?? 0) > 0;
+  return worker.facts.pr != null && !merged ? 'open_pr' : 'merged';
+}
+
+/** What the roll-up needs from one worker record: its facts if it has them, else the stub line. */
+function workerView(input: RollupInput): WorkerView | null {
+  const { worker } = input;
+  if (worker !== undefined) {
+    return {
+      agent: worker.facts.agent,
+      spawner: worker.facts.spawner,
+      outcome: factsOutcome(worker),
+      summary: worker.last_action ?? firstLineOf(input.body),
+    };
+  }
+  const agent = stubAgentName(input.body);
+  if (agent === null) return null;
+  return {
+    agent,
+    spawner: spawnerOf(agent),
+    outcome: 'no_report',
+    summary: firstLineOf(input.body),
+  };
 }
 
 function emptyRollup(spawner: string): SpawnerRollup {
@@ -121,24 +163,25 @@ export function buildWorkerRollup(inputs: RollupInput[]): WorkerRollup {
   const bySpawner = new Map<string, SpawnerRollup>();
   const newestFirst = [...inputs].sort((a, b) => Date.parse(b.ended) - Date.parse(a.ended));
   for (const input of newestFirst) {
-    const agent = stubAgentName(input.body);
-    if (agent === null) continue;
-    const spawner = spawnerOf(agent);
-    const entry = bySpawner.get(spawner) ?? emptyRollup(spawner);
+    const view = workerView(input);
+    if (view === null) continue;
+    const entry = bySpawner.get(view.spawner) ?? emptyRollup(view.spawner);
     entry.total += 1;
-    entry.no_report += 1;
+    entry[view.outcome] += 1;
+    bySpawner.set(view.spawner, entry);
+    const { outcome } = view;
+    if (outcome !== 'no_report' && outcome !== 'concerns') continue;
     if (entry.exceptions.length < MAX_EXCEPTIONS_PER_SPAWNER) {
       entry.exceptions.push({
         session_id: input.sessionId,
         ended: input.ended,
-        agent: agent || null,
-        outcome: 'no_report',
-        summary: firstLineOf(input.body),
+        agent: view.agent || null,
+        outcome,
+        summary: view.summary,
       });
     } else {
       entry.exceptions_omitted += 1;
     }
-    bySpawner.set(spawner, entry);
   }
   return { spawners: [...bySpawner.values()].sort(compareSpawners) };
 }
