@@ -113,6 +113,7 @@
   },
   "pnpm": {
     "overrides": {
+      "@titan-design/session-graph>@titan-design/session-read": "^0.9.1",
       "proxy-addr": "^2.0.8",
       "tinypool": "^2.1.2"
     },
