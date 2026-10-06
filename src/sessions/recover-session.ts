@@ -57,13 +57,12 @@ async function transcriptsIn(root: TranscriptRoot, dir: string): Promise<Initiat
 }
 
 /** Transcripts of sessions launched in the initiative's directory, newest first. */
-export async function initiativeTranscripts(
-  target: Pick<RecoverTarget, 'activeRoot' | 'slug' | 'roots'>,
-): Promise<InitiativeTranscript[]> {
+async function initiativeTranscripts(target: RecoverTarget): Promise<InitiativeTranscript[]> {
   const projectDir = claudeProjectSlug(path.join(target.activeRoot, target.slug));
   const all: InitiativeTranscript[] = [];
-  for (const root of target.roots)
+  for (const root of target.roots) {
     all.push(...(await transcriptsIn(root, path.join(root.root, projectDir))));
+  }
   return all.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
