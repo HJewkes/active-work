@@ -42,8 +42,8 @@ importers:
         specifier: ^0.11.0
         version: 0.11.0(zod@4.4.3)
       '@titan-design/session-read':
-        specifier: ^0.7.0
-        version: 0.7.0(zod@4.4.3)
+        specifier: ^0.9.1
+        version: 0.9.1(zod@4.4.3)
       '@titan-design/store-sqlite':
         specifier: ^0.3.1
         version: 0.3.1
@@ -714,6 +714,15 @@ packages:
       zod:
         optional: true
 
+  '@titan-design/agent-protocol@0.5.0':
+    resolution: {integrity: sha512-I+DkBeGGUIEeEURHg9JnK8Eh2JV67mkYLHiK+PRADqlzePDy01/8DquBnDCmevgIHpX5OwCZL4+U7/TN9OGAHg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
   '@titan-design/cluster@0.1.2':
     resolution: {integrity: sha512-P7nSpd9JqXMaCIigow5njjbKym+heLVYSUuAVY201VrTFtvERdjtM8gL8AhamHo85dzdFLa6C2KrzZiWt8pnHg==}
     engines: {node: '>=20'}
@@ -799,6 +808,10 @@ packages:
 
   '@titan-design/session-read@0.8.1':
     resolution: {integrity: sha512-vAx0Wq35oYIEFZxwiwaXjYhWH/te3bvT7nBSIWecWOJlquyBwiYJC4KTwBsLbsMXQcXWToqRW8d5i18UfvIVyw==}
+    engines: {node: '>=20'}
+
+  '@titan-design/session-read@0.9.1':
+    resolution: {integrity: sha512-rCl+6XAWc6ITD71uDvo0GM/8Ec/1PlaN1vPueSnoYCrQchrBPBtnJcX43R1EbLJnkFP+ZYQqtaBSi6qKLzXBQA==}
     engines: {node: '>=20'}
 
   '@titan-design/store-sqlite@0.3.1':
@@ -2906,6 +2919,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
+  '@titan-design/agent-protocol@0.5.0(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
   '@titan-design/cluster@0.1.2': {}
 
   '@titan-design/daemon@0.1.4(zod@4.4.3)':
@@ -2997,6 +3014,13 @@ snapshots:
   '@titan-design/session-read@0.8.1(zod@4.4.3)':
     dependencies:
       '@titan-design/agent-protocol': 0.4.0(zod@4.4.3)
+      '@titan-design/locator': 0.2.1
+    transitivePeerDependencies:
+      - zod
+
+  '@titan-design/session-read@0.9.1(zod@4.4.3)':
+    dependencies:
+      '@titan-design/agent-protocol': 0.5.0(zod@4.4.3)
       '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
       - zod
