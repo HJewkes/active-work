@@ -15,6 +15,19 @@ describe('closedTaskIds', () => {
     expect(closedTaskIds('Not closed SX-1. SX-2 not done.\nStatus: DONE SX-3')).toEqual([]);
   });
 
+  it('ignores an id inside a URL', () => {
+    expect(closedTaskIds('Merged https://example.org/tasks/SX-10 into main.')).toEqual([]);
+    expect(closedTaskIds('See https://example.org/browse/SX-10 done')).toEqual([]);
+  });
+
+  it('ignores a close that is only a condition', () => {
+    expect(closedTaskIds('Blocked until SX-11 is merged.')).toEqual([]);
+  });
+
+  it('ignores a close the report says never happened', () => {
+    expect(closedTaskIds('The earlier run never closed SX-14.')).toEqual([]);
+  });
+
   it('lists each id once', () => {
     expect(closedTaskIds('SX-1 done; SX-1 merged')).toEqual(['SX-1']);
   });
