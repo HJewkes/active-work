@@ -22,6 +22,8 @@ export interface SessionWriteInput {
   no_loops?: true;
   /** A spawned worker's facts; also stamps `kind: worker`. */
   worker?: WorkerRecord;
+  generated?: true;
+  transcript?: string;
   /**
    * Override the resolved active root. Migrations are handed the root they
    * operate on as an argument and must not fall back to the process-wide
@@ -121,6 +123,8 @@ export async function writeSessionFile(input: SessionWriteInput): Promise<Sessio
       resolves: input.resolves ?? [],
       ...(input.no_loops === true ? { no_loops: true } : {}),
       ...(input.worker === undefined ? {} : { kind: 'worker', worker: input.worker }),
+      ...(input.generated === true ? { generated: true } : {}),
+      ...(input.transcript !== undefined ? { transcript: input.transcript } : {}),
     },
     input.body,
     SessionFrontmatterSchema,

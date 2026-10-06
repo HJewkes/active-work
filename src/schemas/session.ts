@@ -103,6 +103,11 @@ export const SessionFrontmatterSchema = z
     // other record; readers then fall back to inferring the kind.
     kind: z.literal('worker').optional(),
     worker: WorkerRecordSchema.optional(),
+    // Written only by `session recover` (TP-1711): the record was rebuilt from
+    // the transcript of a session that ended without a wrap, not written by it.
+    generated: z.literal(true).optional(),
+    // The transcript a generated record was read from.
+    transcript: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     const started = new Date(value.started).getTime();
