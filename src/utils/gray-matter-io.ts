@@ -44,9 +44,18 @@ export function parseFrontmatter(raw: string): { data: Record<string, unknown>; 
   return { data: parsed.data, content: parsed.content };
 }
 
-/** Prepend `data` as YAML frontmatter to `body`, parsing `body` with the same safe options. */
+/**
+ * Prepend `data` as YAML frontmatter to `body`. The body is passed as a file
+ * object so gray-matter writes it verbatim: given a string it re-parses it, and
+ * a body that opens with a `---` block would be merged into the frontmatter
+ * after validation (TP-1709).
+ */
 export function stringifyFrontmatter(body: string, data: object): string {
-  return matter.stringify(body, data, SAFE_OPTIONS);
+  return matter.stringify(
+    { content: body, data: {} } as matter.GrayMatterFile<string>,
+    data,
+    SAFE_OPTIONS,
+  );
 }
 
 /**

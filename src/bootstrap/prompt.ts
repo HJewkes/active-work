@@ -1057,6 +1057,7 @@ function toRollupInput(s: LoadedSession): RollupInput {
     ended: s.frontmatter.ended,
     track: s.frontmatter.track,
     body: s.body,
+    ...(s.frontmatter.worker ? { kind: 'worker' as const, worker: s.frontmatter.worker } : {}),
   };
 }
 

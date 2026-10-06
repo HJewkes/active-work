@@ -40,6 +40,17 @@ describe('gray-matter round-trip', () => {
     expect(loaded.body.trim()).toBe(body.trim());
   });
 
+  it('writes a body that opens with its own --- block verbatim, not as frontmatter', async () => {
+    const target = path.join(dir, 'brief.md');
+    const frontmatter = { title: 'Demo', state: 'focused' as const };
+    const body = '---\ntitle: hijacked\nrank: 99\n---\nrest of the body\n';
+    await writeFrontmatter(target, frontmatter, body, Schema);
+
+    const loaded = await readFrontmatter(target, Schema);
+    expect(loaded.frontmatter).toEqual(frontmatter);
+    expect(loaded.body).toBe(body);
+  });
+
   it('rejects writes whose frontmatter fails the schema', async () => {
     const target = path.join(dir, 'invalid.md');
     await expect(
@@ -122,8 +133,10 @@ describe('executable frontmatter (TP-1007)', () => {
   it('does not run a ---js block at the start of a body being written', () => {
     const body = '---js\n{ title: (globalThis.__awMatterProbe = 42) }\n---\nrest\n';
 
-    expect(() => stringifyFrontmatter(body, { title: 'x' })).toThrow(/not allowed/);
+    const written = stringifyFrontmatter(body, { title: 'x' });
+
     expect(probe.__awMatterProbe).toBeUndefined();
+    expect(parseFrontmatter(written)).toEqual({ data: { title: 'x' }, content: body });
   });
 
   it('still parses yaml and json frontmatter', () => {

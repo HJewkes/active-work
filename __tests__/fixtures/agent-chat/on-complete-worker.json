@@ -1,0 +1,21 @@
+{
+  "agentId": "sc-sx-42-widget-fix",
+  "code": 0,
+  "signal": null,
+  "inferred": false,
+  "facts": {
+    "agent": "sc-sx-42-widget-fix",
+    "profile": "implementer",
+    "spawner": "sample-coord",
+    "taskId": "SX-42",
+    "report": {
+      "messageId": "msg-0001",
+      "kind": "status",
+      "text": "Status: DONE\nPR: example-org/sample-repo#17\nHead: 0123456789abcdef0123456789abcdef01234567\nCI: check success, lint success\n\nSX-42 closed: the widget no longer drops its last row. SX-43 stays open for the follow-up."
+    },
+    "pr": { "repo": "example-org/sample-repo", "number": 17 },
+    "tokens": { "input": 120000, "output": 8000, "total": 128000 },
+    "costUsd": 1.25,
+    "exit": { "code": 0, "signal": null, "inferred": false }
+  }
+}

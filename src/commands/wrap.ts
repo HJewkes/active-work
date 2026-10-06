@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { BriefFrontmatterSchema } from '../schemas/brief.js';
 import { NoteKindSchema } from '../schemas/note.js';
+import { WorkerRecordSchema, type WorkerRecord } from '../schemas/worker-record.js';
 import {
   NextStepSchema,
   SessionIdSchema,
@@ -40,6 +41,7 @@ const nextStepsArg = z.union([z.string(), NextStepsSchema]);
 const resolvesArg = z.union([z.string(), ResolvesSchema]);
 const notesArg = z.union([z.string(), NotesSchema]);
 const taskIdsArg = z.union([z.string(), TaskIdsSchema]);
+const factsArg = z.union([z.string(), WorkerRecordSchema]);
 
 const ArgsSchema = z
   .object({
@@ -58,6 +60,7 @@ const ArgsSchema = z
     no_notes: z.boolean().optional(),
     tasks_filed: taskIdsArg.optional(),
     no_tasks: z.boolean().optional(),
+    facts: factsArg.optional(),
   })
   .superRefine((value, ctx) => {
     const hasBody = value.body !== undefined;
@@ -131,6 +134,21 @@ function parseLedger<T>(raw: string | T[] | undefined, schema: z.ZodType<T[]>, f
   const result = schema.safeParse(json);
   if (!result.success) {
     throw new ValidationError(`Invalid --${field}: ${result.error.message}`);
+  }
+  return result.data;
+}
+
+function parseFacts(raw: string | WorkerRecord | undefined): WorkerRecord | undefined {
+  if (raw === undefined || typeof raw !== 'string') return raw;
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new ValidationError('--facts must be a JSON object');
+  }
+  const result = WorkerRecordSchema.safeParse(json);
+  if (!result.success) {
+    throw new ValidationError(`Invalid --facts: ${result.error.message}`);
   }
   return result.data;
 }
@@ -223,6 +241,7 @@ async function writeWrap(
   briefPath: string,
   body: string,
   ledger: Ledger,
+  worker: WorkerRecord | undefined,
 ): Promise<{ path: string; filename: string; updated: string }> {
   const session = await writeSessionFile({
     slug: args.slug,
@@ -235,6 +254,7 @@ async function writeWrap(
     resolves: ledger.resolves,
     ...(args.no_loops === true ? { no_loops: true as const } : {}),
     ...(args.parent_session_id ? { parent_session_id: args.parent_session_id } : {}),
+    ...(worker === undefined ? {} : { worker }),
   });
   try {
     const updated = await stampBriefUpdated(briefPath);
@@ -450,9 +470,17 @@ export default defineCommand<Args, Result>({
         description:
           'Assert that this session filed no tasks. Mutually exclusive with --tasks-filed.',
       },
+      facts: {
+        long: '--facts',
+        description:
+          'JSON object recording a spawned worker; stamps kind: worker and stores it as the worker block: ' +
+          '{"facts":<WorkerFacts from @titan-design/agent-protocol/worker-facts>,"resolves"?:["<task id>"],' +
+          '"outcome"?:"exited-no-report","last_action"?,"authored"?:{"continuations"?,"open_questions"?,"next_why"?}}. ' +
+          'outcome is required exactly when facts.report is absent; authored is optional and capped at 1,500 characters.',
+      },
     },
     usage:
-      'active-work wrap <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar|adhoc] (--body <text> | --body-file <path>) (--next-steps <json> | --resolves <json> | --no-loops) (--notes <json> | --no-notes) (--tasks-filed <json> | --no-tasks)',
+      'active-work wrap <slug> --session-id <id> --started <iso> --ended <iso> [--track canonical|sidecar|adhoc] (--body <text> | --body-file <path>) (--next-steps <json> | --resolves <json> | --no-loops) (--notes <json> | --no-notes) (--tasks-filed <json> | --no-tasks) [--facts <json>]',
   },
   async run(args, ctx) {
     const initiativeDir = path.join(ctx.activeRoot, args.slug);
@@ -469,12 +497,13 @@ export default defineCommand<Args, Result>({
     };
     const notes = parseLedger(args.notes, NotesSchema, 'notes');
     const taskIds = parseLedger(args.tasks_filed, TaskIdsSchema, 'tasks-filed');
+    const worker = parseFacts(args.facts);
     requireAnswers(args, ledger, notes, taskIds);
     const body = args.body ?? (await fs.readFile(args.body_file!, 'utf8'));
 
     return withFileLock(getLockPath(args.slug), async () => {
       await verifyTaskIds(initiativeDir, taskIds);
-      const written = await writeWrap(args, briefPath, body, ledger);
+      const written = await writeWrap(args, briefPath, body, ledger, worker);
       let notePaths: string[] = [];
       let recorded = NOTHING_RECORDED;
       try {

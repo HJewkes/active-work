@@ -5,6 +5,7 @@ import {
   type NextStep,
   type SessionResolve,
 } from '../schemas/session.js';
+import type { WorkerRecord } from '../schemas/worker-record.js';
 import { getInitiativeDir } from '../utils/paths.js';
 import { writeFrontmatter } from '../utils/gray-matter-io.js';
 import { ValidationError } from '../errors.js';
@@ -19,6 +20,8 @@ export interface SessionWriteInput {
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
   no_loops?: true;
+  /** A spawned worker's facts; also stamps `kind: worker`. */
+  worker?: WorkerRecord;
   generated?: true;
   transcript?: string;
   /**
@@ -119,6 +122,7 @@ export async function writeSessionFile(input: SessionWriteInput): Promise<Sessio
       next_steps: input.next_steps ?? [],
       resolves: input.resolves ?? [],
       ...(input.no_loops === true ? { no_loops: true } : {}),
+      ...(input.worker === undefined ? {} : { kind: 'worker', worker: input.worker }),
       ...(input.generated === true ? { generated: true } : {}),
       ...(input.transcript !== undefined ? { transcript: input.transcript } : {}),
     },
