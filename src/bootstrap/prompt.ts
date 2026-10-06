@@ -169,7 +169,8 @@ export interface BootstrapInput {
 export interface BootstrapMetadata {
   slug: string;
   brief_title: string;
-  last_session?: { filename: string; ended: string };
+  /** `recovered` and `transcript` are set for a record `session recover` rebuilt (TP-1711). */
+  last_session?: { filename: string; ended: string; recovered?: true; transcript?: string };
   time_since_last_session_human?: string;
   open_task_count: number;
   open_loop_count: number;
@@ -1012,6 +1013,19 @@ function endedDate(iso: string): string {
 }
 
 /**
+ * Marks for a record `session recover` rebuilt from a transcript (TP-1711),
+ * so the next session does not read facts scraped after a crash as a wrap.
+ */
+function recoveredMarks(fm: LoadedSession['frontmatter']): {
+  label: string;
+  transcriptLine: string;
+} {
+  if (fm.generated !== true) return { label: '', transcriptLine: '' };
+  const transcriptLine = fm.transcript ? `Transcript: \`${fm.transcript}\`\n` : '';
+  return { label: ' (recovered)', transcriptLine };
+}
+
+/**
  * Sessions on a non-canonical track that ended after the narrative session
  * (the one rendered in `# Last session`).
  *
@@ -1420,8 +1434,9 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     // fallback session (no canonical recorded yet) isn't mistaken for
     // mainline continuity.
     const trackLabel = usedFallbackTrack ? ` (${narrativeSession.frontmatter.track})` : '';
+    const recovered = recoveredMarks(narrativeSession.frontmatter);
     sections.push(
-      `# Last session${trackLabel} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${sessionExcerpt}`,
+      `# Last session${trackLabel}${recovered.label} (${ended}, ${narrativeSession.frontmatter.session_id}) — ${timeSinceHuman}\n${recovered.transcriptLine}${sessionExcerpt}`,
     );
   } else {
     sections.push(`# Last session\nNo previous sessions recorded.`);
@@ -1484,9 +1499,12 @@ export async function assembleBootstrap(input: BootstrapInput): Promise<Bootstra
     bootstrap_at: bootstrapAt,
   };
   if (narrativeSession) {
+    const { generated, transcript } = narrativeSession.frontmatter;
     metadata.last_session = {
       filename: `${narrativeSession.sessionFile}.md`,
       ended: narrativeSession.frontmatter.ended,
+      ...(generated === true ? { recovered: true as const } : {}),
+      ...(generated === true && transcript !== undefined ? { transcript } : {}),
     };
   }
   if (timeSinceHuman) {

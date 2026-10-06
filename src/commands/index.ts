@@ -39,6 +39,7 @@ import facetList from './facet-list.js';
 import preflight from './preflight.js';
 import resume from './resume.js';
 import sessionList from './session-list.js';
+import sessionRecover from './session-recover.js';
 import sessionsBrowser from './sessions-browser.js';
 import wrap from './wrap.js';
 
@@ -132,6 +133,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskDelete,
   // sessions
   sessionList,
+  sessionRecover,
   sessionsBrowser,
   loops,
   loopOpen,

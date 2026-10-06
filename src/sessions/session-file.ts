@@ -19,6 +19,8 @@ export interface SessionWriteInput {
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
   no_loops?: true;
+  generated?: true;
+  transcript?: string;
   /**
    * Override the resolved active root. Migrations are handed the root they
    * operate on as an argument and must not fall back to the process-wide
@@ -117,6 +119,8 @@ export async function writeSessionFile(input: SessionWriteInput): Promise<Sessio
       next_steps: input.next_steps ?? [],
       resolves: input.resolves ?? [],
       ...(input.no_loops === true ? { no_loops: true } : {}),
+      ...(input.generated === true ? { generated: true } : {}),
+      ...(input.transcript !== undefined ? { transcript: input.transcript } : {}),
     },
     input.body,
     SessionFrontmatterSchema,

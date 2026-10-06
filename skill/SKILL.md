@@ -45,6 +45,8 @@ active-work loop open <slug> --text "Close slice 1" --kind task --ref SI-12
 
 `active-work loops` can list more open loops than the bootstrap's "Open loops" section. The bootstrap drops a `task` loop as soon as its task is done. `loops` keeps it, marked `trigger_met: ["task-done"]`, until someone resolves it: for a promise, the done task is the cue to act, not proof that the promised action happened. Trust `loops --due` for what is owed, and resolve each loop you settle.
 
+When a session ended with no wrap at all (a reboot, a crash, a closed window), `active-work session recover <slug>` rebuilds its record from the transcript, with no model call. It takes the initiative's newest transcript that has no session record and no running `claude` process (or the one `--session <id>` names) and writes a `generated: true` record listing the last owner messages, the files written, the `active-work` and `git` commands run, and the messages sent. The next bootstrap shows it as `# Last session (recovered)` with its transcript path. It holds facts, not a narrative: read the transcript before you act on it.
+
 ## Wrapping a session
 
 **Assume the process exits the instant `wrap` returns, and that everything not written to disk is lost.** Not summarized in chat — *written*. The user will very likely start a fresh session immediately; the only thing that survives is what is on disk. Chat scrollback does not carry over.

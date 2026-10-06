@@ -98,6 +98,11 @@ export const SessionFrontmatterSchema = z
     // it. Built-in subagents are linked in the miner index instead, where the
     // relationship *is* derivable from the transcript tree.
     parent_session_id: SessionIdSchema.optional(),
+    // Written only by `session recover` (TP-1711): the record was rebuilt from
+    // the transcript of a session that ended without a wrap, not written by it.
+    generated: z.literal(true).optional(),
+    // The transcript a generated record was read from.
+    transcript: z.string().min(1).optional(),
   })
   .superRefine((value, ctx) => {
     const started = new Date(value.started).getTime();
