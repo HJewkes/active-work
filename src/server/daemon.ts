@@ -17,6 +17,7 @@ import type { Hono } from 'hono';
 import { DaemonError } from '../errors.js';
 import { getActiveRoot, getStateRoot } from '../utils/paths.js';
 import { handleDashboard } from './dashboard-routes.js';
+import { hostLeaseRefusal } from './host-lease.js';
 import { type HealthIndexState } from './health.js';
 import { BUILD_VERSION } from '../version.js';
 import { resolveDaemonPort } from './lifecycle.js';
@@ -116,6 +117,9 @@ async function closeIndexWatch(indexWatch: SessionIndexWatcher | null, log: Logg
 }
 
 export async function runDaemon(options: RunDaemonOptions = {}): Promise<void> {
+  // Before the logger, the socket or any watcher: a refused host touches nothing (TP-1777).
+  const refusal = hostLeaseRefusal();
+  if (refusal) throw new DaemonError(refusal);
   const log = getLogger();
   // Read through a closure: the watcher only starts once the port is bound.
   let indexWatch: SessionIndexWatcher | null = null;
