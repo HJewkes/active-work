@@ -27,6 +27,7 @@ import taskAdd from './task-add.js';
 import taskDelete from './task-delete.js';
 import taskDone from './task-done.js';
 import taskEdit from './task-edit.js';
+import taskNote from './task-note.js';
 import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
 
@@ -129,6 +130,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskDone,
   taskList,
   taskEdit,
+  taskNote,
   taskReorder,
   taskDelete,
   // sessions
