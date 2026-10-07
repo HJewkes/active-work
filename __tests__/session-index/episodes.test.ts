@@ -208,4 +208,15 @@ describe('episode refresh', () => {
     expect(pass).toEqual({ episodesWritten: 2, episodeBacklog: null });
     expect(staleEpisodeSessions(graph.db)).toEqual(['sess-3']);
   });
+
+  it('a pass that does not sweep and finds no moved transcript never reads the request_dedup view', async () => {
+    await unsegmentedSessions();
+    const prepare = vi.spyOn(graph.db, 'prepare');
+
+    const pass = await refreshEpisodes(graph, snapshotOffsets(graph), Infinity, noYield, false);
+
+    expect(pass).toEqual({ episodesWritten: 0, episodeBacklog: null });
+    const statements = prepare.mock.calls.map(([sql]) => sql);
+    expect(statements.filter((sql) => sql.includes('request_dedup'))).toEqual([]);
+  });
 });

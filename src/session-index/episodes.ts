@@ -46,9 +46,12 @@ function sessionsChangedSince(graph: WorkspaceGraph, before: Map<number, number>
 
 /**
  * Every stale session a moved transcript touched, plus up to `limit` more from
- * the backlog when `sweep` is set. `Infinity` clears it. Without `sweep` the
- * pass reads only the touched sessions, since the full check costs about a
- * second of main thread on the live graph (TP-343).
+ * the backlog when `sweep` is set. `Infinity` clears it.
+ *
+ * The stale check reads session-analytics' `request_dedup` view, a window over
+ * the whole `request` table that a session scope cannot narrow, so even a
+ * scoped check costs about a second of main thread on the live graph (TP-343).
+ * A pass that does not sweep therefore skips it when no transcript moved.
  *
  * One session per `writeEpisodes` call, yielding after each: a session costs
  * about 450 ms on the live graph, so one batched call held the daemon's event
@@ -62,6 +65,7 @@ export async function refreshEpisodes(
   sweep = true,
 ): Promise<EpisodePass> {
   const changed = sessionsChangedSince(graph, before);
+  if (!sweep && changed.size === 0) return { episodesWritten: 0, episodeBacklog: null };
   const stale = staleEpisodeSessions(graph.db, sweep ? undefined : [...changed]);
   const due = stale.filter((id) => changed.has(id));
   const batch = sweep ? stale.filter((id) => !changed.has(id)).slice(0, limit) : [];
