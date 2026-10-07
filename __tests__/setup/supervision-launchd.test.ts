@@ -79,6 +79,54 @@ describe('supervision-launchd', () => {
   });
 
   describe('renderPlist', () => {
+    it('renders the plist byte for byte as before the Linux PATH change (TP-1841)', () => {
+      const plist = renderPlist({
+        cliEntry: '/opt/aw/cli.js',
+        homeDir: '/Users/u',
+        nodeBin: '/opt/node/bin/node',
+        port: 4317,
+      });
+      expect(plist).toBe(
+        [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+          '<plist version="1.0">',
+          '<dict>',
+          '  <key>Label</key>',
+          '  <string>dev.hjewkes.active-work</string>',
+          '  <key>ProgramArguments</key>',
+          '  <array>',
+          '    <string>/opt/node/bin/node</string>',
+          '    <string>/opt/aw/cli.js</string>',
+          '    <string>mcp</string>',
+          '    <string>serve</string>',
+          '    <string>--port</string>',
+          '    <string>4317</string>',
+          '  </array>',
+          '  <key>RunAtLoad</key>',
+          '  <true/>',
+          '  <key>KeepAlive</key>',
+          '  <true/>',
+          '  <key>ProcessType</key>',
+          '  <string>Interactive</string>',
+          '  <key>EnvironmentVariables</key>',
+          '  <dict>',
+          '    <key>NODE_ENV</key>',
+          '    <string>production</string>',
+          '    <key>PATH</key>',
+          '    <string>/opt/node/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>',
+          '  </dict>',
+          '  <key>StandardOutPath</key>',
+          '  <string>/Users/u/Library/Logs/active-work/daemon.out.log</string>',
+          '  <key>StandardErrorPath</key>',
+          '  <string>/Users/u/Library/Logs/active-work/daemon.err.log</string>',
+          '</dict>',
+          '</plist>',
+          '',
+        ].join('\n'),
+      );
+    });
+
     it('emits a valid agent plist with absolute ProgramArguments', () => {
       const plist = renderPlist({
         cliEntry: '/opt/active-work/dist/cli.js',
