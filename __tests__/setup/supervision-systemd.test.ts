@@ -126,10 +126,19 @@ describe('renderUnit', () => {
 describe('renderUnit environment and logs', () => {
   const base = { cliEntry: '/x/cli.js', homeDir: '/home/u', nodeBin: '/opt/node/bin/node' };
 
-  it('sets a quoted PATH led by the node dir, like the plist', () => {
+  it('sets a quoted PATH led by ~/.local/bin and the node dir, with no Homebrew dir', () => {
     expect(renderUnit(base)).toContain(
-      'Environment="PATH=/opt/node/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+      'Environment="PATH=/home/u/.local/bin:/opt/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
     );
+  });
+
+  it('gives a system node exactly the Linux PATH, with no duplicate dir', () => {
+    const unit = renderUnit({ ...base, nodeBin: '/usr/bin/node' });
+    const line = unit.split('\n').find((l) => l.startsWith('Environment="PATH='));
+    expect(line).toBe(
+      'Environment="PATH=/home/u/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+    );
+    expect(line).not.toContain('/opt/homebrew/bin');
   });
 
   it('bakes ACTIVE_ROOT when given, quoting a value with a space', () => {

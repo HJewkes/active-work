@@ -67,6 +67,7 @@ describe('active-work setup', () => {
     });
     try {
       const result = await setupCmd.run({ yes: true }, ctxFor(process.env.ACTIVE_ROOT!));
+      if (typeof result === 'string') throw new Error('expected a setup report');
       expect(result.banner).toContain('active-work');
       expect(result.steps.length).toBeGreaterThanOrEqual(5);
       for (const step of result.steps) {
@@ -79,6 +80,48 @@ describe('active-work setup', () => {
         configurable: true,
       });
     }
+  });
+
+  describe('--print-supervision on a faked Linux host', () => {
+    let originalPlatform: NodeJS.Platform;
+    let writeSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+      writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    });
+
+    afterEach(() => {
+      writeSpy.mockRestore();
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    });
+
+    it('returns the bare unit in human mode, so stdout carries nothing after it', async () => {
+      const ctx = { ...ctxFor(process.env.ACTIVE_ROOT!), format: 'human' as const };
+
+      const result = await setupCmd.run({ printSupervision: true }, ctx);
+
+      expect(writeSpy).not.toHaveBeenCalled();
+      expect(typeof result).toBe('string');
+      const unit = result as string;
+      expect(unit.startsWith('[Unit]\n')).toBe(true);
+      expect(unit.endsWith('WantedBy=default.target\n')).toBe(true);
+      const pathLine = unit.split('\n').find((l) => l.startsWith('Environment="PATH='));
+      expect(pathLine).toContain(`${path.join(tempBase, 'home', '.local', 'bin')}:`);
+      expect(pathLine).not.toContain('/opt/homebrew/bin');
+    });
+
+    it('returns only the JSON-serialisable report under --json', async () => {
+      const result = await setupCmd.run(
+        { printSupervision: true },
+        ctxFor(process.env.ACTIVE_ROOT!),
+      );
+
+      expect(writeSpy).not.toHaveBeenCalled();
+      const parsed: unknown = JSON.parse(JSON.stringify(result));
+      expect(parsed).toMatchObject({ steps: [], definition: expect.stringContaining('[Unit]') });
+    });
   });
 
   it('installs and removes the /aw-prompt command', async () => {

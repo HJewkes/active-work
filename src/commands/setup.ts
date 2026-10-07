@@ -27,14 +27,16 @@ const StepSchema = z.object({
   error: z.string().optional(),
 });
 
-const ResultSchema = z.object({
+const ReportSchema = z.object({
   banner: z.string(),
   steps: z.array(StepSchema),
   definition: z.string().optional(),
 });
+/** A bare string is the `--print-supervision` unit/plist, which the CLI prints raw so it can be piped to a file. */
+const ResultSchema = z.union([ReportSchema, z.string()]);
 type Result = z.infer<typeof ResultSchema>;
 
-function printStep(step: Result['steps'][number]): void {
+function printStep(step: z.infer<typeof StepSchema>): void {
   if (step.ok) {
     const mark = color.green('OK');
     const msg = step.message ?? '';
@@ -65,7 +67,7 @@ export default defineCommand<Args, Result>({
       printSupervision: {
         long: '--print-supervision',
         description:
-          'Print the systemd unit / launchd plist setup would install, then exit without changing anything.',
+          'Print the systemd unit / launchd plist setup would install (alone on stdout; the JSON envelope under --json), then exit without changing anything.',
       },
     },
   },
@@ -76,8 +78,7 @@ export default defineCommand<Args, Result>({
       if (!supervisor)
         throw new Error(`no daemon supervisor is integrated for ${process.platform}`);
       const definition = supervisor.render({});
-      if (ctx.format !== 'json') process.stdout.write(definition);
-      return { banner, steps: [], definition };
+      return ctx.format === 'json' ? { banner, steps: [], definition } : definition;
     }
     if (ctx.format !== 'json') {
       process.stderr.write(banner + '\n');

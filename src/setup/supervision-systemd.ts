@@ -10,7 +10,7 @@ import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import { spawn as nodeSpawn } from 'node:child_process';
 import os from 'node:os';
-import { daemonPath } from './supervision-shared.js';
+import { linuxDaemonPath } from './supervision-shared.js';
 import type { SetupDeps, StepPaths, StepResult } from './steps.js';
 
 export const UNIT_NAME = 'active-work.service';
@@ -87,7 +87,7 @@ export function renderUnit(opts: UnitOptions): string {
     'Restart=always',
     'RestartSec=5',
     'Environment=NODE_ENV=production',
-    quoteEnv('PATH', daemonPath(node)),
+    quoteEnv('PATH', linuxDaemonPath(node, opts.homeDir)),
     ...(opts.activeRoot ? [quoteEnv('ACTIVE_ROOT', opts.activeRoot)] : []),
     `StandardOutput=append:${nodePath.join(logDir, 'daemon.out.log')}`,
     `StandardError=append:${nodePath.join(logDir, 'daemon.err.log')}`,
