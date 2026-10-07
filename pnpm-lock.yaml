@@ -53,8 +53,8 @@ importers:
         specifier: ^0.9.1
         version: 0.9.1(zod@4.4.3)
       '@titan-design/store-sqlite':
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.3.3
+        version: 0.3.3
       better-sqlite3:
         specifier: ^13.0.2
         version: 13.0.2
@@ -816,10 +816,6 @@ packages:
 
   '@titan-design/session-read@0.9.1':
     resolution: {integrity: sha512-rCl+6XAWc6ITD71uDvo0GM/8Ec/1PlaN1vPueSnoYCrQchrBPBtnJcX43R1EbLJnkFP+ZYQqtaBSi6qKLzXBQA==}
-    engines: {node: '>=20'}
-
-  '@titan-design/store-sqlite@0.3.1':
-    resolution: {integrity: sha512-ngGy/dKcWQfLy9MRq0N6xe3KaWhrB/eTA2Rhl7bSnbdLYP9VH8Q2wvKoHSOxp2g5R3eMlCE1OXeb9WC2dNHuIQ==}
     engines: {node: '>=20'}
 
   '@titan-design/store-sqlite@0.3.3':
@@ -2949,7 +2945,7 @@ snapshots:
       '@titan-design/locator': 0.2.1
       '@titan-design/memory': 0.1.2(zod@4.4.3)
       '@titan-design/session-read': 0.8.1(zod@4.4.3)
-      '@titan-design/store-sqlite': 0.3.1
+      '@titan-design/store-sqlite': 0.3.3
       yaml: 2.9.1
       zod: 4.4.3
     transitivePeerDependencies:
@@ -2965,7 +2961,7 @@ snapshots:
     dependencies:
       '@titan-design/embed': 0.2.0
       '@titan-design/retrieval': 0.3.0
-      '@titan-design/store-sqlite': 0.3.1
+      '@titan-design/store-sqlite': 0.3.3
       zod: 4.4.3
     transitivePeerDependencies:
       - '@huggingface/transformers'
@@ -2981,7 +2977,7 @@ snapshots:
   '@titan-design/retrieval@0.3.0':
     dependencies:
       '@titan-design/embed': 0.2.0
-      '@titan-design/store-sqlite': 0.3.1
+      '@titan-design/store-sqlite': 0.3.3
 
   '@titan-design/session-analytics@0.9.0(zod@4.4.3)':
     dependencies:
@@ -2997,7 +2993,7 @@ snapshots:
       '@titan-design/cluster': 0.1.2
       '@titan-design/locator': 0.2.1
       '@titan-design/session-read': 0.9.1(zod@4.4.3)
-      '@titan-design/store-sqlite': 0.3.1
+      '@titan-design/store-sqlite': 0.3.3
     transitivePeerDependencies:
       - zod
 
@@ -3031,10 +3027,6 @@ snapshots:
       '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
       - zod
-
-  '@titan-design/store-sqlite@0.3.1':
-    dependencies:
-      better-sqlite3: 13.0.2
 
   '@titan-design/store-sqlite@0.3.3':
     dependencies:
