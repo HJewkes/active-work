@@ -63,9 +63,14 @@ function coerceValue(field: EditableField, value: unknown): unknown {
   return value;
 }
 
-type Edit =
-  | { kind: 'field'; field: EditableField; value: unknown }
-  | { kind: 'patch'; append?: string; addTag?: string; removeTag?: string };
+export interface PatchEdit {
+  kind: 'patch';
+  append?: string;
+  addTag?: string;
+  removeTag?: string;
+}
+
+type Edit = { kind: 'field'; field: EditableField; value: unknown } | PatchEdit;
 
 function fieldEdit(args: Args): Edit {
   const { field, value } = args;
@@ -128,7 +133,7 @@ function appendLine(notes: string | undefined, line: string): string {
   return notes.endsWith('\n') ? `${notes}${line}\n` : `${notes}\n${line}`;
 }
 
-function patchChange(task: Task, edit: Extract<Edit, { kind: 'patch' }>): TaskChange {
+export function patchChange(task: Task, edit: PatchEdit): TaskChange {
   const current = task.tags ?? [];
   const changes: Partial<Task> = {};
   const notices: string[] = [];

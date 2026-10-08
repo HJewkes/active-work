@@ -59,6 +59,7 @@
   "active__source__read",
   "active__sync",
   "active__task__add",
+  "active__task__apply",
   "active__task__delete",
   "active__task__done",
   "active__task__edit",
