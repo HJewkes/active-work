@@ -133,17 +133,23 @@ function allocateOne(
  * Seven loops therefore get six one-line annotations rather than three loops
  * getting two each, and a loop whose best hit an earlier loop already took
  * still gets its next one in the first pass.
+ *
+ * A loop is queried only when the round-robin reaches it with budget left, so
+ * the result matches querying every loop up front while skipping the queries
+ * whose hits could never be rendered.
  */
 export async function relatedForLoops(input: LoopContextInput): Promise<LoopContext> {
   const context: LoopContext = { hits: new Map(), degraded: [] };
-  const candidates: RelatedHit[][] = [];
-  for (let i = 0; i < input.loops.length; i++) candidates.push(await queryLoop(input, i, context));
+  const candidates = new Map<number, RelatedHit[]>();
   const allocation: Allocation = { hits: HITS_TOTAL, chars: CHARS_TOTAL, taken: new Set() };
   for (let pass = 0; pass < HITS_PER_LOOP; pass++) {
     for (let i = 0; i < input.loops.length; i++) {
       const loop = input.loops[i]!;
       if ((context.hits.get(loop.ref)?.length ?? 0) !== pass) continue;
-      if (!allocateOne(loop, candidates[i]!, context, allocation, input.slug)) return context;
+      // Nothing more can be taken once either budget is gone, so later loops are never queried.
+      if (allocation.hits === 0 || allocation.chars <= 0) return context;
+      if (!candidates.has(i)) candidates.set(i, await queryLoop(input, i, context));
+      if (!allocateOne(loop, candidates.get(i)!, context, allocation, input.slug)) return context;
     }
   }
   return context;

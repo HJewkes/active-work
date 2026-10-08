@@ -116,6 +116,36 @@ describe('relatedForLoops', () => {
     expect(calls[0]!.exclude).not.toContain('task:57');
   });
 
+  it('queries only the loops the allocation reaches and keeps the eager hits', async () => {
+    const loops = Array.from({ length: 42 }, (_, i) => loop(`s#${i}`));
+    const calls: RelatedInput[] = [];
+
+    const context = await run(loops, retrieverOf(pool(100), calls));
+
+    // Eager evaluation hands the first six loops one pool hit each, in pool order.
+    expect(calls.length).toBeLessThanOrEqual(6 + 1);
+    expect([...context.hits.entries()].map(([ref, hits]) => [ref, hits.map((h) => h.ref)])).toEqual(
+      Array.from({ length: 6 }, (_, i) => [`s#${i}`, [`note:alpha/n${i}.md`]]),
+    );
+  });
+
+  it('keeps querying later loops while earlier ones come back empty', async () => {
+    const loops = Array.from({ length: 5 }, (_, i) => loop(`s#${i}`));
+    const calls: RelatedInput[] = [];
+    const lateOnly: LoopRetriever = async (input) =>
+      input.text === 'loop s#4'
+        ? retrieverOf(pool(2), calls)(input)
+        : retrieverOf([], calls)(input);
+
+    const context = await run(loops, lateOnly);
+
+    expect(calls).toHaveLength(5);
+    expect(context.hits.get('s#4')!.map((h) => h.ref)).toEqual([
+      'note:alpha/n0.md',
+      'note:alpha/n1.md',
+    ]);
+  });
+
   it('carries on past a loop whose retriever throws, and says so once', async () => {
     let call = 0;
     const flaky: LoopRetriever = async (input) => {
