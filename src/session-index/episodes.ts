@@ -63,12 +63,15 @@ const CANDIDATES = `
 function episodeCandidates(graph: WorkspaceGraph, changed: Set<string>): string[] {
   if (changed.size === 0) return [];
   const rows = graph.db
-    .prepare<[string], { sessionId: string; lastRequestAt: string; endedAt: string | null }>(
-      CANDIDATES,
-    )
+    .prepare<
+      [string],
+      { sessionId: string; lastRequestAt: string; endedAt: string | null }
+    >(CANDIDATES)
     .all(JSON.stringify([...changed]));
   return rows
-    .filter((row) => row.endedAt === null || Date.parse(row.lastRequestAt) > Date.parse(row.endedAt))
+    .filter(
+      (row) => row.endedAt === null || Date.parse(row.lastRequestAt) > Date.parse(row.endedAt),
+    )
     .map((row) => row.sessionId);
 }
 
