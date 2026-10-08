@@ -208,4 +208,42 @@ describe('episode refresh', () => {
     expect(pass).toEqual({ episodesWritten: 2, episodeBacklog: null });
     expect(staleEpisodeSessions(graph.db)).toEqual(['sess-3']);
   });
+
+  it('a pass that does not sweep and finds no moved transcript never reads the request_dedup view', async () => {
+    await unsegmentedSessions();
+    const prepare = vi.spyOn(graph.db, 'prepare');
+
+    const pass = await refreshEpisodes(graph, snapshotOffsets(graph), Infinity, noYield, false);
+
+    expect(pass).toEqual({ episodesWritten: 0, episodeBacklog: null });
+    const statements = prepare.mock.calls.map(([sql]) => sql);
+    expect(statements.filter((sql) => sql.includes('request_dedup'))).toEqual([]);
+  });
+
+  it('a pass that does not sweep reads the request_dedup view only through writeEpisodes', async () => {
+    const before = await unsegmentedSessions();
+    const prepare = vi.spyOn(graph.db, 'prepare');
+    const dedupReads = () =>
+      prepare.mock.calls.filter(([sql]) => sql.includes('request_dedup')).length;
+    writeEpisodes(graph, ['sess-1']);
+    const perWrite = dedupReads();
+    graph.db.prepare('DELETE FROM episode').run();
+    prepare.mockClear();
+
+    const pass = await refreshEpisodes(graph, before, Infinity, noYield, false);
+
+    expect(pass).toEqual({ episodesWritten: 1, episodeBacklog: null });
+    expect(dedupReads()).toBe(perWrite);
+  });
+
+  it('a pass that does not sweep skips a moved session with no request past its episodes', async () => {
+    writeSession('sess-a', '2026-07-01T00:00:00Z');
+    await refresh();
+    const [prompt] = exchange('sess-a', '2026-07-01T02:00:00Z');
+    appendFileSync(transcriptPath('sess-a'), renderTranscript([prompt!]));
+
+    const summary = await refresh({ episodeSweep: false });
+
+    expect(summary).toMatchObject({ episodesWritten: 0, episodeBacklog: null });
+  });
 });
