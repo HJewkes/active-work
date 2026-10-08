@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultLiveStatusFetcher } from '../../src/bootstrap/prompt.js';
 import type { BranchEntry } from '../../src/schemas/artifacts.js';
@@ -138,7 +138,9 @@ describe('defaultLiveStatusFetcher', () => {
 });
 
 describe('resolveOrgRepo', () => {
-  it('reads a clone origin once per process', async () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('reads a clone origin once while the answer is fresh', async () => {
     const git = stubGit();
 
     const answers = await Promise.all([resolveOrgRepo(REPO_A), resolveOrgRepo(REPO_A)]);
@@ -146,5 +148,33 @@ describe('resolveOrgRepo', () => {
 
     expect(answers).toEqual(['acme/widgets', 'acme/widgets']);
     expect(git).toHaveLength(1);
+  });
+
+  it('reads the origin again once the answer has expired', async () => {
+    vi.useFakeTimers({ now: new Date('2026-10-08T10:00:00Z') });
+    const git = stubGit();
+    await resolveOrgRepo(REPO_A);
+
+    vi.setSystemTime(new Date('2026-10-08T10:06:00Z'));
+    await resolveOrgRepo(REPO_A);
+
+    expect(git).toHaveLength(2);
+  });
+
+  it('does not keep a failed lookup, so an origin added later is seen', async () => {
+    let hasOrigin = false;
+    setGitRunner(() =>
+      Promise.resolve(
+        hasOrigin
+          ? { code: 0, stdout: `${ORIGINS[REPO_A]}\n`, stderr: '' }
+          : { code: 2, stdout: '', stderr: 'error: No such remote' },
+      ),
+    );
+    const before = await resolveOrgRepo(REPO_A);
+
+    hasOrigin = true;
+    const after = await resolveOrgRepo(REPO_A);
+
+    expect([before, after]).toEqual([null, 'acme/widgets']);
   });
 });
