@@ -63,8 +63,16 @@ const defaultRunner: CommandRunner = (bin, args, opts = {}) =>
 let gitRunner: CommandRunner = defaultRunner;
 let ghRunner: CommandRunner = defaultRunner;
 
+/**
+ * `org/repo` answers keyed by local clone path. A clone's origin
+ * does not change within one process, and bootstrap asks once per branch, so
+ * without this the same `git remote get-url` ran once per branch.
+ */
+const orgRepoCache = new Map<string, Promise<string | null>>();
+
 export function setGitRunner(next: CommandRunner): void {
   gitRunner = next;
+  orgRepoCache.clear();
 }
 
 export function setGhRunner(next: CommandRunner): void {
@@ -74,6 +82,7 @@ export function setGhRunner(next: CommandRunner): void {
 export function resetRunners(): void {
   gitRunner = defaultRunner;
   ghRunner = defaultRunner;
+  orgRepoCache.clear();
 }
 
 export function getGitRunner(): CommandRunner {
@@ -149,10 +158,16 @@ export function parseOrgRepoFromRemoteUrl(url: string): string | null {
  * Resolve `repo` to an `org/repo` string suitable for `gh`. If `repo` already
  * looks like `org/repo`, return it unchanged. Otherwise treat it as a local
  * path and derive from `git remote`. Returns null when neither route works.
+ * Memoized per process; swapping the git runner clears the cache.
  */
-export async function resolveOrgRepo(repo: string): Promise<string | null> {
-  if (looksLikeOrgRepo(repo)) return repo;
+export function resolveOrgRepo(repo: string): Promise<string | null> {
+  if (looksLikeOrgRepo(repo)) return Promise.resolve(repo);
   const localPath = resolveLocalRepoPath(repo);
-  if (!localPath) return null;
-  return deriveOrgRepoFromPath(localPath);
+  if (!localPath) return Promise.resolve(null);
+  let pending = orgRepoCache.get(localPath);
+  if (!pending) {
+    pending = deriveOrgRepoFromPath(localPath);
+    orgRepoCache.set(localPath, pending);
+  }
+  return pending;
 }

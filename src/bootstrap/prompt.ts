@@ -45,6 +45,7 @@ import {
   resolveLocalRepoPath,
   resolveOrgRepo,
 } from '../utils/git-gh.js';
+import { mapConcurrent } from '../utils/map-concurrent.js';
 import { today, nowIso } from '../utils/today.js';
 import { NotFoundError } from '../errors.js';
 import {
@@ -853,22 +854,134 @@ function renderLiveArtifacts(
   return sections.length > 0 ? sections.join('\n\n') : null;
 }
 
+const LIVE_GIT_CONCURRENCY = 5;
+const BULK_PR_LIMIT = 200;
+
+type BranchPr = NonNullable<LiveBranchStatus['pr']>;
+
+interface GhPrEntry {
+  headRefName?: string;
+  number?: number;
+  state?: string;
+  title?: string;
+  url?: string;
+  statusCheckRollup?: Array<{ conclusion?: string; state?: string }>;
+}
+
+/**
+ * Open PRs of one repo by head branch, newest first per head as `gh` lists
+ * them. `complete` is false when the list hit its limit, so a head missing
+ * from it may still have a PR.
+ */
+interface RepoPrIndex {
+  byHead: Map<string, GhPrEntry>;
+  complete: boolean;
+}
+
 /**
  * Default fetcher used when the caller doesn't supply one. Mirrors the
  * read logic in `artifact.status` but is bounded in parallelism and
  * swallows per-branch errors silently — bootstrap never throws on artifact
  * issues.
+ *
+ * One `gh pr list` per distinct repo answers every branch in it; a branch
+ * the list cannot vouch for falls back to its own `--head` query. Both list
+ * open PRs only, as the per-branch query always has.
  */
-async function defaultLiveStatusFetcher(branches: BranchEntry[]): Promise<LiveBranchStatus[]> {
-  const results: LiveBranchStatus[] = [];
-  const limit = Math.min(branches.length, LIVE_RENDER_LIMIT);
-  for (let i = 0; i < limit; i++) {
-    results.push(await fetchOne(branches[i]!));
-  }
-  return results;
+export async function defaultLiveStatusFetcher(
+  branches: BranchEntry[],
+): Promise<LiveBranchStatus[]> {
+  const shown = branches.slice(0, LIVE_RENDER_LIMIT);
+  const [statuses, prs] = await Promise.all([
+    mapConcurrent(shown, LIVE_GIT_CONCURRENCY, fetchGitStatus),
+    fetchBranchPrs(shown),
+  ]);
+  return statuses.map((status, i) => ({ ...status, pr: prs[i] ?? null }));
 }
 
-async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
+async function fetchBranchPrs(branches: BranchEntry[]): Promise<Array<BranchPr | null>> {
+  const orgRepos = await Promise.all(branches.map((b) => resolveOrgRepo(b.repo).catch(() => null)));
+  const indexes = new Map<string, Promise<RepoPrIndex | null>>();
+  for (const orgRepo of orgRepos) {
+    if (orgRepo && !indexes.has(orgRepo)) indexes.set(orgRepo, listRepoPrs(orgRepo));
+  }
+  return Promise.all(
+    branches.map(async (branch, i) => {
+      const orgRepo = orgRepos[i];
+      if (!orgRepo) return null;
+      const index = await indexes.get(orgRepo)!;
+      const listed = index?.byHead.get(branch.name);
+      if (listed) return toBranchPr(listed);
+      if (index?.complete) return null;
+      return fetchPrForHead(orgRepo, branch.name);
+    }),
+  );
+}
+
+async function listRepoPrs(orgRepo: string): Promise<RepoPrIndex | null> {
+  const fields = 'headRefName,number,state,title,url,statusCheckRollup';
+  const args = ['pr', 'list', '--repo', orgRepo, '--json', fields];
+  const entries = await runGhPrList([...args, '--limit', String(BULK_PR_LIMIT)]);
+  if (!entries) return null;
+  const byHead = new Map<string, GhPrEntry>();
+  for (const entry of entries) {
+    const head = entry.headRefName;
+    if (typeof head === 'string' && !byHead.has(head)) byHead.set(head, entry);
+  }
+  return { byHead, complete: entries.length < BULK_PR_LIMIT };
+}
+
+async function fetchPrForHead(orgRepo: string, head: string): Promise<BranchPr | null> {
+  const fields = 'number,state,title,url,statusCheckRollup';
+  const args = ['pr', 'list', '--head', head, '--repo', orgRepo, '--json', fields];
+  const entries = await runGhPrList([...args, '--limit', '1']);
+  const first = entries?.[0];
+  return first ? toBranchPr(first) : null;
+}
+
+/** PR lookup is best-effort: any failure reads as "no answer". */
+async function runGhPrList(args: string[]): Promise<GhPrEntry[] | null> {
+  try {
+    const res = await getGhRunner()('gh', args);
+    if (res.code !== 0) return null;
+    const parsed = JSON.parse(res.stdout) as unknown;
+    return Array.isArray(parsed) ? (parsed as GhPrEntry[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function toBranchPr(entry: GhPrEntry): BranchPr | null {
+  const { number, state, title, url } = entry;
+  if (
+    typeof number !== 'number' ||
+    typeof state !== 'string' ||
+    typeof title !== 'string' ||
+    typeof url !== 'string'
+  ) {
+    return null;
+  }
+  const checks = summarizeChecks(entry.statusCheckRollup ?? []);
+  return { number, state, title, url, ...(checks ? { checks } : {}) };
+}
+
+function summarizeChecks(rollup: NonNullable<GhPrEntry['statusCheckRollup']>): string | undefined {
+  if (rollup.length === 0) return undefined;
+  let pass = 0;
+  let fail = 0;
+  let pending = 0;
+  for (const entry of rollup) {
+    const tag = (entry.conclusion ?? entry.state ?? '').toUpperCase();
+    if (tag === 'SUCCESS') pass++;
+    else if (tag === 'FAILURE' || tag === 'CANCELLED' || tag === 'TIMED_OUT') fail++;
+    else pending++;
+  }
+  if (fail > 0) return `fail (${fail}/${rollup.length})`;
+  if (pending > 0) return `pending (${pending}/${rollup.length})`;
+  return `pass (${pass}/${rollup.length})`;
+}
+
+async function fetchGitStatus(branch: BranchEntry): Promise<LiveBranchStatus> {
   const out: LiveBranchStatus = {
     repo: branch.repo,
     name: branch.name,
@@ -880,132 +993,71 @@ async function fetchOne(branch: BranchEntry): Promise<LiveBranchStatus> {
     pr: null,
   };
   const repoPath = resolveLocalRepoPath(branch.repo);
-  const git = getGitRunner();
-  const gh = getGhRunner();
+  if (!repoPath) return out;
+  out.present = await isBranchPresent(repoPath, branch.name);
+  if (!out.present) return out;
+  out.last_commit_iso = await readLastCommitIso(repoPath, branch.name);
+  const counts = await readAheadBehind(repoPath, branch.name);
+  if (counts) {
+    out.ahead = counts.ahead;
+    out.behind = counts.behind;
+  }
+  return out;
+}
 
-  if (repoPath) {
+async function isBranchPresent(repoPath: string, name: string): Promise<boolean> {
+  try {
+    const args = ['-C', repoPath, 'rev-parse', '--verify', `refs/heads/${name}`];
+    return (await getGitRunner()('git', args)).code === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function readLastCommitIso(repoPath: string, name: string): Promise<string | null> {
+  try {
+    const lc = await getGitRunner()('git', ['-C', repoPath, 'log', '-1', '--format=%cI', name]);
+    if (lc.code !== 0) return null;
+    const s = lc.stdout.trim();
+    return s.length > 0 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readAheadBehind(
+  repoPath: string,
+  name: string,
+): Promise<{ ahead: number; behind: number } | null> {
+  const git = getGitRunner();
+  for (const base of ['main', 'master']) {
     try {
-      const exists = await git('git', [
+      const ref = `refs/remotes/origin/${base}`;
+      const verify = await git('git', ['-C', repoPath, 'rev-parse', '--verify', ref]);
+      if (verify.code !== 0) continue;
+      const range = `origin/${base}...${name}`;
+      const counts = await git('git', [
         '-C',
         repoPath,
-        'rev-parse',
-        '--verify',
-        `refs/heads/${branch.name}`,
+        'rev-list',
+        '--left-right',
+        '--count',
+        range,
       ]);
-      out.present = exists.code === 0;
+      return counts.code === 0 ? parseLeftRight(counts.stdout) : null;
     } catch {
-      // leave present=false
-    }
-    if (out.present) {
-      try {
-        const lc = await git('git', ['-C', repoPath, 'log', '-1', '--format=%cI', branch.name]);
-        if (lc.code === 0) {
-          const s = lc.stdout.trim();
-          out.last_commit_iso = s.length > 0 ? s : null;
-        }
-      } catch {
-        // skip
-      }
-      for (const base of ['main', 'master']) {
-        try {
-          const verify = await git('git', [
-            '-C',
-            repoPath,
-            'rev-parse',
-            '--verify',
-            `refs/remotes/origin/${base}`,
-          ]);
-          if (verify.code !== 0) continue;
-          const counts = await git('git', [
-            '-C',
-            repoPath,
-            'rev-list',
-            '--left-right',
-            '--count',
-            `origin/${base}...${branch.name}`,
-          ]);
-          if (counts.code === 0) {
-            const parts = counts.stdout.trim().split(/\s+/);
-            if (parts.length === 2) {
-              const b = Number(parts[0]);
-              const a = Number(parts[1]);
-              if (Number.isFinite(a) && Number.isFinite(b)) {
-                out.ahead = a;
-                out.behind = b;
-              }
-            }
-          }
-          break;
-        } catch {
-          // continue / give up
-        }
-      }
+      // continue / give up
     }
   }
+  return null;
+}
 
-  try {
-    const orgRepo = await resolveOrgRepo(branch.repo);
-    if (orgRepo) {
-      const res = await gh('gh', [
-        'pr',
-        'list',
-        '--head',
-        branch.name,
-        '--repo',
-        orgRepo,
-        '--json',
-        'number,state,title,url,statusCheckRollup',
-        '--limit',
-        '1',
-      ]);
-      if (res.code === 0) {
-        const parsed = JSON.parse(res.stdout) as Array<{
-          number?: number;
-          state?: string;
-          title?: string;
-          url?: string;
-          statusCheckRollup?: Array<{ conclusion?: string; state?: string }>;
-        }>;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const first = parsed[0]!;
-          if (
-            typeof first.number === 'number' &&
-            typeof first.state === 'string' &&
-            typeof first.title === 'string' &&
-            typeof first.url === 'string'
-          ) {
-            const rollup = first.statusCheckRollup ?? [];
-            let pass = 0;
-            let fail = 0;
-            let pending = 0;
-            for (const entry of rollup) {
-              const tag = (entry.conclusion ?? entry.state ?? '').toUpperCase();
-              if (tag === 'SUCCESS') pass++;
-              else if (tag === 'FAILURE' || tag === 'CANCELLED' || tag === 'TIMED_OUT') fail++;
-              else pending++;
-            }
-            let checks: string | undefined;
-            if (rollup.length > 0) {
-              if (fail > 0) checks = `fail (${fail}/${rollup.length})`;
-              else if (pending > 0) checks = `pending (${pending}/${rollup.length})`;
-              else checks = `pass (${pass}/${rollup.length})`;
-            }
-            out.pr = {
-              number: first.number,
-              state: first.state,
-              title: first.title,
-              url: first.url,
-              ...(checks ? { checks } : {}),
-            };
-          }
-        }
-      }
-    }
-  } catch {
-    // PR lookup is best-effort; leave out.pr as null.
-  }
-
-  return out;
+function parseLeftRight(stdout: string): { ahead: number; behind: number } | null {
+  const parts = stdout.trim().split(/\s+/);
+  if (parts.length !== 2) return null;
+  const behind = Number(parts[0]);
+  const ahead = Number(parts[1]);
+  return Number.isFinite(ahead) && Number.isFinite(behind) ? { ahead, behind } : null;
 }
 
 function endedDate(iso: string): string {
