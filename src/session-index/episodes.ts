@@ -1,4 +1,5 @@
 import { staleEpisodeSessions, writeEpisodes } from '@titan-design/session-analytics';
+import { EPISODE_TABLE } from '@titan-design/session-graph';
 import type { WorkspaceGraph } from './graph.js';
 
 /**
@@ -44,14 +45,41 @@ function sessionsChangedSince(graph: WorkspaceGraph, before: Map<number, number>
   return new Set(rows.map((row) => row.sessionId));
 }
 
+const CANDIDATES = `
+  SELECT r.session_id AS sessionId, MAX(r.ts) AS lastRequestAt,
+         (SELECT MIN(ended) FROM (SELECT MAX(e.ended_at) AS ended FROM "${EPISODE_TABLE}" e
+            WHERE e.session_id = r.session_id GROUP BY e.heuristic)) AS endedAt
+    FROM request r
+   WHERE r.is_sidechain = 0 AND r.session_id IN (SELECT value FROM json_each(?))
+   GROUP BY r.session_id ORDER BY lastRequestAt DESC, r.session_id`;
+
 /**
- * Every stale session a moved transcript touched, plus up to `limit` more from
- * the backlog when `sweep` is set. `Infinity` clears it.
+ * The changed sessions that may be stale: a main-thread request past the
+ * earliest of their per-heuristic episode ends, or no episodes. Raw `request`
+ * rows never end earlier than `request_dedup`'s, so this is a superset of
+ * `staleEpisodeSessions`, read through `idx_request_session_ts` instead of the
+ * view (TP-343). `writeEpisodes` still picks the heuristic, or none.
+ */
+function episodeCandidates(graph: WorkspaceGraph, changed: Set<string>): string[] {
+  if (changed.size === 0) return [];
+  const rows = graph.db
+    .prepare<[string], { sessionId: string; lastRequestAt: string; endedAt: string | null }>(
+      CANDIDATES,
+    )
+    .all(JSON.stringify([...changed]));
+  return rows
+    .filter((row) => row.endedAt === null || Date.parse(row.lastRequestAt) > Date.parse(row.endedAt))
+    .map((row) => row.sessionId);
+}
+
+/**
+ * Every changed session that may be stale, plus up to `limit` more from the
+ * backlog when `sweep` is set. `Infinity` clears it.
  *
- * The stale check reads session-analytics' `request_dedup` view, a window over
- * the whole `request` table that a session scope cannot narrow, so even a
- * scoped check costs about a second of main thread on the live graph (TP-343).
- * A pass that does not sweep therefore skips it when no transcript moved.
+ * Only the sweep calls `staleEpisodeSessions`: it reads session-analytics'
+ * `request_dedup` view, a window over the whole `request` table that a session
+ * scope cannot narrow, so it costs about a second of main thread on the live
+ * graph whatever its scope (TP-343). A pass that does not sweep never runs it.
  *
  * One session per `writeEpisodes` call, yielding after each: a session costs
  * about 450 ms on the live graph, so one batched call held the daemon's event
@@ -65,10 +93,9 @@ export async function refreshEpisodes(
   sweep = true,
 ): Promise<EpisodePass> {
   const changed = sessionsChangedSince(graph, before);
-  if (!sweep && changed.size === 0) return { episodesWritten: 0, episodeBacklog: null };
-  const stale = staleEpisodeSessions(graph.db, sweep ? undefined : [...changed]);
-  const due = stale.filter((id) => changed.has(id));
-  const batch = sweep ? stale.filter((id) => !changed.has(id)).slice(0, limit) : [];
+  const due = episodeCandidates(graph, changed);
+  const stale = sweep ? staleEpisodeSessions(graph.db).filter((id) => !changed.has(id)) : [];
+  const batch = stale.slice(0, limit);
   let written = 0;
   for (const sessionId of [...due, ...batch]) {
     written += writeEpisodes(graph, [sessionId]).length;
@@ -76,6 +103,6 @@ export async function refreshEpisodes(
   }
   return {
     episodesWritten: written,
-    episodeBacklog: sweep ? stale.length - due.length - batch.length : null,
+    episodeBacklog: sweep ? stale.length - batch.length : null,
   };
 }
