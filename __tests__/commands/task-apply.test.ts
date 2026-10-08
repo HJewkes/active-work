@@ -9,12 +9,14 @@ import { withTempActiveRoot } from '../setup/test-helpers.js';
 import { today } from '../../src/utils/today.js';
 import type { CommandContext } from '../../src/registry/index.js';
 import type { Task } from '../../src/schemas/task.js';
+import type * as FsAtomic from '../../src/utils/fs-atomic.js';
+import type * as YamlIo from '../../src/utils/yaml-io.js';
 
 const lockTargets = vi.hoisted(() => [] as string[]);
 const writtenFiles = vi.hoisted(() => [] as string[]);
 
 vi.mock('../../src/utils/yaml-io.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/utils/yaml-io.js')>();
+  const actual = await importOriginal<typeof YamlIo>();
   return {
     ...actual,
     writeYaml: (...args: Parameters<typeof actual.writeYaml>) => {
@@ -25,7 +27,7 @@ vi.mock('../../src/utils/yaml-io.js', async (importOriginal) => {
 });
 
 vi.mock('../../src/utils/fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/utils/fs-atomic.js')>();
+  const actual = await importOriginal<typeof FsAtomic>();
   return {
     ...actual,
     withFileLock: <T>(target: string, fn: () => Promise<T>) => {
