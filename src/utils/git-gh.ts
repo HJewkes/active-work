@@ -63,8 +63,19 @@ const defaultRunner: CommandRunner = (bin, args, opts = {}) =>
 let gitRunner: CommandRunner = defaultRunner;
 let ghRunner: CommandRunner = defaultRunner;
 
+/**
+ * `org/repo` answers keyed by local clone path. Bootstrap asks once per
+ * branch, so without this the same `git remote get-url` ran once per branch.
+ * The daemon runs commands in-process for days, so an answer expires after
+ * a TTL (a remote can be renamed or repointed), and a failed lookup is never
+ * kept: a clone or `origin` added later must be seen on the next call.
+ */
+const ORG_REPO_TTL_MS = 5 * 60_000;
+const orgRepoCache = new Map<string, { answer: Promise<string | null>; expiresAt: number }>();
+
 export function setGitRunner(next: CommandRunner): void {
   gitRunner = next;
+  orgRepoCache.clear();
 }
 
 export function setGhRunner(next: CommandRunner): void {
@@ -74,6 +85,7 @@ export function setGhRunner(next: CommandRunner): void {
 export function resetRunners(): void {
   gitRunner = defaultRunner;
   ghRunner = defaultRunner;
+  orgRepoCache.clear();
 }
 
 export function getGitRunner(): CommandRunner {
@@ -149,10 +161,21 @@ export function parseOrgRepoFromRemoteUrl(url: string): string | null {
  * Resolve `repo` to an `org/repo` string suitable for `gh`. If `repo` already
  * looks like `org/repo`, return it unchanged. Otherwise treat it as a local
  * path and derive from `git remote`. Returns null when neither route works.
+ * Memoized per process for `ORG_REPO_TTL_MS`, successes only; swapping the
+ * git runner clears the cache.
  */
-export async function resolveOrgRepo(repo: string): Promise<string | null> {
-  if (looksLikeOrgRepo(repo)) return repo;
+export function resolveOrgRepo(repo: string): Promise<string | null> {
+  if (looksLikeOrgRepo(repo)) return Promise.resolve(repo);
   const localPath = resolveLocalRepoPath(repo);
-  if (!localPath) return null;
-  return deriveOrgRepoFromPath(localPath);
+  if (!localPath) return Promise.resolve(null);
+  const cached = orgRepoCache.get(localPath);
+  if (cached && cached.expiresAt > Date.now()) return cached.answer;
+  const answer = deriveOrgRepoFromPath(localPath);
+  orgRepoCache.set(localPath, { answer, expiresAt: Date.now() + ORG_REPO_TTL_MS });
+  void answer.then((orgRepo) => {
+    if (orgRepo === null && orgRepoCache.get(localPath)?.answer === answer) {
+      orgRepoCache.delete(localPath);
+    }
+  });
+  return answer;
 }
