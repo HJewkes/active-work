@@ -283,6 +283,14 @@ function editedLine(task: Task, edit: Edit): string {
   return parts.length === 0 ? `${task.id} unchanged` : `${task.id} edited: ${parts.join(', ')}`;
 }
 
+// Removing an edge cannot name an unknown id or close a cycle, so only an added edge needs
+// the whole-root edge check (and a malformed file elsewhere must not block a removal).
+function addsEdge(task: Task, changes: Partial<Task>): boolean {
+  if (changes.parent !== undefined) return true;
+  const current = readEdges(task).dep;
+  return (changes.dep ?? []).some((id) => !current.includes(id));
+}
+
 function announce(ctx: CommandContext, notices: string[]): void {
   ctx.warnings.push(...notices);
   if (ctx.format === 'json') return;
@@ -322,7 +330,7 @@ export default defineCommand<Args, TaskOrLine>({
       announce(ctx, notices);
       const line = (): string => editedLine(task, edit);
       if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);
-      if (changes.parent !== undefined || changes.dep !== undefined) {
+      if (addsEdge(task, changes)) {
         await assertEdgeWrite({
           slug: args.slug,
           id: task.id,

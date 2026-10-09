@@ -158,6 +158,35 @@ describe('task edit with edges', () => {
     });
   });
 
+  describe('with a malformed task file in another initiative', () => {
+    async function breakSibling(root: string): Promise<void> {
+      await fs.writeFile(path.join(root, 'gamma', 'tasks', 'G-2.yml'), 'id: [unclosed\n');
+    }
+
+    it('still removes a dep, because a removal skips the whole-root check', async () => {
+      await inSeededRoot(async (root) => {
+        await breakSibling(root);
+
+        await edit(root, 'H-2', { remove_dep: ['H-1'] });
+
+        expect((await readTask(root, 'alpha', 'H-2')).dep).toEqual([]);
+      });
+    });
+
+    it('refuses an added dep and names the file the whole-root check could not read', async () => {
+      await inSeededRoot(async (root) => {
+        await breakSibling(root);
+
+        const failure = edit(root, 'H-2', { dep: ['H-10'] });
+
+        await expect(failure).rejects.toBeInstanceOf(ValidationError);
+        const message = await failure.catch((err: Error) => err.message);
+        expect(message).toContain('reads every task under the active root');
+        expect(message).toContain(path.join('gamma', 'tasks', 'G-2.yml'));
+      });
+    });
+  });
+
   it('carries a tag-only dep into the dep field when adding another', async () => {
     await inSeededRoot(async (root) => {
       await edit(root, 'H-6', { dep: ['H-10'] });
