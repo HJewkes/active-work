@@ -278,7 +278,9 @@ describe('task.list', () => {
   it('keeps only the ids given to --id, done ones included', async () => {
     await withTempActiveRoot(async (root) => {
       await taskAdd.run({ slug: SLUG, title: 'Third sample task' }, ctx(root));
-      const { tasks } = await taskList.run({ slug: SLUG, id: 'SI-2, SI-3' }, ctx(root));
+      // Parse like the CLI and MCP do, so a schema-level status default would show up here.
+      const args = taskList.args.parse({ slug: SLUG, id: 'SI-2, SI-3' });
+      const { tasks } = await taskList.run(args, ctx(root));
       expect(tasks.map((t) => t.id)).toEqual(['SI-2', 'SI-3']);
     });
   });

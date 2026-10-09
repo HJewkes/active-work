@@ -7,7 +7,8 @@ import { getActiveRoot, getInitiativeDir } from '../utils/paths.js';
 import { readYaml } from '../utils/yaml-io.js';
 import { UsageError } from '../errors.js';
 
-const StatusFilter = z.enum(['open', 'done', 'all']).default('open');
+// No schema default: buildFilter picks it, because the default depends on --id.
+const StatusFilter = z.enum(['open', 'done', 'all']);
 
 const ArgsSchema = z.object({
   slug: z.string().min(1).optional(),
