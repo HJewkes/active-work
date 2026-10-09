@@ -53,7 +53,12 @@ function taskFile(root: string, id: string, slug = SLUG): string {
   return path.join(root, slug, 'tasks', `${id}.yml`);
 }
 
-async function seedTask(root: string, id: string, slug = SLUG): Promise<string> {
+async function seedTask(
+  root: string,
+  id: string,
+  slug = SLUG,
+  extra: Partial<Task> = {},
+): Promise<string> {
   const task = {
     id,
     title: 'Synthetic task',
@@ -64,6 +69,7 @@ async function seedTask(root: string, id: string, slug = SLUG): Promise<string> 
     created: '2026-01-02',
     updated: '2026-01-03',
     done_at: null,
+    ...extra,
   };
   await fs.mkdir(path.dirname(taskFile(root, id, slug)), { recursive: true });
   await fs.writeFile(taskFile(root, id, slug), YAML.stringify(task));
@@ -209,6 +215,136 @@ describe('task.apply', () => {
       ]);
       expect((await readTask(root, 'SI-1')).tags).toEqual(['alpha', 'beta']);
       expect((await readTask(root, 'OI-1', OTHER)).tags).toEqual(['alpha', 'beta']);
+    });
+  });
+
+  describe('edge ops', () => {
+    const edgeLine = (id: string, op: 'set_parent' | 'add_dep', ref: string, slug = SLUG) => ({
+      slug,
+      id,
+      ops: [{ [op]: ref }],
+    });
+
+    async function applyReported(root: string, plan: string, flags: Record<string, unknown> = {}) {
+      const report = path.join(root, 'report.jsonl');
+      const out = await apply(root, plan, { report, ...flags });
+      const text = await fs.readFile(report, 'utf8');
+      const results = text
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as Summary['results'][number]);
+      return { exitCode: out.exitCode, results };
+    }
+
+    it('writes set_parent and add_dep as fields and is unchanged on a re-run', async () => {
+      await withTempActiveRoot(async (root) => {
+        for (const id of ['SI-1', 'SI-2', 'SI-3']) await seedTask(root, id);
+        const plan = await writePlan(root, [
+          edgeLine('SI-2', 'set_parent', 'SI-1'),
+          edgeLine('SI-2', 'add_dep', 'SI-3'),
+        ]);
+
+        const first = await apply(root, plan);
+        const second = await apply(root, plan);
+
+        expect(await readTask(root, 'SI-2')).toMatchObject({ parent: 'SI-1', dep: ['SI-3'] });
+        expect(summaryOf(first.envelope).results.map((r) => r.changes)).toEqual([
+          ['set_parent: SI-1'],
+          ['add_dep: SI-3'],
+        ]);
+        expect(summaryOf(second.envelope).counts.unchanged).toBe(2);
+      });
+    });
+
+    it('writes the dep field for a dep a tag already names, carrying the other tag deps', async () => {
+      await withTempActiveRoot(async (root) => {
+        for (const id of ['SI-1', 'SI-2']) await seedTask(root, id);
+        await seedTask(root, 'SI-3', SLUG, { tags: ['dep:SI-1', 'dep:SI-2'] });
+        const plan = await writePlan(root, [edgeLine('SI-3', 'add_dep', 'SI-1')]);
+
+        await apply(root, plan);
+
+        const task = await readTask(root, 'SI-3');
+        expect(task.dep).toEqual(['SI-1', 'SI-2']);
+        expect(task.tags).toEqual(['dep:SI-1', 'dep:SI-2']);
+      });
+    });
+
+    it('carries over only tag deps that resolve: known, filed once, not the task itself', async () => {
+      await withTempActiveRoot(async (root) => {
+        await seedTask(root, 'SI-1');
+        await seedTask(root, 'DU-1');
+        await seedTask(root, 'DU-1', OTHER);
+        await seedTask(root, 'SI-3', SLUG, {
+          tags: ['dep:SI-1', 'dep:SI-404', 'dep:DU-1', 'dep:SI-3'],
+        });
+        const plan = await writePlan(root, [edgeLine('SI-3', 'add_dep', 'SI-1')]);
+
+        await apply(root, plan);
+
+        expect((await readTask(root, 'SI-3')).dep).toEqual(['SI-1']);
+      });
+    });
+
+    it('fails only the lines the edge check refuses and applies the rest', async () => {
+      await withTempActiveRoot(async (root) => {
+        for (const id of ['SI-1', 'SI-2', 'SI-3']) await seedTask(root, id);
+        await seedTask(root, 'OI-1', OTHER);
+        const plan = await writePlan(root, [
+          edgeLine('SI-1', 'add_dep', 'SI-2'),
+          edgeLine('SI-2', 'add_dep', 'SI-1'),
+          edgeLine('SI-3', 'add_dep', 'SI-404'),
+          edgeLine('SI-3', 'set_parent', 'OI-1'),
+          edgeLine('SI-3', 'set_parent', 'SI-1'),
+        ]);
+
+        const { exitCode, results } = await applyReported(root, plan);
+
+        expect(exitCode).not.toBe(0);
+        expect(results.map((r) => r.result)).toEqual([
+          'applied',
+          'failed',
+          'failed',
+          'failed',
+          'applied',
+        ]);
+        expect(results[1]!.error).toContain('dep cycle');
+        expect(results[2]!.error).toContain('SI-404 is not a known task id');
+        expect(results[3]!.error).toContain(`parent OI-1 is in ${OTHER}`);
+        expect((await readTask(root, 'SI-2')).dep).toBeUndefined();
+        expect(await readTask(root, 'SI-3')).toMatchObject({ parent: 'SI-1' });
+        expect((await readTask(root, 'SI-3')).dep).toBeUndefined();
+      });
+    });
+
+    it('sees an earlier line on --dry-run, so a cycle across two lines still fails', async () => {
+      await withTempActiveRoot(async (root) => {
+        const before = await seedTask(root, 'SI-1');
+        await seedTask(root, 'SI-2');
+        const plan = await writePlan(root, [
+          edgeLine('SI-1', 'set_parent', 'SI-2'),
+          edgeLine('SI-2', 'set_parent', 'SI-1'),
+        ]);
+
+        const { results } = await applyReported(root, plan, { dry_run: true });
+
+        expect(results.map((r) => r.result)).toEqual(['applied', 'failed']);
+        expect(await fs.readFile(taskFile(root, 'SI-1'), 'utf8')).toBe(before);
+      });
+    });
+
+    it('fails a line whose edge op does not name a task id', async () => {
+      await withTempActiveRoot(async (root) => {
+        await seedTask(root, 'SI-1');
+        const plan = await writePlan(root, [edgeLine('SI-1', 'set_parent', 'not an id')]);
+
+        const { results } = await applyReported(root, plan);
+
+        expect(results[0]).toMatchObject({
+          result: 'failed',
+          error: 'set_parent needs a task id: "not an id"',
+        });
+      });
     });
   });
 });

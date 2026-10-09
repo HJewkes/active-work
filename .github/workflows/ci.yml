@@ -15,12 +15,13 @@ permissions:
 # (critical advisories only), and `pnpm verify`, which is format, lint,
 # typecheck, the mining-tools check, the CLI build, the tests under a sandboxed
 # HOME, the CLI-reference generator smoke, and the full build. No compat
-# matrix: the package ships CLI binaries, not a library, as before on Node 22 only.
+# matrix: the package ships CLI binaries, not a library, on the pinned Node only.
 jobs:
   std:
     uses: HJewkes/ci/.github/workflows/node.yml@v1
     with:
-      node-version: '22'
+      # Keep equal to .node-version; node.yml takes no node-version-file yet (CC-911).
+      node-version: '24.21.0'
       audit-level: critical
 
   # A merge gate behind the pre-push hook `prepare` installs. CI has no private term list.
@@ -35,12 +36,12 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
       - name: Scan the pushed commits
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: npx --yes @titan-design/egress-scan@0.2.0 range "$BASE_SHA" "$HEAD_SHA"
+        run: npx --yes @titan-design/egress-scan@0.5.1 range "$BASE_SHA" "$HEAD_SHA"
 
   # The ruleset requires the context `check`, so the aggregator carries that name
   # and no other job may. all-green also fails if a job here is missing from needs.

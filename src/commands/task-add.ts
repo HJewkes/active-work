@@ -13,6 +13,21 @@ import {
 } from '../utils/task-seq.js';
 import { writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
+import { assertEdgeWrite } from '../tasks/edge-index.js';
+import { assertKnownDeliverables } from './_deliverables.js';
+import {
+  assertCategories,
+  CATEGORY_OPTIONS,
+  changedCategoryFields,
+  DueArg,
+} from './_categories.js';
+import {
+  quietOption,
+  QuietArg,
+  TaskOrLineSchema,
+  quietOr,
+  type TaskOrLine,
+} from './_task-quiet.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
@@ -23,6 +38,14 @@ const ArgsSchema = z.object({
   done_when: z.string().min(1).optional(),
   tags: z.array(z.string()).optional(),
   notes: z.string().optional(),
+  parent: z.string().min(1).optional(),
+  dep: z.array(z.string().min(1)).optional(),
+  deliverable: z.array(z.string().min(1)).optional(),
+  kind: z.string().min(1).optional(),
+  cos: z.string().min(1).optional(),
+  area: z.string().min(1).optional(),
+  due: DueArg,
+  quiet: QuietArg,
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -48,11 +71,36 @@ function nextPriority(existing: Task[]): number {
   return max + 1;
 }
 
-export default defineCommand<Args, Task>({
+function newTask(args: Args, id: string, priority: number): Task {
+  const date = today();
+  return {
+    id,
+    parent: args.parent,
+    dep: args.dep,
+    deliverables: args.deliverable && [...new Set(args.deliverable)],
+    title: args.title,
+    priority,
+    severity: args.severity,
+    estimate: args.estimate,
+    done_when: args.done_when,
+    status: 'open',
+    kind: args.kind,
+    cos: args.cos,
+    area: args.area,
+    due: args.due,
+    tags: args.tags,
+    notes: args.notes,
+    created: date,
+    updated: date,
+    done_at: null,
+  };
+}
+
+export default defineCommand<Args, TaskOrLine>({
   name: 'task.add',
   description: 'Create a new task in an initiative',
   args: ArgsSchema,
-  result: TaskSchema,
+  result: TaskOrLineSchema,
   cli: {
     positional: ['slug'],
     options: {
@@ -69,36 +117,37 @@ export default defineCommand<Args, Task>({
       },
       tags: { long: '--tags', description: 'Comma-separated tag list' },
       notes: { long: '--notes', description: 'Free-form notes' },
+      parent: { long: '--parent', description: 'Parent task id, in this initiative' },
+      dep: {
+        long: '--dep',
+        description: 'Comma-separated ids this task depends on (any initiative)',
+      },
+      deliverable: {
+        long: '--deliverable',
+        description: 'Comma-separated deliverable ids this task counts toward',
+      },
+      ...CATEGORY_OPTIONS,
+      quiet: quietOption('PRJ-12 created'),
     },
   },
-  async run(args) {
+  async run(args, ctx) {
     // Touch activeRoot so it's resolved before locking.
-    getActiveRoot();
+    const activeRoot = getActiveRoot();
+    if (args.deliverable !== undefined) await assertKnownDeliverables(activeRoot, args.deliverable);
     return withFileLock(getLockPath(args.slug), async () => {
       const brief = await loadBrief(args.slug);
       const existing = await loadExistingTasks(args.slug);
       const n = allocateTaskNumber(brief, existing);
       const id = `${brief.prefix}-${n}`;
-      const priority = args.priority ?? nextPriority(existing);
-      const date = today();
-      const task: Task = {
-        id,
-        title: args.title,
-        priority,
-        severity: args.severity,
-        estimate: args.estimate,
-        done_when: args.done_when,
-        status: 'open',
-        tags: args.tags,
-        notes: args.notes,
-        created: date,
-        updated: date,
-        done_at: null,
-      };
+      if (args.parent !== undefined || args.dep !== undefined) {
+        await assertEdgeWrite({ slug: args.slug, id, parent: args.parent, dep: args.dep });
+      }
+      const task = newTask(args, id, args.priority ?? nextPriority(existing));
+      await assertCategories(activeRoot, task, changedCategoryFields(args));
       const taskDir = path.join(getInitiativeDir(args.slug), 'tasks');
       await fs.mkdir(taskDir, { recursive: true });
       await writeYaml(path.join(taskDir, `${id}.yml`), task, TaskSchema);
-      return task;
+      return quietOr(args.quiet, ctx, task, () => `${id} created`);
     });
   },
 });

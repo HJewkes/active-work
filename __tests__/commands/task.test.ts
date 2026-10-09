@@ -275,6 +275,43 @@ describe('task.list', () => {
     });
   });
 
+  it('keeps only the ids given to --id, done ones included', async () => {
+    await withTempActiveRoot(async (root) => {
+      await taskAdd.run({ slug: SLUG, title: 'Third sample task' }, ctx(root));
+      // Parse like the CLI and MCP do, so a schema-level status default would show up here.
+      const args = taskList.args.parse({ slug: SLUG, id: 'SI-2, SI-3' });
+      const { tasks } = await taskList.run(args, ctx(root));
+      expect(tasks.map((t) => t.id)).toEqual(['SI-2', 'SI-3']);
+    });
+  });
+
+  it('still honours an explicit status alongside --id', async () => {
+    await withTempActiveRoot(async (root) => {
+      const { tasks } = await taskList.run(
+        { slug: SLUG, id: 'SI-1,SI-2', status: 'open' },
+        ctx(root),
+      );
+      expect(tasks.map((t) => t.id)).toEqual(['SI-1']);
+    });
+  });
+
+  it('matches --search case-insensitively on title', async () => {
+    await withTempActiveRoot(async (root) => {
+      const { tasks } = await taskList.run(
+        { slug: SLUG, search: 'ALREADY done', status: 'all' },
+        ctx(root),
+      );
+      expect(tasks.map((t) => t.id)).toEqual(['SI-2']);
+    });
+  });
+
+  it('matches --search on id', async () => {
+    await withTempActiveRoot(async (root) => {
+      const { tasks } = await taskList.run({ slug: SLUG, search: 'si-1' }, ctx(root));
+      expect(tasks.map((t) => t.id)).toEqual(['SI-1']);
+    });
+  });
+
   it('throws when neither slug nor all_initiatives is provided', async () => {
     await withTempActiveRoot(async (root) => {
       await expect(taskList.run({}, ctx(root))).rejects.toBeInstanceOf(UsageError);

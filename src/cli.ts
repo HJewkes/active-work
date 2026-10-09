@@ -59,9 +59,9 @@ function coerce(value: unknown, zodType: string | undefined): unknown {
     return Number.isNaN(n) ? value : n;
   }
   if (zodType === 'array') {
-    if (Array.isArray(value)) return value;
-    return String(value)
-      .split(',')
+    const parts: unknown[] = Array.isArray(value) ? value : [value];
+    return parts
+      .flatMap((part) => String(part).split(','))
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
   }
@@ -195,6 +195,10 @@ async function invoke(
   ctx: CommandContext,
   format: 'human' | 'json',
 ): Promise<InvocationOutput> {
+  if (raw.quiet === true && format === 'json') {
+    emitError('--quiet and --json cannot be combined', EXIT.USAGE, format);
+    return { exitCode: EXIT.USAGE, success: false };
+  }
   let parsed: unknown;
   try {
     parsed = cmd.args.parse(raw);
@@ -233,6 +237,11 @@ function buildOptionFlags(
   return `${short}${opt.long} <value>`;
 }
 
+/** A repeated array option accumulates (`--tag a --tag b`) instead of keeping the last value. */
+function collectRepeated(value: string, previous: string[] | undefined): string[] {
+  return [...(previous ?? []), value];
+}
+
 /** Attach one registry command as a sub-command under its appropriate parent. */
 function attachCommand(root: Command, cmd: AnyCommand): void {
   const parts = splitName(cmd.name);
@@ -253,8 +262,11 @@ function attachCommand(root: Command, cmd: AnyCommand): void {
   if (meta.options) {
     for (const [key, opt] of Object.entries(meta.options)) {
       const flags = buildOptionFlags(cmd, key, opt);
+      const isArray = unwrapZodType(fieldSchema(cmd.args, key)) === 'array';
       if (opt.required) {
         sub.requiredOption(flags, opt.description);
+      } else if (isArray) {
+        sub.option(flags, opt.description, collectRepeated);
       } else {
         sub.option(flags, opt.description);
       }

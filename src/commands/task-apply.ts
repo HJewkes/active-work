@@ -5,7 +5,8 @@ import { defineCommand, type CommandContext } from '../registry/index.js';
 import { getActiveRoot } from '../utils/paths.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, ValidationError } from '../errors.js';
-import { groupPlan, parsePlan, type PlanEntry } from './_task-apply-plan.js';
+import { loadEdgeIndex } from '../tasks/edge-index.js';
+import { groupPlan, hasEdgeOps, parsePlan, type PlanEntry } from './_task-apply-plan.js';
 import { applySlug, type LineResult } from './_task-apply-run.js';
 
 // Strict on purpose, like `task note`: the verb takes a plan and two flags, nothing else.
@@ -66,10 +67,12 @@ function failedLine(entry: PlanEntry): LineResult {
 }
 
 async function applyPlan(entries: PlanEntry[], dryRun: boolean): Promise<Line[]> {
-  const date = today();
+  // Tag-only plans skip the whole-root read, so a malformed file elsewhere cannot block them.
+  const edges = hasEdgeOps(entries) ? await loadEdgeIndex() : undefined;
+  const run = { date: today(), dryRun, edges };
   const lines = entries.filter((entry) => entry.error !== undefined).map(failedLine);
   for (const [slug, tasks] of groupPlan(entries)) {
-    lines.push(...(await applySlug(slug, tasks, date, dryRun)));
+    lines.push(...(await applySlug(slug, tasks, run)));
   }
   return lines.sort((a, b) => a.index - b.index).map(({ index: _index, ...line }) => line);
 }
@@ -123,7 +126,7 @@ function failureError(summary: Summary): ValidationError {
 export default defineCommand<Args, z.infer<typeof ResultSchema>>({
   name: 'task.apply',
   description:
-    'Apply a JSONL plan of tag, note and done ops to many tasks: one lock per initiative, one write per task, idempotent',
+    'Apply a JSONL plan of tag, note, done, set_parent and add_dep ops to many tasks: one lock per initiative, one write per task, idempotent',
   args: ArgsSchema,
   result: ResultSchema,
   cli: {

@@ -22,6 +22,15 @@ import pause from './pause.js';
 import unfocus from './unfocus.js';
 import unpause from './unpause.js';
 
+// Categories
+import categoryInit from './category-init.js';
+import categoryList from './category-list.js';
+// Deliverables
+import deliverableAdd from './deliverable-add.js';
+import deliverableList from './deliverable-list.js';
+import deliverableSet from './deliverable-set.js';
+import deliverableShip from './deliverable-ship.js';
+
 // Tasks
 import taskAdd from './task-add.js';
 import taskApply from './task-apply.js';
@@ -31,6 +40,7 @@ import taskEdit from './task-edit.js';
 import taskNote from './task-note.js';
 import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
+import taskShow from './task-show.js';
 
 // Sessions
 import loopOpen from './loop-open.js';
@@ -126,11 +136,20 @@ const ALL_COMMANDS: AnyCommand[] = [
   unpause,
   facetAdd,
   facetList,
+  // categories
+  categoryInit,
+  categoryList,
+  // deliverables
+  deliverableAdd,
+  deliverableList,
+  deliverableSet,
+  deliverableShip,
   // tasks
   taskAdd,
   taskApply,
   taskDone,
   taskList,
+  taskShow,
   taskEdit,
   taskNote,
   taskReorder,

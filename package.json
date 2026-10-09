@@ -1,6 +1,6 @@
 {
   "name": "@titan-design/active-work",
-  "version": "0.22.4",
+  "version": "0.23.0",
   "type": "module",
   "description": "Durable workspace state for engineering work — CLI, MCP, and Claude skill for tracking initiatives across sessions",
   "license": "MIT",
@@ -25,9 +25,9 @@
     "docs/cli-reference.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=24 <25"
   },
-  "packageManager": "pnpm@10.28.1",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsup && pnpm build:dashboard",
@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@titan-design/egress-scan": "^0.2.0",
+    "@titan-design/egress-scan": "^0.5.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
@@ -94,12 +94,13 @@
     "@titan-design/daemon": "^0.1.4",
     "@titan-design/decider": "0.3.0",
     "@titan-design/locator": "^0.2.1",
+    "@titan-design/pm": "^0.1.0",
     "@titan-design/registry": "^0.1.0",
     "@titan-design/retrieval": "0.3.0",
-    "@titan-design/session-analytics": "^0.3.1",
+    "@titan-design/session-analytics": "^0.9.0",
     "@titan-design/session-graph": "^0.11.0",
     "@titan-design/session-read": "^0.9.1",
-    "@titan-design/store-sqlite": "^0.3.1",
+    "@titan-design/store-sqlite": "^0.3.3",
     "better-sqlite3": "^13.0.2",
     "commander": "^14.0.3",
     "env-paths": "^4.0.0",
@@ -114,7 +115,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@titan-design/session-graph>@titan-design/session-read": "^0.9.1",
+      "@titan-design/session-graph@^0.11.0>@titan-design/session-read": "^0.9.1",
       "proxy-addr": "^2.0.8",
       "tinypool": "^2.1.2"
     },
