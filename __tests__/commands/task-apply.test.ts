@@ -270,6 +270,22 @@ describe('task.apply', () => {
       });
     });
 
+    it('carries over only tag deps that resolve: known, filed once, not the task itself', async () => {
+      await withTempActiveRoot(async (root) => {
+        await seedTask(root, 'SI-1');
+        await seedTask(root, 'DU-1');
+        await seedTask(root, 'DU-1', OTHER);
+        await seedTask(root, 'SI-3', SLUG, {
+          tags: ['dep:SI-1', 'dep:SI-404', 'dep:DU-1', 'dep:SI-3'],
+        });
+        const plan = await writePlan(root, [edgeLine('SI-3', 'add_dep', 'SI-1')]);
+
+        await apply(root, plan);
+
+        expect((await readTask(root, 'SI-3')).dep).toEqual(['SI-1']);
+      });
+    });
+
     it('fails only the lines the edge check refuses and applies the rest', async () => {
       await withTempActiveRoot(async (root) => {
         for (const id of ['SI-1', 'SI-2', 'SI-3']) await seedTask(root, id);

@@ -3,7 +3,8 @@
  * write per task. Tag and note ops reuse `task edit`'s patch semantics; `done`
  * reuses the `task done` transition. A line that sets a parent or adds a dep is
  * checked against the whole-root edge index, which each applied line updates in
- * memory, so a later line sees the edges an earlier one wrote.
+ * memory. Lines apply grouped by initiative, then by task, so a line sees the
+ * edges of every line applied before it in that order, not in plan-line order.
  */
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -42,27 +43,36 @@ function patchFor(op: Exclude<ApplyOp, EdgeOp | { op: 'done' }>): PatchEdit {
   return { kind: 'patch', append: op.value };
 }
 
+/** A tag-only dep worth carrying into the field: a known id, filed once, not the task itself. */
+function resolvesCleanly(edges: EdgeIndex, task: Task, ref: string): boolean {
+  return ref !== task.id && edges.homes.get(ref)?.length === 1;
+}
+
 /**
  * Writes the edge as a field. Unlike `task edit --dep`, a dep that only a tag supplies still
  * counts as missing, because writing the field is the point of the tag-to-field migration.
- * The new list starts from readEdges, so the task's other tag-only deps are carried over.
+ * The task's other tag-only deps carry over only when they resolve cleanly: once the field
+ * exists it hides the tags, so a bad tag carried in could no longer be fixed by editing it.
  */
-function applyEdgeOp(task: Task, op: EdgeOp): Stepped {
+function applyEdgeOp(task: Task, op: EdgeOp, edges: EdgeIndex | undefined): Stepped {
   if (op.op === 'set_parent') {
     if (task.parent === op.value) return { task, changed: false };
     return { task: { ...task, parent: op.value }, changed: true };
   }
   if ((task.dep ?? []).includes(op.value)) return { task, changed: false };
-  const dep = [...new Set([...readEdges(task).dep, op.value])];
+  if (edges === undefined) throw new Error('Edge ops need the edge index, which was not loaded');
+  const carried =
+    task.dep ?? readEdges(task).dep.filter((ref) => resolvesCleanly(edges, task, ref));
+  const dep = [...new Set([...carried, op.value])];
   return { task: { ...task, dep }, changed: true };
 }
 
-function applyOp(task: Task, op: ApplyOp, date: string): Stepped {
+function applyOp(task: Task, op: ApplyOp, date: string, edges: EdgeIndex | undefined): Stepped {
   if (op.op === 'done') {
     if (task.status === 'done') return { task, changed: false };
     return { task: { ...task, status: 'done', done_at: date }, changed: true };
   }
-  if (isEdgeOp(op)) return applyEdgeOp(task, op);
+  if (isEdgeOp(op)) return applyEdgeOp(task, op, edges);
   if (op.op === 'append' && hasLine(task.notes, op.value)) return { task, changed: false };
   const { changes } = patchChange(task, patchFor(op));
   return { task: { ...task, ...changes }, changed: Object.keys(changes).length > 0 };
@@ -116,7 +126,7 @@ function applyEntry(
   let next = task;
   const changes: string[] = [];
   for (const op of entry.ops) {
-    const step = applyOp(next, op, date);
+    const step = applyOp(next, op, date, edges);
     next = step.task;
     if (step.changed) changes.push(describeOp(op));
   }
@@ -147,13 +157,29 @@ export interface ApplyContext {
   edges?: EdgeIndex;
 }
 
+/** On a failed write, put the index back, so later lines are not checked against edges never written. */
+async function writeOrRollBack(
+  file: string,
+  slug: string,
+  written: { task: Task; original: Task },
+  edges: EdgeIndex | undefined,
+): Promise<void> {
+  try {
+    await writeYaml(file, written.task, TaskSchema);
+  } catch (err) {
+    recordTask(edges, slug, written.original);
+    throw err;
+  }
+}
+
 async function applyTask(
   file: string,
   entries: PlanEntry[],
   run: ApplyContext,
 ): Promise<LineResult[]> {
-  let task = await loadTask(file);
-  if (task === undefined) return entries.map((entry) => result(entry, 'missing'));
+  const original = await loadTask(file);
+  if (original === undefined) return entries.map((entry) => result(entry, 'missing'));
+  let task = original;
   const lines: LineResult[] = [];
   for (const entry of entries) {
     const step = applyEntry(task, entry, run.date, run.edges);
@@ -161,7 +187,9 @@ async function applyTask(
     lines.push(step.line);
   }
   const dirty = lines.some((line) => line.result === 'applied');
-  if (dirty && !run.dryRun) await writeYaml(file, task, TaskSchema);
+  if (dirty && !run.dryRun) {
+    await writeOrRollBack(file, entries[0]!.slug, { task, original }, run.edges);
+  }
   return lines;
 }
 

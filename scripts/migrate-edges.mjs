@@ -14,6 +14,7 @@
 // The counts go to stdout as JSON.
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import YAML from 'yaml';
@@ -153,7 +154,9 @@ export function renderUnresolved(unresolved) {
   const header = [
     '# Edge tag migration: unresolved tags',
     '',
-    'Each row is a tag the migration did not turn into a field. The tag stays; fix it by hand.',
+    'Each row is a tag the migration did not turn into a field. The tag stays, but once the task',
+    'has a `dep` or `parent` field the field wins and the tag is ignored, so fix the edge with',
+    '`task edit --dep` or `--parent` rather than by editing the tag.',
     '',
     '| initiative | task | tag | reason | detail |',
     '|---|---|---|---|---|',
