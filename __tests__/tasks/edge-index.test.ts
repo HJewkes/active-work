@@ -21,7 +21,7 @@ const SEED: Record<string, { prefix: string; tasks: Partial<Task>[] }> = {
       { id: 'H-6', tags: ['dep:H-1'] },
     ],
   },
-  beta: { prefix: 'H', tasks: [{ id: 'H-5' }, { id: 'H-10' }] },
+  beta: { prefix: 'H', tasks: [{ id: 'H-5', dep: ['H-404'] }, { id: 'H-10' }] },
   gamma: { prefix: 'G', tasks: [{ id: 'G-1', dep: ['H-2'] }] },
 };
 
@@ -147,6 +147,17 @@ describe('task edit with edges', () => {
     });
   });
 
+  it.each([
+    ['alpha', 'H-1', ['H-1']],
+    ['beta', 'H-10', ['H-404', 'H-10']],
+  ])('edits the %s copy of an id filed in two initiatives', async (slug, dep, expected) => {
+    await inSeededRoot(async (root) => {
+      await taskEdit.run({ slug, id: 'H-5', dep: [dep] }, ctx(root));
+
+      expect((await readTask(root, slug, 'H-5')).dep).toEqual(expected);
+    });
+  });
+
   it('carries a tag-only dep into the dep field when adding another', async () => {
     await inSeededRoot(async (root) => {
       await edit(root, 'H-6', { dep: ['H-10'] });
@@ -176,6 +187,37 @@ describe('edgeWriteErrors', () => {
 
   it('does not block a write on a stale dep the write does not name', () => {
     expect(edgeWriteErrors(index, { slug: 'alpha', id: 'H-1', dep: ['H-404', 'H-2'] })).toEqual([]);
+  });
+
+  it('checks the edited copy of an id filed in two initiatives, not the other one', () => {
+    const duplicated = buildEdgeIndex(
+      new Map([
+        ['alpha', [fullTask({ id: 'H-5' }), fullTask({ id: 'H-1' })]],
+        ['beta', [fullTask({ id: 'H-5', dep: ['H-404'] }), fullTask({ id: 'H-10' })]],
+      ]),
+    );
+
+    expect(
+      edgeWriteErrors(duplicated, { slug: 'beta', id: 'H-5', dep: ['H-404', 'H-10'] }),
+    ).toEqual([]);
+    expect(edgeWriteErrors(duplicated, { slug: 'alpha', id: 'H-5', dep: ['H-1'] })).toEqual([]);
+  });
+
+  it('does not block a write on a cycle already on disk', () => {
+    const cyclic = buildEdgeIndex(
+      new Map([
+        [
+          'alpha',
+          [
+            fullTask({ id: 'H-1', dep: ['H-2'] }),
+            fullTask({ id: 'H-2', dep: ['H-1'] }),
+            fullTask({ id: 'H-3' }),
+          ],
+        ],
+      ]),
+    );
+
+    expect(edgeWriteErrors(cyclic, { slug: 'alpha', id: 'H-1', dep: ['H-2', 'H-3'] })).toEqual([]);
   });
 
   it('names a stale dep the write adds', () => {

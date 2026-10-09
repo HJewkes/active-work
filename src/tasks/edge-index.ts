@@ -10,7 +10,7 @@ import { loadExistingTasks } from '../utils/task-seq.js';
  * file presence, not by prefix, because prefixes collide across initiatives.
  */
 export interface EdgeIndex {
-  tasks: Task[];
+  entries: { slug: string; task: Task }[];
   homes: Map<string, string[]>;
 }
 
@@ -23,15 +23,15 @@ export interface EdgeWrite {
 }
 
 export function buildEdgeIndex(bySlug: ReadonlyMap<string, readonly Task[]>): EdgeIndex {
-  const tasks: Task[] = [];
+  const entries: EdgeIndex['entries'] = [];
   const homes = new Map<string, string[]>();
   for (const [slug, slugTasks] of bySlug) {
     for (const task of slugTasks) {
-      tasks.push(task);
+      entries.push({ slug, task });
       homes.set(task.id, [...(homes.get(task.id) ?? []), slug]);
     }
   }
-  return { tasks, homes };
+  return { entries, homes };
 }
 
 export async function loadEdgeIndex(): Promise<EdgeIndex> {
@@ -42,9 +42,19 @@ export async function loadEdgeIndex(): Promise<EdgeIndex> {
   return buildEdgeIndex(bySlug);
 }
 
+/**
+ * The tasks checkEdges sees. checkEdges keys its graph by id, so another initiative's task with
+ * the edited task's id is left out: the edited task is the copy filed under `write.slug`.
+ */
+function graphFor(index: EdgeIndex, write: EdgeWrite): Task[] {
+  return index.entries
+    .filter(({ slug, task }) => task.id !== write.id || slug === write.slug)
+    .map(({ task }) => task);
+}
+
 /** The ids the write adds: its parent and any dep the task does not already have. */
-function namedIds(index: EdgeIndex, write: EdgeWrite): Set<string> {
-  const current = index.tasks.find((task) => task.id === write.id);
+function namedIds(graph: readonly Task[], write: EdgeWrite): Set<string> {
+  const current = graph.find((task) => task.id === write.id);
   const currentDeps = new Set(current === undefined ? [] : readEdges(current).dep);
   const addedDeps = (write.dep ?? []).filter((ref) => !currentDeps.has(ref));
   return new Set([...(write.parent === undefined ? [] : [write.parent]), ...addedDeps]);
@@ -64,6 +74,23 @@ function placementErrors(index: EdgeIndex, write: EdgeWrite, named: Set<string>)
   return errors;
 }
 
+const cycleKey = (error: EdgeError): string =>
+  error.kind === 'cycle' ? `${error.field}:${error.ids.join(',')}` : '';
+
+/** Graph errors the write is responsible for: an unknown id it names, or a cycle it closes. */
+function writeGraphErrors(
+  graph: readonly Task[],
+  write: EdgeWrite,
+  named: Set<string>,
+): EdgeError[] {
+  if (named.size === 0) return [];
+  const before = new Set(checkEdges(graph, { id: write.id }).errors.map(cycleKey));
+  const { errors } = checkEdges(graph, { id: write.id, parent: write.parent, dep: write.dep });
+  return errors.filter((e) =>
+    e.kind === 'unknown-id' ? named.has(e.ref) : !before.has(cycleKey(e)),
+  );
+}
+
 function describeEdgeError(error: EdgeError): string {
   if (error.kind === 'unknown-id') return `${error.field} ${error.ref} is not a known task id`;
   return `${error.field} cycle: ${[...error.ids, error.ids[0]].join(' -> ')}`;
@@ -72,18 +99,12 @@ function describeEdgeError(error: EdgeError): string {
 /**
  * The reasons a write must be refused: a named id that is unknown or filed in two initiatives,
  * a parent outside the task's initiative, or a parent or dep cycle across all initiatives.
- * Unknown ids the write does not name (a stale edge already on disk) do not block it.
+ * A stale unknown edge or a cycle already on disk does not block a write that leaves it alone.
  */
 export function edgeWriteErrors(index: EdgeIndex, write: EdgeWrite): string[] {
-  const named = namedIds(index, write);
-  const { errors } = checkEdges(index.tasks, {
-    id: write.id,
-    parent: write.parent,
-    dep: write.dep,
-  });
-  const graphErrors = errors.filter((e) =>
-    e.kind === 'unknown-id' ? named.has(e.ref) : named.size > 0,
-  );
+  const graph = graphFor(index, write);
+  const named = namedIds(graph, write);
+  const graphErrors = writeGraphErrors(graph, write, named);
   return [...placementErrors(index, write, named), ...graphErrors.map(describeEdgeError)];
 }
 
