@@ -9,6 +9,7 @@ import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, UsageError, ValidationError } from '../errors.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
+import { assertKnownDeliverables } from './_deliverables.js';
 import {
   quietOption,
   QuietArg,
@@ -41,6 +42,7 @@ const ArgsSchema = z.object({
   parent: z.string().min(1).optional(),
   dep: z.array(z.string().min(1)).optional(),
   remove_dep: z.array(z.string().min(1)).optional(),
+  deliverable: z.array(z.string().min(1)).optional(),
   force: z.boolean().optional(),
   quiet: QuietArg,
 });
@@ -84,6 +86,7 @@ export interface PatchEdit {
   parent?: string;
   addDeps?: string[];
   removeDeps?: string[];
+  addDeliverables?: string[];
 }
 
 type Edit = { kind: 'field'; field: EditableField; value: unknown } | PatchEdit;
@@ -137,24 +140,34 @@ function patchEdit(args: Args): Edit {
     parent: args.parent,
     addDeps: args.dep,
     removeDeps: args.remove_dep,
+    addDeliverables: args.deliverable,
   };
 }
 
-const PATCH_KEYS = ['append', 'add_tag', 'remove_tag', 'parent', 'dep', 'remove_dep'] as const;
+const PATCH_KEYS = [
+  'append',
+  'add_tag',
+  'remove_tag',
+  'parent',
+  'dep',
+  'remove_dep',
+  'deliverable',
+] as const;
 
 function parseEdit(args: Args): Edit {
   const fieldForm = args.field !== undefined || args.value !== undefined;
   const flagForm = PATCH_KEYS.some((key) => args[key] !== undefined);
   if (fieldForm && flagForm) {
     throw new UsageError(
-      'Pass either <field> <value> or --append/--add-tag/--remove-tag/--parent/--dep/--remove-dep, not both',
+      'Pass either <field> <value> or --append/--add-tag/--remove-tag/--parent/--dep/--remove-dep/' +
+        '--deliverable, not both',
     );
   }
   if (fieldForm) return fieldEdit(args);
   if (flagForm) return patchEdit(args);
   throw new UsageError(
     'Nothing to edit: pass <field> <value>, --append <text>, --add-tag <tag>, --remove-tag <tag>, ' +
-      '--parent <id>, --dep <ids> or --remove-dep <ids>',
+      '--parent <id>, --dep <ids>, --remove-dep <ids> or --deliverable <ids>',
   );
 }
 
@@ -186,9 +199,19 @@ function edgeChange(task: Task, edit: PatchEdit): TaskChange {
   return { changes, notices };
 }
 
+function newDeliverables(task: Task, edit: PatchEdit): string[] {
+  const current = task.deliverables ?? [];
+  return [...new Set(edit.addDeliverables ?? [])].filter((id) => !current.includes(id));
+}
+
 export function patchChange(task: Task, edit: PatchEdit): TaskChange {
   const current = task.tags ?? [];
   const { changes, notices } = edgeChange(task, edit);
+  const added = newDeliverables(task, edit);
+  for (const id of (edit.addDeliverables ?? []).filter((d) => task.deliverables?.includes(d))) {
+    notices.push(`Deliverable already present, nothing added: ${id}`);
+  }
+  if (added.length > 0) changes.deliverables = [...(task.deliverables ?? []), ...added];
   const { append, addTag, removeTag } = edit;
   if (append !== undefined) changes.notes = appendLine(task.notes, append);
   if (addTag !== undefined) {
@@ -269,7 +292,10 @@ function edgeParts(task: Task, edit: PatchEdit): string[] {
   return parts;
 }
 
-/** Names what the edit changed: the field, "notes", "+tag x", "-tag x", "parent x", "+dep x" or "-dep x". */
+/**
+ * Names what the edit changed: the field, "notes", "+tag x", "-tag x", "parent x", "+dep x",
+ * "-dep x" or "+deliverable x".
+ */
 function editedLine(task: Task, edit: Edit): string {
   if (edit.kind === 'field') return `${task.id} edited: ${edit.field}`;
   const tags = task.tags ?? [];
@@ -280,6 +306,7 @@ function editedLine(task: Task, edit: Edit): string {
     parts.push(`-tag ${edit.removeTag}`);
   }
   parts.push(...edgeParts(task, edit));
+  parts.push(...newDeliverables(task, edit).map((id) => `+deliverable ${id}`));
   return parts.length === 0 ? `${task.id} unchanged` : `${task.id} edited: ${parts.join(', ')}`;
 }
 
@@ -312,6 +339,10 @@ export default defineCommand<Args, TaskOrLine>({
       parent: { long: '--parent', description: 'Set the parent task id, in this initiative' },
       dep: { long: '--dep', description: 'Comma-separated ids to add as deps (any initiative)' },
       remove_dep: { long: '--remove-dep', description: 'Comma-separated ids to drop from deps' },
+      deliverable: {
+        long: '--deliverable',
+        description: 'Comma-separated deliverable ids to add, keeping the others',
+      },
       force: {
         long: '--force',
         description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
@@ -330,6 +361,8 @@ export default defineCommand<Args, TaskOrLine>({
       announce(ctx, notices);
       const line = (): string => editedLine(task, edit);
       if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);
+      const added = edit.kind === 'patch' ? newDeliverables(task, edit) : [];
+      if (added.length > 0) await assertKnownDeliverables(getActiveRoot(), added);
       if (addsEdge(task, changes)) {
         await assertEdgeWrite({
           slug: args.slug,

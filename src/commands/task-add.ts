@@ -14,6 +14,7 @@ import {
 import { writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
+import { assertKnownDeliverables } from './_deliverables.js';
 import {
   quietOption,
   QuietArg,
@@ -33,6 +34,7 @@ const ArgsSchema = z.object({
   notes: z.string().optional(),
   parent: z.string().min(1).optional(),
   dep: z.array(z.string().min(1)).optional(),
+  deliverable: z.array(z.string().min(1)).optional(),
   quiet: QuietArg,
 });
 
@@ -65,6 +67,7 @@ function newTask(args: Args, id: string, priority: number): Task {
     id,
     parent: args.parent,
     dep: args.dep,
+    deliverables: args.deliverable && [...new Set(args.deliverable)],
     title: args.title,
     priority,
     severity: args.severity,
@@ -105,12 +108,17 @@ export default defineCommand<Args, TaskOrLine>({
         long: '--dep',
         description: 'Comma-separated ids this task depends on (any initiative)',
       },
+      deliverable: {
+        long: '--deliverable',
+        description: 'Comma-separated deliverable ids this task counts toward',
+      },
       quiet: quietOption('PRJ-12 created'),
     },
   },
   async run(args, ctx) {
     // Touch activeRoot so it's resolved before locking.
-    getActiveRoot();
+    const activeRoot = getActiveRoot();
+    if (args.deliverable !== undefined) await assertKnownDeliverables(activeRoot, args.deliverable);
     return withFileLock(getLockPath(args.slug), async () => {
       const brief = await loadBrief(args.slug);
       const existing = await loadExistingTasks(args.slug);

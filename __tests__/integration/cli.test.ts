@@ -270,6 +270,19 @@ describe('cli integration', () => {
     expect(runCli(['--json', 'loops', slug, '--due'], env).stdout).toContain('"open":[]');
   });
 
+  it('ANDs a repeated --tag on deliverable list', () => {
+    const env = { ACTIVE_ROOT: activeRoot };
+    const required = ['--title', 'T', '--done-when', 'Ships', '--owner-seat', 'seat-a'];
+    runCli(['deliverable', 'add', 'A', ...required, '--tags', 'ui,web'], env);
+    runCli(['deliverable', 'add', 'B', ...required, '--tags', 'ui'], env);
+
+    const res = runCli(['--json', 'deliverable', 'list', '--tag', 'ui', '--tag', 'web'], env);
+
+    expect(res.status).toBe(0);
+    const rows = (JSON.parse(res.stdout) as { data: Array<{ id: string }> }).data;
+    expect(rows.map((row) => row.id)).toEqual(['A']);
+  });
+
   describe('task edit flags', () => {
     const SLUG = 'flag-demo';
     let taskId: string;
