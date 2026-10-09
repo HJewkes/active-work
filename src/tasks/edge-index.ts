@@ -34,10 +34,22 @@ export function buildEdgeIndex(bySlug: ReadonlyMap<string, readonly Task[]>): Ed
   return { entries, homes };
 }
 
+async function loadInitiativeTasks(slug: string): Promise<Task[]> {
+  try {
+    return await loadExistingTasks(slug);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new ValidationError(
+      `The edge check reads every task under the active root, and a task file in ${slug} ` +
+        `cannot be read. Fix that file and retry. ${reason}`,
+    );
+  }
+}
+
 export async function loadEdgeIndex(): Promise<EdgeIndex> {
   const bySlug = new Map<string, Task[]>();
   for (const slug of await listInitiativeSlugs(getActiveRoot())) {
-    bySlug.set(slug, await loadExistingTasks(slug));
+    bySlug.set(slug, await loadInitiativeTasks(slug));
   }
   return buildEdgeIndex(bySlug);
 }
