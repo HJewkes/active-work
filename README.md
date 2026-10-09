@@ -119,6 +119,8 @@ The most-used surface, grouped by purpose. Run `active-work <command> --help` fo
 | Lifecycle | `active-work list` | List every initiative grouped by state |
 | Tasks | `active-work task add <slug> --title ... --priority N` | Add a task |
 | Tasks | `active-work task done <slug> <id>` | Mark a task done |
+| Tasks | `active-work task edit <slug> <id> --append "<line>"` | Append a note line (also `<field> <value>`, `--add-tag`, `--remove-tag`) |
+| Tasks | `active-work task add\|edit\|done ... --quiet` | Print one line instead of the task: `MF-3 created`, `MF-3 edited: notes`, `MF-3 done 2026-10-04` |
 | Tasks | `active-work task list [slug]` | List tasks for an initiative or across all |
 | Sessions | `active-work wrap <slug> ...` | End a session: summary + open-loop ledger + brief bump |
 | Sessions | `aw <slug>` | Launch Claude with the bootstrap prompt |

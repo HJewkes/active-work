@@ -354,4 +354,46 @@ describe('cli integration', () => {
       expect(await readTaskFile()).toBe(before);
     });
   });
+
+  describe('task --quiet', () => {
+    const SLUG = 'quiet-demo';
+    const env = (): Record<string, string> => ({ ACTIVE_ROOT: activeRoot });
+
+    beforeEach(() => {
+      runCli(['new', SLUG, '--title', 'Quiet demo', '--ship-target', '2026-Q3'], env());
+    });
+
+    it('task add --quiet prints "<id> created"', () => {
+      const res = runCli(['task', 'add', SLUG, '--title', 'Demo', '--quiet'], env());
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe('QD-1 created\n');
+    });
+
+    it('task edit --quiet prints "<id> edited: <what>"', () => {
+      runCli(['task', 'add', SLUG, '--title', 'Demo', '--quiet'], env());
+
+      const res = runCli(['task', 'edit', SLUG, 'QD-1', '--append', 'Two', '--quiet'], env());
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe('QD-1 edited: notes\n');
+    });
+
+    it('task done --quiet prints "<id> done <date>"', () => {
+      runCli(['task', 'add', SLUG, '--title', 'Demo', '--quiet'], env());
+
+      const res = runCli(['task', 'done', SLUG, 'QD-1', '--quiet'], env());
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toMatch(/^QD-1 done \d{4}-\d{2}-\d{2}\n$/);
+    });
+
+    it('exits 64 and writes nothing for --quiet with --json', async () => {
+      const res = runCli(['--json', 'task', 'add', SLUG, '--title', 'Demo', '--quiet'], env());
+
+      expect(res.status).toBe(64);
+      expect(res.stdout).toContain('--quiet and --json cannot be combined');
+      await expect(fs.readdir(path.join(activeRoot, SLUG, 'tasks'))).resolves.toEqual([]);
+    });
+  });
 });
