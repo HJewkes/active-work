@@ -6,7 +6,12 @@
 import { TaskSchema } from '../schemas/task.js';
 import { validateSlug } from '../utils/slug.js';
 
-export type ApplyOp = { op: 'add_tag' | 'remove_tag' | 'append'; value: string } | { op: 'done' };
+export type EdgeOp = { op: 'set_parent' | 'add_dep'; value: string };
+
+export type ApplyOp =
+  | { op: 'add_tag' | 'remove_tag' | 'append'; value: string }
+  | EdgeOp
+  | { op: 'done' };
 
 export interface PlanEntry {
   index: number;
@@ -39,6 +44,22 @@ function parseAppend(raw: unknown): ApplyOp {
   return { op: 'append', value: raw };
 }
 
+function parseEdgeRef(op: EdgeOp['op'], raw: unknown): EdgeOp {
+  if (typeof raw !== 'string' || !TaskSchema.shape.id.safeParse(raw).success) {
+    throw new Error(`${op} needs a task id: ${JSON.stringify(raw)}`);
+  }
+  return { op, value: raw };
+}
+
+export function isEdgeOp(op: ApplyOp): op is EdgeOp {
+  return op.op === 'set_parent' || op.op === 'add_dep';
+}
+
+/** True when some valid line sets a parent or adds a dep, so the whole-root edge index is needed. */
+export function hasEdgeOps(entries: readonly PlanEntry[]): boolean {
+  return entries.some((entry) => entry.error === undefined && entry.ops.some(isEdgeOp));
+}
+
 function parseOp(raw: unknown): ApplyOp {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(`Each op must be an object: ${JSON.stringify(raw)}`);
@@ -49,6 +70,7 @@ function parseOp(raw: unknown): ApplyOp {
   const value = (raw as Record<string, unknown>)[key];
   if (key === 'add_tag' || key === 'remove_tag') return parseTag(key, value);
   if (key === 'append') return parseAppend(value);
+  if (key === 'set_parent' || key === 'add_dep') return parseEdgeRef(key, value);
   if (key === 'done') {
     if (value !== true) throw new Error('done takes only true');
     return { op: 'done' };
