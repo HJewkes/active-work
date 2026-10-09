@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@titan-design/egress-scan": "^0.2.0",
+    "@titan-design/egress-scan": "^0.5.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.5",
     "@types/proper-lockfile": "^4.1.4",
