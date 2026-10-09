@@ -123,6 +123,11 @@ The most-used surface, grouped by purpose. Run `active-work <command> --help` fo
 | Tasks | `active-work task add\|edit ... --parent <id> --dep <ids>` | Set the parent (same initiative) and deps (any initiative); `edit` also takes `--remove-dep <ids>`. Refuses an unknown id, an id filed in two initiatives, a parent in another initiative and a parent or dep cycle |
 | Tasks | `active-work task add\|edit\|done ... --quiet` | Print one line instead of the task: `MF-3 created`, `MF-3 edited: notes`, `MF-3 done 2026-10-04` |
 | Tasks | `active-work task list [slug]` | List tasks for an initiative or across all |
+| Deliverables | `active-work deliverable add <id> --title ... --done-when ... --owner-seat ...` | Add a deliverable to the platform-wide registry (`titan-platform/deliverables/<id>.yml`, status `planned`); refuses an existing id |
+| Deliverables | `active-work deliverable set <id> --status\|--target\|--owner-seat ...` | Update one deliverable; `--target none` clears the date |
+| Deliverables | `active-work deliverable list [--tag t]... [--status s]` | List deliverables with open and done counts of joined tasks across all initiatives; a repeated `--tag` ANDs |
+| Deliverables | `active-work deliverable ship <id> [--force]` | Mark shipped; refuses while a joined task is open, naming it, unless `--force` |
+| Tasks | `active-work task add\|edit ... --deliverable <ids>` | Join a task to deliverables (`edit` adds, keeping the others); refuses an unknown id |
 | Sessions | `active-work wrap <slug> ...` | End a session: summary + open-loop ledger + brief bump |
 | Sessions | `aw <slug>` | Launch Claude with the bootstrap prompt |
 | Sessions | `active-work open <slug>` | Print the bootstrap prompt to stdout (no claude spawn) |
