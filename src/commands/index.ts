@@ -31,6 +31,7 @@ import taskEdit from './task-edit.js';
 import taskNote from './task-note.js';
 import taskList from './task-list.js';
 import taskReorder from './task-reorder.js';
+import taskShow from './task-show.js';
 
 // Sessions
 import loopOpen from './loop-open.js';
@@ -131,6 +132,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   taskApply,
   taskDone,
   taskList,
+  taskShow,
   taskEdit,
   taskNote,
   taskReorder,
