@@ -16,6 +16,12 @@ import { today } from '../utils/today.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
 import { assertKnownDeliverables } from './_deliverables.js';
 import {
+  assertCategories,
+  CATEGORY_OPTIONS,
+  changedCategoryFields,
+  DueArg,
+} from './_categories.js';
+import {
   quietOption,
   QuietArg,
   TaskOrLineSchema,
@@ -35,6 +41,10 @@ const ArgsSchema = z.object({
   parent: z.string().min(1).optional(),
   dep: z.array(z.string().min(1)).optional(),
   deliverable: z.array(z.string().min(1)).optional(),
+  kind: z.string().min(1).optional(),
+  cos: z.string().min(1).optional(),
+  area: z.string().min(1).optional(),
+  due: DueArg,
   quiet: QuietArg,
 });
 
@@ -74,6 +84,10 @@ function newTask(args: Args, id: string, priority: number): Task {
     estimate: args.estimate,
     done_when: args.done_when,
     status: 'open',
+    kind: args.kind,
+    cos: args.cos,
+    area: args.area,
+    due: args.due,
     tags: args.tags,
     notes: args.notes,
     created: date,
@@ -112,6 +126,7 @@ export default defineCommand<Args, TaskOrLine>({
         long: '--deliverable',
         description: 'Comma-separated deliverable ids this task counts toward',
       },
+      ...CATEGORY_OPTIONS,
       quiet: quietOption('PRJ-12 created'),
     },
   },
@@ -128,6 +143,7 @@ export default defineCommand<Args, TaskOrLine>({
         await assertEdgeWrite({ slug: args.slug, id, parent: args.parent, dep: args.dep });
       }
       const task = newTask(args, id, args.priority ?? nextPriority(existing));
+      await assertCategories(activeRoot, task, changedCategoryFields(args));
       const taskDir = path.join(getInitiativeDir(args.slug), 'tasks');
       await fs.mkdir(taskDir, { recursive: true });
       await writeYaml(path.join(taskDir, `${id}.yml`), task, TaskSchema);

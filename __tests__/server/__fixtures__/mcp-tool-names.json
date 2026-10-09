@@ -7,6 +7,8 @@
   "active__artifact__prune",
   "active__artifact__status",
   "active__audit",
+  "active__category__init",
+  "active__category__list",
   "active__context__graph",
   "active__context__related",
   "active__deliverable__add",
