@@ -2,18 +2,16 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import {
-  BUILT_IN_STATUSES,
   DeliverableSchema,
-  categoriesPath,
   deliverablePath,
   deliverablesDir,
-  parseCategoryRegistry,
   parseDeliverableRegistry,
   type Deliverable,
   type DeliverableEntry,
 } from '@titan-design/pm';
 import { z } from 'zod';
 import { NotFoundError, ValidationError } from '../errors.js';
+import { closedStatusIds } from './_categories.js';
 import { loadEdgeIndex } from '../tasks/edge-index.js';
 import type { Task } from '../schemas/task.js';
 import { coerceDates } from '../utils/coerce-dates.js';
@@ -73,17 +71,6 @@ export async function assertKnownDeliverables(activeRoot: string, ids: string[])
   throw new ValidationError(`Unknown deliverable id: ${unknown.join(', ')}`);
 }
 
-async function closedStatuses(activeRoot: string): Promise<Set<string>> {
-  let parsed: unknown;
-  try {
-    parsed = YAML.parse(await fs.readFile(categoriesPath(activeRoot), 'utf8'));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-  }
-  const statuses = parseCategoryRegistry(parsed)?.status ?? BUILT_IN_STATUSES;
-  return new Set(statuses.filter((s) => s.closed).map((s) => s.id));
-}
-
 export interface JoinedTasks {
   open: Task[];
   done: Task[];
@@ -91,7 +78,7 @@ export interface JoinedTasks {
 
 /** The tasks in every initiative that list each deliverable, split by whether their status is closed. */
 export async function joinedTasks(activeRoot: string): Promise<Map<string, JoinedTasks>> {
-  const closed = await closedStatuses(activeRoot);
+  const closed = await closedStatusIds(activeRoot);
   const joined = new Map<string, JoinedTasks>();
   for (const { task } of (await loadEdgeIndex()).entries) {
     for (const id of task.deliverables ?? []) {

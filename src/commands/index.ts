@@ -22,6 +22,9 @@ import pause from './pause.js';
 import unfocus from './unfocus.js';
 import unpause from './unpause.js';
 
+// Categories
+import categoryInit from './category-init.js';
+import categoryList from './category-list.js';
 // Deliverables
 import deliverableAdd from './deliverable-add.js';
 import deliverableList from './deliverable-list.js';
@@ -133,6 +136,9 @@ const ALL_COMMANDS: AnyCommand[] = [
   unpause,
   facetAdd,
   facetList,
+  // categories
+  categoryInit,
+  categoryList,
   // deliverables
   deliverableAdd,
   deliverableList,

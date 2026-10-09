@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { BUILT_IN_STATUSES, readEdges } from '@titan-design/pm';
+import { readEdges } from '@titan-design/pm';
 import { z } from 'zod';
 import { defineCommand, type CommandContext } from '../registry/index.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
@@ -10,6 +10,12 @@ import { today } from '../utils/today.js';
 import { NotFoundError, UsageError, ValidationError } from '../errors.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
 import { assertKnownDeliverables } from './_deliverables.js';
+import {
+  assertCategories,
+  CATEGORY_OPTIONS,
+  changedCategoryFields,
+  DueArg,
+} from './_categories.js';
 import {
   quietOption,
   QuietArg,
@@ -43,6 +49,10 @@ const ArgsSchema = z.object({
   dep: z.array(z.string().min(1)).optional(),
   remove_dep: z.array(z.string().min(1)).optional(),
   deliverable: z.array(z.string().min(1)).optional(),
+  kind: z.string().min(1).optional(),
+  cos: z.string().min(1).optional(),
+  area: z.string().min(1).optional(),
+  due: DueArg,
   force: z.boolean().optional(),
   quiet: QuietArg,
 });
@@ -78,8 +88,13 @@ function coerceValue(field: EditableField, value: unknown): unknown {
   return value;
 }
 
+const PATCH_FIELDS = ['kind', 'cos', 'area', 'due'] as const;
+
+type PatchField = (typeof PATCH_FIELDS)[number];
+
 export interface PatchEdit {
   kind: 'patch';
+  fields?: Partial<Pick<Task, PatchField>>;
   append?: string;
   addTag?: string;
   removeTag?: string;
@@ -141,7 +156,13 @@ function patchEdit(args: Args): Edit {
     addDeps: args.dep,
     removeDeps: args.remove_dep,
     addDeliverables: args.deliverable,
+    fields: patchFields(args),
   };
+}
+
+function patchFields(args: Args): PatchEdit['fields'] {
+  const set = PATCH_FIELDS.filter((key) => args[key] !== undefined);
+  return set.length === 0 ? undefined : Object.fromEntries(set.map((key) => [key, args[key]]));
 }
 
 const PATCH_KEYS = [
@@ -152,6 +173,7 @@ const PATCH_KEYS = [
   'dep',
   'remove_dep',
   'deliverable',
+  ...PATCH_FIELDS,
 ] as const;
 
 function parseEdit(args: Args): Edit {
@@ -160,14 +182,15 @@ function parseEdit(args: Args): Edit {
   if (fieldForm && flagForm) {
     throw new UsageError(
       'Pass either <field> <value> or --append/--add-tag/--remove-tag/--parent/--dep/--remove-dep/' +
-        '--deliverable, not both',
+        '--deliverable/--kind/--cos/--area/--due, not both',
     );
   }
   if (fieldForm) return fieldEdit(args);
   if (flagForm) return patchEdit(args);
   throw new UsageError(
     'Nothing to edit: pass <field> <value>, --append <text>, --add-tag <tag>, --remove-tag <tag>, ' +
-      '--parent <id>, --dep <ids>, --remove-dep <ids> or --deliverable <ids>',
+      '--parent <id>, --dep <ids>, --remove-dep <ids>, --deliverable <ids>, --kind, --cos, --area ' +
+      'or --due',
   );
 }
 
@@ -204,9 +227,22 @@ function newDeliverables(task: Task, edit: PatchEdit): string[] {
   return [...new Set(edit.addDeliverables ?? [])].filter((id) => !current.includes(id));
 }
 
+function newFields(task: Task, edit: PatchEdit): [PatchField, string][] {
+  return PATCH_FIELDS.flatMap((key) => {
+    const value = edit.fields?.[key];
+    return value === undefined || value === task[key] ? [] : [[key, value] as [PatchField, string]];
+  });
+}
+
 export function patchChange(task: Task, edit: PatchEdit): TaskChange {
   const current = task.tags ?? [];
   const { changes, notices } = edgeChange(task, edit);
+  for (const key of PATCH_FIELDS) {
+    if (edit.fields?.[key] !== undefined && edit.fields[key] === task[key]) {
+      notices.push(`${key} already ${task[key]}`);
+    }
+  }
+  Object.assign(changes, Object.fromEntries(newFields(task, edit)));
   const added = newDeliverables(task, edit);
   for (const id of (edit.addDeliverables ?? []).filter((d) => task.deliverables?.includes(d))) {
     notices.push(`Deliverable already present, nothing added: ${id}`);
@@ -252,20 +288,9 @@ function guardFieldEdit(task: Task, field: EditableField, value: unknown): void 
   }
 }
 
-// The status set moves to the category registry; until that lands, keep the set tasks have always had.
-function assertBuiltInStatus(value: unknown): void {
-  const allowed = BUILT_IN_STATUSES.map((status) => status.id);
-  if (typeof value !== 'string' || !allowed.includes(value)) {
-    throw new ValidationError(
-      `Invalid value for status: ${String(value)} (allowed: ${allowed.join(', ')})`,
-    );
-  }
-}
-
 function changeFor(task: Task, edit: Edit, date: string, force: boolean): TaskChange {
   if (edit.kind === 'patch') return patchChange(task, edit);
   const value = coerceValue(edit.field, edit.value);
-  if (edit.field === 'status') assertBuiltInStatus(value);
   if (!force) guardFieldEdit(task, edit.field, value);
   const changes: Record<string, unknown> = { [edit.field]: value };
   if (edit.field === 'status' && edit.value === 'done') changes.done_at = date;
@@ -294,7 +319,7 @@ function edgeParts(task: Task, edit: PatchEdit): string[] {
 
 /**
  * Names what the edit changed: the field, "notes", "+tag x", "-tag x", "parent x", "+dep x",
- * "-dep x" or "+deliverable x".
+ * "-dep x", "+deliverable x" or "kind x" (likewise cos, area and due).
  */
 function editedLine(task: Task, edit: Edit): string {
   if (edit.kind === 'field') return `${task.id} edited: ${edit.field}`;
@@ -307,6 +332,7 @@ function editedLine(task: Task, edit: Edit): string {
   }
   parts.push(...edgeParts(task, edit));
   parts.push(...newDeliverables(task, edit).map((id) => `+deliverable ${id}`));
+  parts.push(...newFields(task, edit).map(([key, value]) => `${key} ${value}`));
   return parts.length === 0 ? `${task.id} unchanged` : `${task.id} edited: ${parts.join(', ')}`;
 }
 
@@ -327,7 +353,8 @@ function announce(ctx: CommandContext, notices: string[]): void {
 export default defineCommand<Args, TaskOrLine>({
   name: 'task.edit',
   description:
-    'Edit a single field on a task, append a note line, add/remove one tag, or set parent and deps',
+    'Edit a single field on a task, append a note line, add/remove one tag, set parent and deps, ' +
+    'or set kind, cos, area and due (checked against the category registry)',
   args: ArgsSchema,
   result: TaskOrLineSchema,
   cli: {
@@ -343,6 +370,7 @@ export default defineCommand<Args, TaskOrLine>({
         long: '--deliverable',
         description: 'Comma-separated deliverable ids to add, keeping the others',
       },
+      ...CATEGORY_OPTIONS,
       force: {
         long: '--force',
         description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
@@ -361,6 +389,8 @@ export default defineCommand<Args, TaskOrLine>({
       announce(ctx, notices);
       const line = (): string => editedLine(task, edit);
       if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);
+      const next = { ...task, ...changes };
+      await assertCategories(getActiveRoot(), next, changedCategoryFields(changes));
       const added = edit.kind === 'patch' ? newDeliverables(task, edit) : [];
       if (added.length > 0) await assertKnownDeliverables(getActiveRoot(), added);
       if (addsEdge(task, changes)) {
@@ -371,7 +401,7 @@ export default defineCommand<Args, TaskOrLine>({
           dep: changes.dep,
         });
       }
-      const parsed = TaskSchema.safeParse({ ...task, ...changes, updated: date });
+      const parsed = TaskSchema.safeParse({ ...next, updated: date });
       if (!parsed.success) {
         const target = args.field ?? Object.keys(changes).join(', ');
         throw new ValidationError(`Invalid value for ${target}: ${parsed.error.message}`);
