@@ -37,6 +37,9 @@ importers:
       '@titan-design/locator':
         specifier: ^0.2.1
         version: 0.2.1
+      '@titan-design/pm':
+        specifier: ^0.1.0
+        version: 0.1.0(zod@4.4.3)
       '@titan-design/registry':
         specifier: ^0.1.0
         version: 0.1.0(zod@4.4.3)
@@ -771,6 +774,12 @@ packages:
 
   '@titan-design/memory@0.1.2':
     resolution: {integrity: sha512-dAzQUFY8zi6jM2+cbdZREz0QHFzqpANP+/zpIdI8NIYyFYZCINhD4u458n++dzTiGsGkchBrJ/FkFhZta7dDlg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@titan-design/pm@0.1.0':
+    resolution: {integrity: sha512-3HihqOlbc8Ot0XDtk7x4TxewmTZvprOfnhLRqqJeLXLlo1oCg+fE6YSH1LnvfovDP6XHzu630SjpSi1ntQmdyg==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -2973,6 +2982,10 @@ snapshots:
       zod: 4.4.3
     transitivePeerDependencies:
       - '@huggingface/transformers'
+
+  '@titan-design/pm@0.1.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
 
   '@titan-design/registry@0.1.0(zod@4.4.3)':
     dependencies:

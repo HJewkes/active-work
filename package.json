@@ -94,6 +94,7 @@
     "@titan-design/daemon": "^0.1.4",
     "@titan-design/decider": "0.3.0",
     "@titan-design/locator": "^0.2.1",
+    "@titan-design/pm": "^0.1.0",
     "@titan-design/registry": "^0.1.0",
     "@titan-design/retrieval": "0.3.0",
     "@titan-design/session-analytics": "^0.9.0",
