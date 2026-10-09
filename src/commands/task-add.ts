@@ -13,6 +13,13 @@ import {
 } from '../utils/task-seq.js';
 import { writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
+import {
+  quietOption,
+  QuietArg,
+  TaskOrLineSchema,
+  quietOr,
+  type TaskOrLine,
+} from './_task-quiet.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
@@ -23,6 +30,7 @@ const ArgsSchema = z.object({
   done_when: z.string().min(1).optional(),
   tags: z.array(z.string()).optional(),
   notes: z.string().optional(),
+  quiet: QuietArg,
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -48,11 +56,11 @@ function nextPriority(existing: Task[]): number {
   return max + 1;
 }
 
-export default defineCommand<Args, Task>({
+export default defineCommand<Args, TaskOrLine>({
   name: 'task.add',
   description: 'Create a new task in an initiative',
   args: ArgsSchema,
-  result: TaskSchema,
+  result: TaskOrLineSchema,
   cli: {
     positional: ['slug'],
     options: {
@@ -69,9 +77,10 @@ export default defineCommand<Args, Task>({
       },
       tags: { long: '--tags', description: 'Comma-separated tag list' },
       notes: { long: '--notes', description: 'Free-form notes' },
+      quiet: quietOption('PRJ-12 created'),
     },
   },
-  async run(args) {
+  async run(args, ctx) {
     // Touch activeRoot so it's resolved before locking.
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
@@ -98,7 +107,7 @@ export default defineCommand<Args, Task>({
       const taskDir = path.join(getInitiativeDir(args.slug), 'tasks');
       await fs.mkdir(taskDir, { recursive: true });
       await writeYaml(path.join(taskDir, `${id}.yml`), task, TaskSchema);
-      return task;
+      return quietOr(args.quiet, ctx, task, () => `${id} created`);
     });
   },
 });

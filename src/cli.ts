@@ -195,6 +195,10 @@ async function invoke(
   ctx: CommandContext,
   format: 'human' | 'json',
 ): Promise<InvocationOutput> {
+  if (raw.quiet === true && format === 'json') {
+    emitError('--quiet and --json cannot be combined', EXIT.USAGE, format);
+    return { exitCode: EXIT.USAGE, success: false };
+  }
   let parsed: unknown;
   try {
     parsed = cmd.args.parse(raw);

@@ -7,23 +7,32 @@ import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError } from '../errors.js';
+import {
+  quietOption,
+  QuietArg,
+  TaskOrLineSchema,
+  quietOr,
+  type TaskOrLine,
+} from './_task-quiet.js';
 
 const ArgsSchema = z.object({
   slug: z.string().min(1),
   id: z.string().min(1),
+  quiet: QuietArg,
 });
 
 type Args = z.infer<typeof ArgsSchema>;
 
-export default defineCommand<Args, Task>({
+export default defineCommand<Args, TaskOrLine>({
   name: 'task.done',
   description: 'Mark a task as done',
   args: ArgsSchema,
-  result: TaskSchema,
+  result: TaskOrLineSchema,
   cli: {
     positional: ['slug', 'id'],
+    options: { quiet: quietOption('PRJ-12 done 2026-10-04') },
   },
-  async run(args) {
+  async run(args, ctx) {
     getActiveRoot();
     return withFileLock(getLockPath(args.slug), async () => {
       const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
@@ -44,7 +53,7 @@ export default defineCommand<Args, Task>({
         updated: date,
       };
       await writeYaml(file, updated, TaskSchema);
-      return updated;
+      return quietOr(args.quiet, ctx, updated, () => `${updated.id} done ${date}`);
     });
   },
 });

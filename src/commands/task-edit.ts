@@ -7,6 +7,13 @@ import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, UsageError, ValidationError } from '../errors.js';
+import {
+  quietOption,
+  QuietArg,
+  TaskOrLineSchema,
+  quietOr,
+  type TaskOrLine,
+} from './_task-quiet.js';
 
 const EDITABLE_FIELDS = [
   'title',
@@ -30,6 +37,7 @@ const ArgsSchema = z.object({
   add_tag: z.string().optional(),
   remove_tag: z.string().optional(),
   force: z.boolean().optional(),
+  quiet: QuietArg,
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -197,17 +205,30 @@ async function loadTask(file: string, id: string): Promise<Task> {
   }
 }
 
+/** Names what the edit changed: the field, "notes" for --append, "+tag x" or "-tag x". */
+function editedLine(task: Task, edit: Edit): string {
+  if (edit.kind === 'field') return `${task.id} edited: ${edit.field}`;
+  const tags = task.tags ?? [];
+  const parts: string[] = [];
+  if (edit.append !== undefined) parts.push('notes');
+  if (edit.addTag !== undefined && !tags.includes(edit.addTag)) parts.push(`+tag ${edit.addTag}`);
+  if (edit.removeTag !== undefined && tags.includes(edit.removeTag)) {
+    parts.push(`-tag ${edit.removeTag}`);
+  }
+  return parts.length === 0 ? `${task.id} unchanged` : `${task.id} edited: ${parts.join(', ')}`;
+}
+
 function announce(ctx: CommandContext, notices: string[]): void {
   ctx.warnings.push(...notices);
   if (ctx.format === 'json') return;
   for (const notice of notices) process.stderr.write(`${notice}\n`);
 }
 
-export default defineCommand<Args, Task>({
+export default defineCommand<Args, TaskOrLine>({
   name: 'task.edit',
   description: 'Edit a single field on a task, append a note line, or add/remove one tag',
   args: ArgsSchema,
-  result: TaskSchema,
+  result: TaskOrLineSchema,
   cli: {
     positional: ['slug', 'id', 'field', 'value'],
     options: {
@@ -218,6 +239,7 @@ export default defineCommand<Args, Task>({
         long: '--force',
         description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
       },
+      quiet: quietOption('PRJ-12 edited: notes'),
     },
   },
   async run(args, ctx) {
@@ -229,14 +251,15 @@ export default defineCommand<Args, Task>({
       const date = today();
       const { changes, notices } = changeFor(task, edit, date, args.force === true);
       announce(ctx, notices);
-      if (Object.keys(changes).length === 0) return task;
+      const line = (): string => editedLine(task, edit);
+      if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);
       const parsed = TaskSchema.safeParse({ ...task, ...changes, updated: date });
       if (!parsed.success) {
         const target = args.field ?? Object.keys(changes).join(', ');
         throw new ValidationError(`Invalid value for ${target}: ${parsed.error.message}`);
       }
       await writeYaml(file, parsed.data, TaskSchema);
-      return parsed.data;
+      return quietOr(args.quiet, ctx, parsed.data, line);
     });
   },
 });
