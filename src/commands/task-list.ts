@@ -15,6 +15,8 @@ const ArgsSchema = z.object({
   tag: z.string().optional(),
   severity: z.enum(['critical', 'high', 'medium', 'low']).optional(),
   status: StatusFilter.optional(),
+  id: z.string().min(1).optional(),
+  search: z.string().min(1).optional(),
 });
 
 type Args = z.infer<typeof ArgsSchema>;
@@ -57,6 +59,31 @@ async function loadTasksForSlug(slug: string): Promise<TaskWithSlug[]> {
   return tasks;
 }
 
+function parseIds(raw: string | undefined): Set<string> | undefined {
+  if (raw === undefined) return undefined;
+  return new Set(
+    raw
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0),
+  );
+}
+
+function buildFilter(args: Args): (t: Task) => boolean {
+  const ids = parseIds(args.id);
+  // Asking for ids by name should not hide them because they are already done.
+  const status = args.status ?? (ids ? 'all' : 'open');
+  const needle = args.search?.toLowerCase();
+  return (t) => {
+    if (status !== 'all' && t.status !== status) return false;
+    if (args.tag && !(t.tags ?? []).includes(args.tag)) return false;
+    if (args.severity && t.severity !== args.severity) return false;
+    if (ids && !ids.has(t.id)) return false;
+    if (needle && !`${t.id}\n${t.title}`.toLowerCase().includes(needle)) return false;
+    return true;
+  };
+}
+
 export default defineCommand<Args, Result>({
   name: 'task.list',
   description: 'List tasks for an initiative or across all initiatives',
@@ -76,12 +103,17 @@ export default defineCommand<Args, Result>({
       },
       status: {
         long: '--status',
-        description: 'open (default), done, or all',
+        description: 'open (default; all with --id), done, or all',
+      },
+      id: { long: '--id', description: 'Keep only these comma-separated ids, e.g. TP-1,TP-2' },
+      search: {
+        long: '--search',
+        description: 'Case-insensitive substring match on title or id',
       },
     },
   },
   async run(args) {
-    const status = args.status ?? 'open';
+    const keep = buildFilter(args);
     const slugs: string[] = args.all_initiatives
       ? await listSlugs()
       : (() => {
@@ -97,13 +129,7 @@ export default defineCommand<Args, Result>({
       collected = collected.concat(tasks);
     }
 
-    const filtered = collected.filter((t) => {
-      if (status !== 'all' && t.status !== status) return false;
-      if (args.tag && !(t.tags ?? []).includes(args.tag)) return false;
-      if (args.severity && t.severity !== args.severity) return false;
-      return true;
-    });
-
+    const filtered = collected.filter(keep);
     filtered.sort((a, b) => a.priority - b.priority);
     return { tasks: filtered };
   },
