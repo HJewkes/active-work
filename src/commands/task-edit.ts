@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { BUILT_IN_STATUSES, readEdges } from '@titan-design/pm';
 import { z } from 'zod';
 import { defineCommand, type CommandContext } from '../registry/index.js';
 import { TaskSchema, type Task } from '../schemas/task.js';
@@ -7,6 +8,7 @@ import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { today } from '../utils/today.js';
 import { NotFoundError, UsageError, ValidationError } from '../errors.js';
+import { assertEdgeWrite } from '../tasks/edge-index.js';
 import {
   quietOption,
   QuietArg,
@@ -36,6 +38,9 @@ const ArgsSchema = z.object({
   append: z.string().optional(),
   add_tag: z.string().optional(),
   remove_tag: z.string().optional(),
+  parent: z.string().min(1).optional(),
+  dep: z.array(z.string().min(1)).optional(),
+  remove_dep: z.array(z.string().min(1)).optional(),
   force: z.boolean().optional(),
   quiet: QuietArg,
 });
@@ -76,6 +81,9 @@ export interface PatchEdit {
   append?: string;
   addTag?: string;
   removeTag?: string;
+  parent?: string;
+  addDeps?: string[];
+  removeDeps?: string[];
 }
 
 type Edit = { kind: 'field'; field: EditableField; value: unknown } | PatchEdit;
@@ -117,22 +125,36 @@ function patchEdit(args: Args): Edit {
   if (addTag !== undefined && addTag === removeTag) {
     throw new UsageError(`--add-tag and --remove-tag name the same tag: ${addTag}`);
   }
-  return { kind: 'patch', append, addTag, removeTag };
+  const overlap = (args.dep ?? []).filter((id) => args.remove_dep?.includes(id));
+  if (overlap.length > 0) {
+    throw new UsageError(`--dep and --remove-dep name the same id: ${overlap.join(', ')}`);
+  }
+  return {
+    kind: 'patch',
+    append,
+    addTag,
+    removeTag,
+    parent: args.parent,
+    addDeps: args.dep,
+    removeDeps: args.remove_dep,
+  };
 }
+
+const PATCH_KEYS = ['append', 'add_tag', 'remove_tag', 'parent', 'dep', 'remove_dep'] as const;
 
 function parseEdit(args: Args): Edit {
   const fieldForm = args.field !== undefined || args.value !== undefined;
-  const flagForm =
-    args.append !== undefined || args.add_tag !== undefined || args.remove_tag !== undefined;
+  const flagForm = PATCH_KEYS.some((key) => args[key] !== undefined);
   if (fieldForm && flagForm) {
     throw new UsageError(
-      'Pass either <field> <value> or --append/--add-tag/--remove-tag, not both',
+      'Pass either <field> <value> or --append/--add-tag/--remove-tag/--parent/--dep/--remove-dep, not both',
     );
   }
   if (fieldForm) return fieldEdit(args);
   if (flagForm) return patchEdit(args);
   throw new UsageError(
-    'Nothing to edit: pass <field> <value>, --append <text>, --add-tag <tag> or --remove-tag <tag>',
+    'Nothing to edit: pass <field> <value>, --append <text>, --add-tag <tag>, --remove-tag <tag>, ' +
+      '--parent <id>, --dep <ids> or --remove-dep <ids>',
   );
 }
 
@@ -141,10 +163,32 @@ function appendLine(notes: string | undefined, line: string): string {
   return notes.endsWith('\n') ? `${notes}${line}\n` : `${notes}\n${line}`;
 }
 
-export function patchChange(task: Task, edit: PatchEdit): TaskChange {
-  const current = task.tags ?? [];
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+/** Writes the edges as fields, starting from readEdges so a tag-only edge is carried over. */
+function edgeChange(task: Task, edit: PatchEdit): TaskChange {
   const changes: Partial<Task> = {};
   const notices: string[] = [];
+  const { parent, addDeps = [], removeDeps = [] } = edit;
+  if (parent !== undefined && parent !== task.parent) changes.parent = parent;
+  if (parent !== undefined && parent === task.parent) notices.push(`Parent already ${parent}`);
+  const current = readEdges(task).dep;
+  for (const id of addDeps.filter((dep) => current.includes(dep))) {
+    notices.push(`Dep already present, nothing added: ${id}`);
+  }
+  for (const id of removeDeps.filter((dep) => !current.includes(dep))) {
+    notices.push(`Dep not present, nothing removed: ${id}`);
+  }
+  const dep = [...new Set([...current, ...addDeps])].filter((id) => !removeDeps.includes(id));
+  if (!sameIds(dep, current)) changes.dep = dep;
+  return { changes, notices };
+}
+
+export function patchChange(task: Task, edit: PatchEdit): TaskChange {
+  const current = task.tags ?? [];
+  const { changes, notices } = edgeChange(task, edit);
   const { append, addTag, removeTag } = edit;
   if (append !== undefined) changes.notes = appendLine(task.notes, append);
   if (addTag !== undefined) {
@@ -185,9 +229,20 @@ function guardFieldEdit(task: Task, field: EditableField, value: unknown): void 
   }
 }
 
+// The status set moves to the category registry; until that lands, keep the set tasks have always had.
+function assertBuiltInStatus(value: unknown): void {
+  const allowed = BUILT_IN_STATUSES.map((status) => status.id);
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    throw new ValidationError(
+      `Invalid value for status: ${String(value)} (allowed: ${allowed.join(', ')})`,
+    );
+  }
+}
+
 function changeFor(task: Task, edit: Edit, date: string, force: boolean): TaskChange {
   if (edit.kind === 'patch') return patchChange(task, edit);
   const value = coerceValue(edit.field, edit.value);
+  if (edit.field === 'status') assertBuiltInStatus(value);
   if (!force) guardFieldEdit(task, edit.field, value);
   const changes: Record<string, unknown> = { [edit.field]: value };
   if (edit.field === 'status' && edit.value === 'done') changes.done_at = date;
@@ -205,7 +260,16 @@ async function loadTask(file: string, id: string): Promise<Task> {
   }
 }
 
-/** Names what the edit changed: the field, "notes" for --append, "+tag x" or "-tag x". */
+function edgeParts(task: Task, edit: PatchEdit): string[] {
+  const current = readEdges(task).dep;
+  const parts: string[] = [];
+  if (edit.parent !== undefined && edit.parent !== task.parent) parts.push(`parent ${edit.parent}`);
+  for (const id of edit.addDeps ?? []) if (!current.includes(id)) parts.push(`+dep ${id}`);
+  for (const id of edit.removeDeps ?? []) if (current.includes(id)) parts.push(`-dep ${id}`);
+  return parts;
+}
+
+/** Names what the edit changed: the field, "notes", "+tag x", "-tag x", "parent x", "+dep x" or "-dep x". */
 function editedLine(task: Task, edit: Edit): string {
   if (edit.kind === 'field') return `${task.id} edited: ${edit.field}`;
   const tags = task.tags ?? [];
@@ -215,6 +279,7 @@ function editedLine(task: Task, edit: Edit): string {
   if (edit.removeTag !== undefined && tags.includes(edit.removeTag)) {
     parts.push(`-tag ${edit.removeTag}`);
   }
+  parts.push(...edgeParts(task, edit));
   return parts.length === 0 ? `${task.id} unchanged` : `${task.id} edited: ${parts.join(', ')}`;
 }
 
@@ -226,7 +291,8 @@ function announce(ctx: CommandContext, notices: string[]): void {
 
 export default defineCommand<Args, TaskOrLine>({
   name: 'task.edit',
-  description: 'Edit a single field on a task, append a note line, or add/remove one tag',
+  description:
+    'Edit a single field on a task, append a note line, add/remove one tag, or set parent and deps',
   args: ArgsSchema,
   result: TaskOrLineSchema,
   cli: {
@@ -235,6 +301,9 @@ export default defineCommand<Args, TaskOrLine>({
       append: { long: '--append', description: 'Append one line to notes, keeping the rest' },
       add_tag: { long: '--add-tag', description: 'Add one tag, keeping the others' },
       remove_tag: { long: '--remove-tag', description: 'Remove one tag, keeping the others' },
+      parent: { long: '--parent', description: 'Set the parent task id, in this initiative' },
+      dep: { long: '--dep', description: 'Comma-separated ids to add as deps (any initiative)' },
+      remove_dep: { long: '--remove-dep', description: 'Comma-separated ids to drop from deps' },
       force: {
         long: '--force',
         description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
@@ -253,6 +322,14 @@ export default defineCommand<Args, TaskOrLine>({
       announce(ctx, notices);
       const line = (): string => editedLine(task, edit);
       if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);
+      if (changes.parent !== undefined || changes.dep !== undefined) {
+        await assertEdgeWrite({
+          slug: args.slug,
+          id: task.id,
+          parent: changes.parent,
+          dep: changes.dep,
+        });
+      }
       const parsed = TaskSchema.safeParse({ ...task, ...changes, updated: date });
       if (!parsed.success) {
         const target = args.field ?? Object.keys(changes).join(', ');

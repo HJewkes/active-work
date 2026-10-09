@@ -95,8 +95,8 @@ describe('task.show', () => {
   it('rejects an unknown --fields key', async () => {
     await withTempActiveRoot(async (root) => {
       await expect(
-        taskShow.run({ slug: SLUG, id: 'SI-1', fields: 'id,kind' }, ctx(root)),
-      ).rejects.toThrow(/Unknown task field\(s\): kind/);
+        taskShow.run({ slug: SLUG, id: 'SI-1', fields: 'id,flavour' }, ctx(root)),
+      ).rejects.toThrow(/Unknown task field\(s\): flavour/);
     });
   });
 

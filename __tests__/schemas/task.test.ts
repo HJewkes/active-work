@@ -57,9 +57,16 @@ describe('TaskSchema', () => {
     expect(TaskSchema.safeParse({ ...validBase, id: 'A1B2-99' }).success).toBe(true);
   });
 
-  it('rejects invalid status enum', () => {
-    const result = TaskSchema.safeParse({ ...validBase, status: 'closed' });
-    expect(result.success).toBe(false);
+  it('leaves the status set to the category registry but rejects an empty status', () => {
+    expect(TaskSchema.safeParse({ ...validBase, status: 'wont-do' }).success).toBe(true);
+    expect(TaskSchema.safeParse({ ...validBase, status: '' }).success).toBe(false);
+  });
+
+  it('accepts parent and dep fields and rejects a repeated dep', () => {
+    expect(TaskSchema.safeParse({ ...validBase, parent: 'EC-2', dep: ['EC-3'] }).success).toBe(
+      true,
+    );
+    expect(TaskSchema.safeParse({ ...validBase, dep: ['EC-3', 'EC-3'] }).success).toBe(false);
   });
 
   it('rejects invalid severity enum', () => {
