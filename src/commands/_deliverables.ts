@@ -68,7 +68,7 @@ export function withDeliverablesLock<T>(activeRoot: string, fn: () => Promise<T>
 /** Throws a ValidationError naming every id that is not in the registry. */
 export async function assertKnownDeliverables(activeRoot: string, ids: string[]): Promise<void> {
   const known = new Set((await loadDeliverables(activeRoot)).map((d) => d.id));
-  const unknown = ids.filter((id) => !known.has(id));
+  const unknown = [...new Set(ids)].filter((id) => !known.has(id));
   if (unknown.length === 0) return;
   throw new ValidationError(`Unknown deliverable id: ${unknown.join(', ')}`);
 }

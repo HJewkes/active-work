@@ -270,17 +270,26 @@ describe('cli integration', () => {
     expect(runCli(['--json', 'loops', slug, '--due'], env).stdout).toContain('"open":[]');
   });
 
-  it('ANDs a repeated --tag on deliverable list', () => {
+  // Commander keeps only the last value of an option unless it collects, so each case below
+  // ends on a tag that would match more rows on its own.
+  it('ANDs a repeated --tag on deliverable list, keeping every value', () => {
     const env = { ACTIVE_ROOT: activeRoot };
     const required = ['--title', 'T', '--done-when', 'Ships', '--owner-seat', 'seat-a'];
     runCli(['deliverable', 'add', 'A', ...required, '--tags', 'ui,web'], env);
     runCli(['deliverable', 'add', 'B', ...required, '--tags', 'ui'], env);
+    runCli(['deliverable', 'add', 'C', ...required, '--tags', 'ui,web,x'], env);
+    runCli(['deliverable', 'add', 'D', ...required, '--tags', 'x'], env);
+    const listIds = (tagArgs: string[]): string[] => {
+      const res = runCli(['--json', 'deliverable', 'list', ...tagArgs], env);
+      expect(res.status).toBe(0);
+      return (JSON.parse(res.stdout) as { data: Array<{ id: string }> }).data.map((row) => row.id);
+    };
 
-    const res = runCli(['--json', 'deliverable', 'list', '--tag', 'ui', '--tag', 'web'], env);
+    const repeated = listIds(['--tag', 'web', '--tag', 'ui']);
+    const mixed = listIds(['--tag', 'ui,web', '--tag', 'x']);
 
-    expect(res.status).toBe(0);
-    const rows = (JSON.parse(res.stdout) as { data: Array<{ id: string }> }).data;
-    expect(rows.map((row) => row.id)).toEqual(['A']);
+    expect(repeated).toEqual(['A', 'C']);
+    expect(mixed).toEqual(['C']);
   });
 
   describe('task edit flags', () => {

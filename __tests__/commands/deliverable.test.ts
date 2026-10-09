@@ -208,12 +208,12 @@ describe('task --deliverable', () => {
         ctx(root),
       );
       const refused = taskAdd.run(
-        { slug: SLUG, title: 'Orphan', deliverable: ['M1', 'M9'] },
+        { slug: SLUG, title: 'Orphan', deliverable: ['M1', 'M9', 'M9'] },
         ctx(root),
       );
 
       expect(created.deliverables).toEqual(['M1']);
-      await expect(refused).rejects.toThrow(/Unknown deliverable id: M9/);
+      await expect(refused).rejects.toThrow(/Unknown deliverable id: M9$/);
       await expect(fs.access(path.join(root, SLUG, 'tasks', 'SI-4.yml'))).rejects.toThrow();
     });
   });
