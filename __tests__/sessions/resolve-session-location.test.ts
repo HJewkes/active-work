@@ -4,6 +4,11 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { resolveSessionLocation } from '../../src/sessions/resolve-session-location.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
+import { mirrorRoot, mirrorRoots } from '../fixtures/mirror-roots.js';
+
+vi.mock('@titan-design/session-read', async (importOriginal) =>
+  (await import('../fixtures/mirror-roots.js')).withMirrors(importOriginal),
+);
 
 let projectsRoot: string;
 const originalEnv = process.env.CLAUDE_PROJECTS_ROOT;
@@ -15,6 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  mirrorRoots.length = 0;
   rmSync(projectsRoot, { recursive: true, force: true });
   if (originalEnv === undefined) delete process.env.CLAUDE_PROJECTS_ROOT;
   else process.env.CLAUDE_PROJECTS_ROOT = originalEnv;
@@ -194,6 +200,29 @@ describe('resolveSessionLocation config dirs', () => {
       await expect(resolveSessionLocation(activeRoot, 'dup-id')).rejects.toThrow(
         /~\/\.claude and .*agents/,
       );
+    });
+  });
+
+  it('never resumes a session that only a mirror of another host holds', async () => {
+    const mirrorDir = path.join(projectsRoot, 'mirror');
+    await writeIn(path.join(mirrorDir, 'agents'), 'mirrored-only', '/synthetic/m');
+    mirrorRoots.push(mirrorRoot(mirrorDir, 'agents'));
+    useConfigDirs(path.join(projectsRoot, '.claude'));
+    await withEmptyActiveRoot(async (activeRoot) => {
+      expect(await resolveSessionLocation(activeRoot, 'mirrored-only')).toBeNull();
+    });
+  });
+
+  it('resumes the local copy when a mirror also holds the session', async () => {
+    const defaultDir = path.join(projectsRoot, '.claude');
+    const mirrorDir = path.join(projectsRoot, 'mirror');
+    await writeIn(defaultDir, 'mirrored-too', '/synthetic/n');
+    await writeIn(path.join(mirrorDir, 'default'), 'mirrored-too', '/synthetic/n');
+    mirrorRoots.push(mirrorRoot(mirrorDir, 'default'));
+    useConfigDirs(defaultDir);
+    await withEmptyActiveRoot(async (activeRoot) => {
+      const result = await resolveSessionLocation(activeRoot, 'mirrored-too');
+      expect(result).toEqual({ cwd: '/synthetic/n', source: 'claude-projects' });
     });
   });
 

@@ -1,7 +1,7 @@
 import { promises as fs, mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { claudeProjectSlug } from '@titan-design/session-read';
 import sessionRecover, { recoverUnwrapped } from '../../src/commands/session-recover.js';
 import open from '../../src/commands/open.js';
@@ -18,6 +18,11 @@ import {
   OWNER_MESSAGES,
   writeUnwrappedTranscript,
 } from '../fixtures/unwrapped-transcript.js';
+import { mirrorRoot, mirrorRoots } from '../fixtures/mirror-roots.js';
+
+vi.mock('@titan-design/session-read', async (importOriginal) =>
+  (await import('../fixtures/mirror-roots.js')).withMirrors(importOriginal),
+);
 
 const SLUG = 'sample-initiative';
 const CRASHED = '0a0a0a0a-1111-4222-8333-444444444444';
@@ -31,6 +36,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  mirrorRoots.length = 0;
   rmSync(claudeHome, { recursive: true, force: true });
 });
 
@@ -257,6 +263,28 @@ describe('session recover', () => {
         );
 
         expect(result.recovered?.session_id).toBe(CRASHED);
+      });
+    });
+  });
+
+  it('never recovers a session from a mirror of another host', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      await withConfigDirs(async () => {
+        const mirror = mirrorRoot(path.join(claudeHome, 'mirror'), 'default');
+        mirrorRoots.push(mirror);
+        const cwd = path.join(activeRoot, SLUG);
+        const projectDir = path.join(mirror.root, claudeProjectSlug(cwd));
+        const when = new Date(Date.now() - QUIET_MS);
+        const file = writeUnwrappedTranscript({ projectDir, sessionId: CRASHED, cwd, endsAt: when });
+        utimesSync(file, when, when);
+
+        const result = await sessionRecover.run(
+          sessionRecover.args.parse({ slug: SLUG }),
+          makeCtx(activeRoot),
+        );
+
+        expect(result.recovered).toBeNull();
+        expect(result.unrecorded_total).toBe(0);
       });
     });
   });
