@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { SessionIdSchema } from '../schemas/session.js';
 import { assertInitiativeExists } from '../sessions/loop-ledger.js';
 import { liveSessionIdsFrom } from '../sessions/live-claude-sessions.js';
@@ -11,6 +10,7 @@ import {
   writeRecoveredRecord,
   type RecoverTarget,
 } from '../sessions/recover-session.js';
+import { localTranscriptRoots } from '../sessions/transcript-roots.js';
 import { getActiveRoot, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { assertValidSlug } from '../utils/slug.js';
@@ -44,7 +44,7 @@ type Args = z.infer<typeof ArgsSchema>;
 type Result = z.infer<typeof ResultSchema>;
 
 function defaultTarget(args: Args, activeRoot: string): RecoverTarget {
-  const roots = claudeTranscriptRoots();
+  const roots = localTranscriptRoots();
   return {
     activeRoot,
     slug: args.slug,

@@ -275,7 +275,12 @@ describe('session recover', () => {
         const cwd = path.join(activeRoot, SLUG);
         const projectDir = path.join(mirror.root, claudeProjectSlug(cwd));
         const when = new Date(Date.now() - QUIET_MS);
-        const file = writeUnwrappedTranscript({ projectDir, sessionId: CRASHED, cwd, endsAt: when });
+        const file = writeUnwrappedTranscript({
+          projectDir,
+          sessionId: CRASHED,
+          cwd,
+          endsAt: when,
+        });
         utimesSync(file, when, when);
 
         const result = await sessionRecover.run(
