@@ -132,6 +132,28 @@ describe('archiveStaleTasks', () => {
     expect(existsSync(path.join(tasksDir, 'AW-6.yml'))).toBe(true);
   });
 
+  it('applies retention to a date-only and a timestamp done_at side by side', async () => {
+    const base = { priority: 1, status: 'done', created: '2026-01-01', updated: '2026-01-01' };
+    await writeTask('AW-7.yml', { ...base, id: 'AW-7', title: 'Old date', done_at: '2026-05-01' });
+    await writeTask('AW-8.yml', {
+      ...base,
+      id: 'AW-8',
+      title: 'Old timestamp',
+      done_at: '2026-05-01T13:45:00.000Z',
+    });
+    await writeTask('AW-9.yml', {
+      ...base,
+      id: 'AW-9',
+      title: 'Recent timestamp',
+      done_at: '2026-06-20T13:45:00.000Z',
+    });
+
+    const archived = await archiveStaleTasks(initiativeDir, { retentionDays: 30, now: NOW });
+
+    expect(archived).toEqual(['AW-7', 'AW-8']);
+    expect(existsSync(path.join(tasksDir, 'AW-9.yml'))).toBe(true);
+  });
+
   it('returns [] when there is no tasks directory', async () => {
     const archived = await archiveStaleTasks(path.join(base, 'nonexistent'), {
       retentionDays: 30,

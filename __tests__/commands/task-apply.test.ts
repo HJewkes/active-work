@@ -114,7 +114,8 @@ describe('task.apply', () => {
       const task = await readTask(root, 'SI-1');
       expect(task.tags).toEqual(['alpha', 'spine:M1']);
       expect(task.notes).toBe('First line\nSweep line\n');
-      expect(task).toMatchObject({ status: 'done', done_at: today(), updated: today() });
+      expect(task).toMatchObject({ status: 'done', updated: today() });
+      expect(task.done_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(summaryOf(out.envelope).counts).toEqual({
         applied: 1,
         unchanged: 0,

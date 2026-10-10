@@ -51,9 +51,11 @@ export interface TaskItem {
   status: TaskStatus;
   tags?: string[];
   notes?: string;
+  /** `created` and `done_at` are YYYY-MM-DD on older tasks, ISO-8601 UTC on newer ones. */
   created: string;
   updated: string;
   done_at: string | null;
+  started_at?: string;
 }
 
 export interface TasksResult {

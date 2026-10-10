@@ -6,7 +6,7 @@ import { TaskSchema, type Task } from '../schemas/task.js';
 import { getActiveRoot, getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
-import { today } from '../utils/today.js';
+import { nowIso, today } from '../utils/today.js';
 import { NotFoundError, UsageError, ValidationError } from '../errors.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
 import { assertKnownDeliverables } from './_deliverables.js';
@@ -288,12 +288,19 @@ function guardFieldEdit(task: Task, field: EditableField, value: unknown): void 
   }
 }
 
-function changeFor(task: Task, edit: Edit, date: string, force: boolean): TaskChange {
+/** Wall-clock stamps a status change records: started_at once, on the first in-progress. */
+function statusStamps(task: Task, status: unknown): Partial<Task> {
+  if (status === 'done') return { done_at: nowIso() };
+  if (status === 'in-progress' && task.started_at === undefined) return { started_at: nowIso() };
+  return {};
+}
+
+function changeFor(task: Task, edit: Edit, force: boolean): TaskChange {
   if (edit.kind === 'patch') return patchChange(task, edit);
   const value = coerceValue(edit.field, edit.value);
   if (!force) guardFieldEdit(task, edit.field, value);
   const changes: Record<string, unknown> = { [edit.field]: value };
-  if (edit.field === 'status' && edit.value === 'done') changes.done_at = date;
+  if (edit.field === 'status') Object.assign(changes, statusStamps(task, edit.value));
   return { changes, notices: [] };
 }
 
@@ -385,7 +392,7 @@ export default defineCommand<Args, TaskOrLine>({
       const file = path.join(getInitiativeDir(args.slug), 'tasks', `${args.id}.yml`);
       const task = await loadTask(file, args.id);
       const date = today();
-      const { changes, notices } = changeFor(task, edit, date, args.force === true);
+      const { changes, notices } = changeFor(task, edit, args.force === true);
       announce(ctx, notices);
       const line = (): string => editedLine(task, edit);
       if (Object.keys(changes).length === 0) return quietOr(args.quiet, ctx, task, line);

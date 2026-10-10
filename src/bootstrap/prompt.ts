@@ -472,20 +472,25 @@ function renderRecentlyDone(
   now: Date,
   slug: string,
 ): { body: string | null; count: number } {
-  const cutoff = now.getTime() - windowDays * MS_PER_DAY;
-  const done = tasks
-    .filter((t) => t.status === 'done' && t.done_at)
-    .filter((t) => {
-      const ts = new Date(t.done_at as string).getTime();
-      return Number.isFinite(ts) && ts >= cutoff;
-    })
-    .sort((a, b) => (a.done_at! < b.done_at! ? 1 : -1));
+  const done = recentlyDoneTasks(tasks, windowDays, now);
   if (done.length === 0) return { body: null, count: 0 };
   const noun = done.length === 1 ? 'task' : 'tasks';
   const body =
     `${done.length} ${noun} completed — ` +
     `\`active-work task list ${slug} --status done --json\``;
   return { body, count: done.length };
+}
+
+/**
+ * Done tasks inside the window, newest first. `done_at` is DATE-only on older tasks (read as UTC
+ * midnight) and a full timestamp on newer ones, so order by instant rather than by string.
+ */
+export function recentlyDoneTasks(tasks: Task[], windowDays: number, now: Date): Task[] {
+  const cutoff = now.getTime() - windowDays * MS_PER_DAY;
+  const doneAt = (t: Task): number => new Date(t.done_at ?? '').getTime();
+  return tasks
+    .filter((t) => t.status === 'done' && Number.isFinite(doneAt(t)) && doneAt(t) >= cutoff)
+    .sort((a, b) => doneAt(b) - doneAt(a));
 }
 
 /**

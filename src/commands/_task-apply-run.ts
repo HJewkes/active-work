@@ -13,6 +13,7 @@ import { TaskSchema, type Task } from '../schemas/task.js';
 import { edgeWriteErrors, type EdgeIndex } from '../tasks/edge-index.js';
 import { getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
+import { nowIso } from '../utils/today.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
 import { patchChange, type PatchEdit } from './task-edit.js';
 import { isEdgeOp, type ApplyOp, type EdgeOp, type PlanEntry } from './_task-apply-plan.js';
@@ -67,10 +68,10 @@ function applyEdgeOp(task: Task, op: EdgeOp, edges: EdgeIndex | undefined): Step
   return { task: { ...task, dep }, changed: true };
 }
 
-function applyOp(task: Task, op: ApplyOp, date: string, edges: EdgeIndex | undefined): Stepped {
+function applyOp(task: Task, op: ApplyOp, edges: EdgeIndex | undefined): Stepped {
   if (op.op === 'done') {
     if (task.status === 'done') return { task, changed: false };
-    return { task: { ...task, status: 'done', done_at: date }, changed: true };
+    return { task: { ...task, status: 'done', done_at: nowIso() }, changed: true };
   }
   if (isEdgeOp(op)) return applyEdgeOp(task, op, edges);
   if (op.op === 'append' && hasLine(task.notes, op.value)) return { task, changed: false };
@@ -126,7 +127,7 @@ function applyEntry(
   let next = task;
   const changes: string[] = [];
   for (const op of entry.ops) {
-    const step = applyOp(next, op, date, edges);
+    const step = applyOp(next, op, edges);
     next = step.task;
     if (step.changed) changes.push(describeOp(op));
   }

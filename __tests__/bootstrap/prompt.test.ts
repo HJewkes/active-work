@@ -5,6 +5,7 @@ import {
   assembleBootstrap,
   formatElapsedShort,
   formatTimeSince,
+  recentlyDoneTasks,
   type LiveStatusFetcher,
   type SiblingProbe,
   type SiblingSession,
@@ -427,6 +428,57 @@ describe('assembleBootstrap', () => {
       expect(prompt).not.toContain('Second sample task, already done');
       expect(metadata.recently_done_count).toBe(2);
     });
+  });
+
+  it('counts a date-only and a timestamp done task side by side', async () => {
+    await withTempActiveRoot(async (activeRoot) => {
+      const tasksDir = path.join(activeRoot, SAMPLE_SLUG, 'tasks');
+      await fs.writeFile(
+        path.join(tasksDir, 'SI-4.yml'),
+        [
+          'id: SI-4',
+          'title: Finished with a timestamp',
+          'priority: 4',
+          'status: done',
+          'created: 2026-05-08T09:00:00.000Z',
+          'updated: 2026-05-11',
+          'done_at: 2026-05-11T14:30:00.000Z',
+          '',
+        ].join('\n'),
+      );
+
+      const { metadata } = await assembleBootstrap({
+        activeRoot,
+        slug: SAMPLE_SLUG,
+        now: FIXTURE_NOW,
+        recentlyDoneDays: 14,
+        ...offlineOpts,
+      });
+
+      expect(metadata.recently_done_count).toBe(2);
+    });
+  });
+
+  it('orders recently-done tasks newest first across date-only and timestamp values', () => {
+    const done = (id: string, doneAt: string) => ({
+      id,
+      title: id,
+      priority: 1,
+      status: 'done',
+      created: '2026-05-01',
+      updated: '2026-05-01',
+      done_at: doneAt,
+    });
+    const tasks = [
+      done('SI-1', '2026-05-10'),
+      done('SI-2', '2026-05-10T09:00:00.000Z'),
+      done('SI-3', '2026-05-09T23:59:00.000Z'),
+      done('SI-4', '2026-05-11T10:00:00+02:00'),
+    ];
+
+    const ordered = recentlyDoneTasks(tasks, 14, FIXTURE_NOW).map((t) => t.id);
+
+    expect(ordered).toEqual(['SI-4', 'SI-2', 'SI-1', 'SI-3']);
   });
 
   it('renders tracked branches statically when live status is disabled', async () => {
