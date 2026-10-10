@@ -3,11 +3,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
+import { claudeTranscriptRoots, discoverAllTranscripts } from '@titan-design/session-read';
 import minerStatus from '../../src/commands/miner-status.js';
 import { defaultGraphPath } from '../../src/session-index/graph.js';
 import { runRefresh } from '../../src/session-index/refresh.js';
 import { FIXTURE_LINES, SESSION, renderTranscript } from '../session-index/fixture.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
+import { mirrorRoot, mirrorRoots } from '../fixtures/mirror-roots.js';
+
+vi.mock('@titan-design/session-read', async (importOriginal) =>
+  (await import('../fixtures/mirror-roots.js')).withMirrors(importOriginal),
+);
 
 let configRoot: string;
 
@@ -23,6 +29,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  mirrorRoots.length = 0;
   rmSync(configRoot, { recursive: true, force: true });
 });
 
@@ -32,18 +39,31 @@ const BILLED_LINES = FIXTURE_LINES.map((line, i) =>
   line.type === 'assistant' ? { ...line, requestId: `req-${SESSION}-${i}` } : line,
 );
 
+function writeTranscripts(projectsRoot: string, label: string, count: number): void {
+  const project = path.join(projectsRoot, 'demo');
+  mkdirSync(project, { recursive: true });
+  for (let i = 0; i < count; i += 1) {
+    const body = renderTranscript(BILLED_LINES).replaceAll(SESSION, `${label}-${i}`);
+    writeFileSync(path.join(project, `${i}.jsonl`), body, 'utf8');
+  }
+}
+
 function writeCorpus(accounts: Record<string, number>): void {
   const configDirs = Object.entries(accounts).map(([name, count]) => {
     const configDir = path.join(configRoot, name);
-    const project = path.join(configDir, 'projects', 'demo');
-    mkdirSync(project, { recursive: true });
-    for (let i = 0; i < count; i += 1) {
-      const body = renderTranscript(BILLED_LINES).replaceAll(SESSION, `${name}-${i}`);
-      writeFileSync(path.join(project, `${i}.jsonl`), body, 'utf8');
-    }
+    writeTranscripts(path.join(configDir, 'projects'), name, count);
     return configDir;
   });
   vi.stubEnv('CLAUDE_CONFIG_DIRS', configDirs.join(path.delimiter));
+}
+
+/** Each account's transcripts in a mirror of host `mac`. */
+function writeMirror(accounts: Record<string, number>): void {
+  for (const [account, count] of Object.entries(accounts)) {
+    const mirror = mirrorRoot(path.join(configRoot, 'mirror'), account);
+    writeTranscripts(mirror.root, `mac-${account}`, count);
+    mirrorRoots.push(mirror);
+  }
 }
 
 function status(): ReturnType<typeof minerStatus.run> {
@@ -61,6 +81,19 @@ describe('miner status', () => {
       expect(result.transcripts.byAccount).toEqual({ default: 1, agents: 2 });
       expect(result.facetBacklog).toBe(0);
       expect(result.episodeBacklog).toBe(0);
+    });
+  });
+
+  it('counts a mirror of another host apart from the local account of the same name', async () => {
+    await withEmptyActiveRoot(async () => {
+      writeCorpus({ '.claude': 1, agents: 2 });
+      writeMirror({ agents: 1 });
+      const transcripts = await discoverAllTranscripts(claudeTranscriptRoots());
+      await runRefresh({ transcripts, skipPrOutcomes: true, skipWorkspace: true });
+
+      const result = await status();
+
+      expect(result.transcripts.byAccount).toEqual({ default: 1, agents: 2, 'mac/agents': 1 });
     });
   });
 

@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { claudeTranscriptRoots } from '@titan-design/session-read';
 import { ValidationError } from '../errors.js';
 import { resolveProfileDir } from '../launcher-profile.js';
 import { listInitiativeSlugs, resolveLaunchCwd } from '../commands/_open-helpers.js';
 import { parseFrontmatter } from '../utils/gray-matter-io.js';
+import { localTranscriptRoots } from './transcript-roots.js';
 
 export interface ResolvedSessionLocation {
   cwd: string;
@@ -56,11 +56,11 @@ interface TranscriptRoot {
   configDir: string | null;
 }
 
-/** Every Claude config dir's transcript store. `CLAUDE_PROJECTS_ROOT` narrows it to one for tests. */
+/** Every local Claude config dir's transcript store. `CLAUDE_PROJECTS_ROOT` narrows it to one for tests. */
 function transcriptRoots(): TranscriptRoot[] {
   const override = process.env.CLAUDE_PROJECTS_ROOT;
   if (override) return [{ root: override, configDir: null }];
-  return claudeTranscriptRoots().map(({ root, account }) => ({
+  return localTranscriptRoots().map(({ root, account }) => ({
     root,
     configDir: account === 'default' ? null : path.dirname(root),
   }));

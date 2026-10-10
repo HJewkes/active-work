@@ -1,13 +1,18 @@
 import { existsSync, statSync } from 'node:fs';
 import os from 'node:os';
 import type Database from 'better-sqlite3';
-import { claudeTranscriptRoots, EXTRACT_VERSION } from '@titan-design/session-read';
+import {
+  claudeTranscriptRoots,
+  EXTRACT_VERSION,
+  type TranscriptRoot,
+} from '@titan-design/session-read';
 import { AUDIT_FACET, FACET_TABLE } from '@titan-design/session-graph';
 import { z } from 'zod';
 import { defineCommand } from '../registry/index.js';
 import { defaultGraphPath, openGraphReadOnly, SCHEMA_VERSION } from '../session-index/graph.js';
 import { staleEpisodeSessions } from '../session-index/episodes.js';
 import { probeHealth, resolveDaemonPort } from '../server/lifecycle.js';
+import { transcriptRootHost } from '../sessions/transcript-roots.js';
 
 /**
  * `active-work miner status` — a read-only picture of the session-signal
@@ -108,14 +113,20 @@ function displayPrefix(root: string): string {
   return `${shown}/`;
 }
 
+/** `host/account` for a mirror of another machine, so it never merges into a local account of the same name. */
+function accountKey(root: TranscriptRoot): string {
+  const host = transcriptRootHost(root);
+  return host ? `${host}/${root.account}` : root.account;
+}
+
 /**
  * From the path rather than `session.account`: sessions indexed before the
  * column existed keep it null until their transcript grows again.
  */
 function transcriptsByAccount(db: Database.Database): Record<string, number> {
-  const roots = claudeTranscriptRoots().map(({ root, account }) => ({
-    prefix: displayPrefix(root),
-    account,
+  const roots = claudeTranscriptRoots().map((root) => ({
+    prefix: displayPrefix(root.root),
+    account: accountKey(root),
   }));
   const counts: Record<string, number> = {};
   const keys = db.prepare<[], { key: string }>('SELECT source_key AS key FROM transcript').all();
