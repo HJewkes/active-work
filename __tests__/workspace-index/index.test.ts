@@ -57,6 +57,39 @@ describe('workspace rows', () => {
     expect(records.map((r) => r.initiative)).toEqual(['alpha', 'beta']);
   });
 
+  it('indexes a timestamp task beside a date-only one', async () => {
+    writeFile(
+      root,
+      'beta/tasks/BE-8.yml',
+      [
+        'id: BE-8',
+        'title: Timed task',
+        'priority: 1',
+        'status: done',
+        'created: 2026-09-01T08:00:00.000Z',
+        'updated: 2026-09-02',
+        'done_at: 2026-09-02T17:15:00.000Z',
+        'started_at: 2026-09-01T10:00:00.000Z',
+        '',
+      ].join('\n'),
+    );
+
+    const summary = await refreshWorkspace(graph, { activeRoot: root });
+
+    expect(summary.malformed).toEqual([]);
+    expect(
+      rows(
+        'SELECT task_id, created, done_at FROM workspace_task WHERE task_id IN (?, ?) ORDER BY task_id',
+        'AL-1',
+        'BE-8',
+      ),
+    ).toEqual([
+      { task_id: 'AL-1', created: '2026-09-01', done_at: null },
+      { task_id: 'AL-1', created: '2026-09-01', done_at: null },
+      { task_id: 'BE-8', created: '2026-09-01T08:00:00.000Z', done_at: '2026-09-02T17:15:00.000Z' },
+    ]);
+  });
+
   it('indexes every initiative, not one', () => {
     expect(rows('SELECT slug FROM initiative ORDER BY slug')).toEqual([
       { slug: 'alpha' },

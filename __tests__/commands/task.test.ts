@@ -185,12 +185,12 @@ describe('task.add', () => {
 });
 
 describe('task.done', () => {
-  it('flips status and sets done_at to today', async () => {
+  it('flips status and sets done_at to the current instant', async () => {
     await withTempActiveRoot(async (root) => {
       const updated = await taskDone.run({ slug: SLUG, id: 'SI-1' }, ctx(root));
       expect(updated.status).toBe('done');
-      expect(updated.done_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(updated.updated).toBe(updated.done_at);
+      expect(updated.done_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(updated.updated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
   });
 
@@ -370,7 +370,7 @@ describe('task.edit', () => {
         ctx(root),
       );
       expect(t8.status).toBe('done');
-      expect(t8.done_at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(t8.done_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
   });
 

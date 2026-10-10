@@ -12,7 +12,7 @@ import {
   readTaskSeq,
 } from '../utils/task-seq.js';
 import { writeYaml } from '../utils/yaml-io.js';
-import { today } from '../utils/today.js';
+import { nowIso, today } from '../utils/today.js';
 import { assertEdgeWrite } from '../tasks/edge-index.js';
 import { assertKnownDeliverables } from './_deliverables.js';
 import {
@@ -72,7 +72,6 @@ function nextPriority(existing: Task[]): number {
 }
 
 function newTask(args: Args, id: string, priority: number): Task {
-  const date = today();
   return {
     id,
     parent: args.parent,
@@ -90,8 +89,8 @@ function newTask(args: Args, id: string, priority: number): Task {
     due: args.due,
     tags: args.tags,
     notes: args.notes,
-    created: date,
-    updated: date,
+    created: nowIso(),
+    updated: today(),
     done_at: null,
   };
 }

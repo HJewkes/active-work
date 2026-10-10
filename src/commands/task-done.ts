@@ -5,7 +5,7 @@ import { TaskSchema, type Task } from '../schemas/task.js';
 import { getActiveRoot, getInitiativeDir, getLockPath } from '../utils/paths.js';
 import { withFileLock } from '../utils/fs-atomic.js';
 import { readYaml, writeYaml } from '../utils/yaml-io.js';
-import { today } from '../utils/today.js';
+import { nowIso, today } from '../utils/today.js';
 import { NotFoundError } from '../errors.js';
 import {
   quietOption,
@@ -49,7 +49,7 @@ export default defineCommand<Args, TaskOrLine>({
       const updated: Task = {
         ...task,
         status: 'done',
-        done_at: date,
+        done_at: nowIso(),
         updated: date,
       };
       await writeYaml(file, updated, TaskSchema);

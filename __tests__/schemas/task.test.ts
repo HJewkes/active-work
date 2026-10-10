@@ -104,6 +104,31 @@ describe('TaskSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts created and done_at as a date-only value or a full timestamp, side by side', () => {
+    const dateOnly = { ...validBase, status: 'done', created: '2026-05-12', done_at: '2026-05-13' };
+    const timestamp = {
+      ...validBase,
+      status: 'done',
+      created: '2026-05-12T08:15:00.000Z',
+      done_at: '2026-05-13T17:30:45.123Z',
+      started_at: '2026-05-12T09:00:00.000Z',
+    };
+
+    expect(TaskSchema.parse(dateOnly)).toMatchObject({ done_at: '2026-05-13' });
+    expect(TaskSchema.parse(timestamp)).toMatchObject({
+      created: '2026-05-12T08:15:00.000Z',
+      done_at: '2026-05-13T17:30:45.123Z',
+      started_at: '2026-05-12T09:00:00.000Z',
+    });
+  });
+
+  it('rejects a malformed timestamp and a date-only started_at', () => {
+    expect(TaskSchema.safeParse({ ...validBase, done_at: '2026-05-13T25:00:00Z' }).success).toBe(
+      false,
+    );
+    expect(TaskSchema.safeParse({ ...validBase, started_at: '2026-05-13' }).success).toBe(false);
+  });
+
   it('rejects empty title', () => {
     const result = TaskSchema.safeParse({ ...validBase, title: '' });
     expect(result.success).toBe(false);
