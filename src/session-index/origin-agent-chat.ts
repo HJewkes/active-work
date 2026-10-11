@@ -270,7 +270,14 @@ function toOrigin(
   const { meta } = spawn;
   const plan = spawn.agentId ? source.plan(spawn.agentId) : null;
   // The full brief: the excerpt ends inside the orientation block, before the assignment.
-  const task = assignedTaskIds({ agentName: spawn.name, brief: plan?.brief ?? '', isKnown });
+  // A recorded briefing_chars (CC-171) marks where that block ends, so it wins over the
+  // heading rules, which break whenever agent-chat renames a heading.
+  const task = assignedTaskIds({
+    agentName: spawn.name,
+    brief: plan?.brief ?? '',
+    briefingChars: integer(meta.briefing_chars) ?? undefined,
+    isKnown,
+  });
   return {
     originSystem: ORIGIN_SYSTEM,
     agentId: spawn.agentId,
