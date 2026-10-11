@@ -112,6 +112,21 @@ describe('liveness report', () => {
     expect(report.refNamespaces).toContainEqual({ namespace: 'commit', edges: 1, dangling: null });
   });
 
+  // Regression (CC-168): session-graph's migration 9 drops `artifact`, while
+  // session-read still emits `produced` edges to artifact refs.
+  it('reports an artifact endpoint as unresolvable once the migrated graph has no artifact table', () => {
+    addSession('s-1');
+    addEdge('session:s-1', 'produced', 'artifact:/tmp/out.txt');
+
+    const report = runLiveness(graph.db);
+
+    expect(report.refNamespaces).toContainEqual({
+      namespace: 'artifact',
+      edges: 1,
+      dangling: null,
+    });
+  });
+
   // `pr` read as UNMAPPED for its whole life on the belief that the table was
   // keyed by `(number, repo)`. That is `pr_merge_observation`; `pr` has a
   // `pr_ref` primary key like every other entity table (AW-107).
