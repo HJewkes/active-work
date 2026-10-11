@@ -11,6 +11,8 @@ import { withTempActiveRoot } from '../setup/test-helpers.js';
 import { NotFoundError, UsageError } from '../../src/errors.js';
 import type { CommandContext } from '../../src/registry/index.js';
 import { readRawFrontmatter } from '../../src/utils/gray-matter-io.js';
+import { withFileLock } from '../../src/utils/fs-atomic.js';
+import { getLockPath } from '../../src/utils/paths.js';
 
 function ctx(activeRoot: string): CommandContext {
   return { activeRoot, warnings: [], format: 'json' };
@@ -166,6 +168,27 @@ describe('task.add', () => {
       // brief's mark is untouched here.
       const { frontmatter } = await readRawFrontmatter(path.join(root, SLUG, 'brief.md'));
       expect(frontmatter.task_seq).toBeUndefined();
+    });
+  });
+
+  it('waits out a lock held longer than the old 660ms retry budget (CC-339)', async () => {
+    await withTempActiveRoot(async (root) => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let acquired!: () => void;
+      const holding = new Promise<void>((resolve) => (acquired = resolve));
+      const holder = withFileLock(getLockPath(SLUG), async () => {
+        acquired();
+        await held;
+      });
+      await holding;
+
+      const pending = taskAdd.run({ slug: SLUG, title: 'Waits for lock' }, ctx(root));
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      release();
+      await holder;
+
+      expect((await pending).id).toBe('SI-3');
     });
   });
 
