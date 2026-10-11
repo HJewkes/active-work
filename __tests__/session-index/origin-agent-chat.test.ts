@@ -317,7 +317,8 @@ describe('agent-chat origin adapter', () => {
     );
 
     expect(origins[WORKER_SESSION]).toBeDefined();
-    expect(opened).toEqual([expect.objectContaining({ readonly: true })]);
+    expect(opened.length).toBeGreaterThan(0);
+    expect(opened).toEqual(opened.map(() => expect.objectContaining({ readonly: true })));
     expect(statSync(file).mtimeMs).toBe(mtimeBefore);
   });
 });
@@ -434,6 +435,105 @@ describe('agent-chat origin task links', () => {
 
       expect(first).toMatchObject({ requested: 2, applied: 2, failed: false });
       expect(offered).toEqual([]);
+    } finally {
+      graph.db.close();
+    }
+  });
+});
+
+describe('experiment arm and follow-ups (CC-168)', () => {
+  const EXPERIMENT = { experiment_id: 'E3', experiment_arm: 'warm-follow-up' };
+
+  function experimentWorker(ts = T0 + 1_000): Row[] {
+    const [spawn, attach] = spawnedWorker('coord', 'aaaa1111', ts);
+    return [{ ...spawn, meta: { ...spawn.meta, ...EXPERIMENT, predecessor: 'worker-0' } }, attach];
+  }
+
+  function followUp(ts: number, target: string, kind?: string): Row {
+    return {
+      ts,
+      kind: 'message',
+      actor: 'coord',
+      target,
+      meta: kind ? { ...EXPERIMENT, followup_kind: kind } : {},
+    };
+  }
+
+  it('carries experiment id, arm and predecessor from the spawn row', () => {
+    writeEvents([...adoptedCoordinator('coord', 'aaaa1111'), ...experimentWorker()]);
+
+    const { origins } = resolve();
+
+    expect(origins[WORKER_SESSION]).toMatchObject({
+      experimentId: 'E3',
+      experimentArm: 'warm-follow-up',
+      predecessor: 'worker-0',
+      followupKinds: null,
+    });
+    expect(origins[COORD_SESSION]).toMatchObject({ experimentId: null, predecessor: null });
+  });
+
+  it('counts follow-up kinds the agent received', () => {
+    writeEvents([
+      followUp(T0 + 10, 'worker-1', 'fix'),
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...experimentWorker(),
+      followUp(T0 + 2_000, 'worker-1', 'fix'),
+      followUp(T0 + 3_000, 'worker-1', 'rebase'),
+      followUp(T0 + 4_000, 'worker-1'),
+      followUp(T0 + 5_000, 'worker-2', 'fix'),
+      followUp(T0 + 6_000, 'worker-1', 'fix'),
+    ]);
+
+    const { origins } = resolve();
+
+    expect(origins[WORKER_SESSION]?.followupKinds).toEqual({ fix: 2, rebase: 1 });
+    expect(origins[COORD_SESSION]?.followupKinds).toBeNull();
+  });
+
+  it('a follow-up after a respawn under the same name counts toward the new session', () => {
+    const laterSession = '44444444-0000-0000-0000-000000000000';
+    const [respawn, reattach] = spawnedWorker('coord', 'aaaa1111', T0 + 10_000);
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...experimentWorker(),
+      followUp(T0 + 2_000, 'worker-1', 'fix'),
+      { ...respawn, meta: { ...respawn.meta, session_id: laterSession } },
+      { ...reattach, ref: 'cccc3333' },
+      followUp(T0 + 11_000, 'worker-1', 'review'),
+    ]);
+
+    const { origins } = resolve([WORKER_SESSION, laterSession]);
+
+    expect(origins[WORKER_SESSION]?.followupKinds).toEqual({ fix: 1 });
+    expect(origins[laterSession]?.followupKinds).toEqual({ review: 1 });
+  });
+
+  it('one query over session_origin gives the arm table for an experiment', async () => {
+    writeEvents([
+      ...adoptedCoordinator('coord', 'aaaa1111'),
+      ...experimentWorker(),
+      followUp(T0 + 2_000, 'worker-1', 'fix'),
+      followUp(T0 + 3_000, 'worker-1', 'fix'),
+    ]);
+    const graph = openGraph(path.join(home, 'graph.sqlite3'));
+    const addSession = graph.db.prepare(
+      'INSERT INTO session (session_id, turn_count) VALUES (?, 0)',
+    );
+    for (const id of [COORD_SESSION, WORKER_SESSION]) addSession.run(id);
+
+    try {
+      await resolveOrigins(graph, agentChatOriginResolver(eventsDbSource(home), home));
+      const arms = graph.db
+        .prepare(
+          `SELECT o.experiment_arm, COUNT(*) AS sessions,
+                  SUM(COALESCE(json_extract(o.followup_kinds, '$.fix'), 0)) AS fix_followups
+           FROM session_origin o JOIN session s ON s.session_id = o.session_id
+           WHERE o.experiment_id = ? GROUP BY o.experiment_arm`,
+        )
+        .all('E3');
+
+      expect(arms).toEqual([{ experiment_arm: 'warm-follow-up', sessions: 1, fix_followups: 2 }]);
     } finally {
       graph.db.close();
     }

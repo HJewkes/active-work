@@ -69,7 +69,6 @@ function snapshot(graph: SessionGraph): Record<string, unknown[]> {
     subagents: query(
       'SELECT agent_ref, session_id, agent_type, label FROM subagent ORDER BY agent_ref',
     ),
-    artifacts: query('SELECT * FROM artifact ORDER BY artifact_ref'),
     edges: query(
       'SELECT source_ref, relation, target_ref, t_valid, t_expired FROM edge' +
         ' ORDER BY source_ref, relation, target_ref',

@@ -50,10 +50,19 @@ export interface LaunchPlan {
   brief: string;
 }
 
-/** What the resolver needs from a launcher: its lifecycle rows and each agent's brief. */
+/** A message that handed its recipient more work, by the sender's stated reason (CC-168). */
+export interface FollowUp {
+  ts: number;
+  target: string;
+  kind: string;
+}
+
+/** What the resolver needs from a launcher: its lifecycle rows, follow-ups and each agent's brief. */
 export interface SpawnSource {
   /** Agent lifecycle rows, oldest first; empty when the launcher has no record. */
   events(): LifecycleEvent[];
+  /** Messages carrying a follow-up kind, oldest first. */
+  followUps(): FollowUp[];
   plan(agentId: string): LaunchPlan | null;
 }
 
@@ -72,6 +81,7 @@ export function eventsDbSource(
 ): SpawnSource {
   return {
     events: () => readLifecycleEvents(path.join(home, 'events.db'), open),
+    followUps: () => readFollowUps(path.join(home, 'events.db'), open),
     plan: (agentId) => readPlan(path.join(home, 'agents', agentId, 'plan.json')),
   };
 }
@@ -87,6 +97,24 @@ function readLifecycleEvents(file: string, open: OpenDatabase): LifecycleEvent[]
       )
       .all(...LIFECYCLE_KINDS) as (Omit<LifecycleEvent, 'meta'> & { meta: string | null })[];
     return rows.map((row) => ({ ...row, meta: parseMeta(row.meta) }));
+  } finally {
+    db.close();
+  }
+}
+
+/** One row per recipient, so `target` is always the agent that received it. */
+function readFollowUps(file: string, open: OpenDatabase): FollowUp[] {
+  if (!existsSync(file)) return [];
+  const db = open(file, { readonly: true, fileMustExist: true });
+  try {
+    return db
+      .prepare(
+        `SELECT ts, target, json_extract(meta, '$.followup_kind') AS kind FROM events
+         WHERE kind = 'message' AND target IS NOT NULL
+           AND json_extract(meta, '$.followup_kind') IS NOT NULL
+         ORDER BY id`,
+      )
+      .all() as FollowUp[];
   } finally {
     db.close();
   }
@@ -142,7 +170,7 @@ export function resolveFromSource(
   isKnown: IsKnownTask,
 ): OriginResolution {
   const wanted = new Set(sessionIds);
-  const index = buildIndex(source.events());
+  const index = buildIndex(source.events(), source.followUps());
   const origins: Record<string, ResolvedOrigin> = {};
   for (const spawn of index.spawns) {
     if (wanted.has(spawn.sessionId)) {
@@ -173,10 +201,11 @@ interface SpawnIndex {
   spawns: Spawn[];
   spawnsByName: Map<string, Spawn[]>;
   sessionsByAgent: Map<string, SessionSighting[]>;
+  followUpsByTarget: Map<string, FollowUp[]>;
   events: LifecycleEvent[];
 }
 
-function buildIndex(events: LifecycleEvent[]): SpawnIndex {
+function buildIndex(events: LifecycleEvent[], followUps: FollowUp[]): SpawnIndex {
   const attaches = events.filter((e) => e.kind === 'agent_attached' && e.ref);
   const spawns = events
     .filter((e) => e.kind === 'agent_spawned')
@@ -186,6 +215,7 @@ function buildIndex(events: LifecycleEvent[]): SpawnIndex {
     spawns,
     spawnsByName: groupBy(spawns, (spawn) => spawn.name),
     sessionsByAgent: sessionSightings(spawns, events),
+    followUpsByTarget: groupBy(followUps, (followUp) => followUp.target),
     events,
   };
 }
@@ -261,7 +291,27 @@ function toOrigin(
     briefPath: plan?.path ?? null,
     taskIds: task.taskIds,
     taskSource: task.source,
+    experimentId: text(meta.experiment_id),
+    experimentArm: text(meta.experiment_arm),
+    predecessor: text(meta.predecessor),
+    followupKinds: followupKinds(spawn, index),
   };
+}
+
+/**
+ * Names are reused, so a follow-up counts toward the spawn that held the name
+ * when it was sent: from this spawn until the next one under the same name.
+ */
+function followupKinds(spawn: Spawn, index: SpawnIndex): Record<string, number> | null {
+  const nextSpawn = (index.spawnsByName.get(spawn.name) ?? []).find((s) => s.ts > spawn.ts);
+  const end = nextSpawn?.ts ?? Number.POSITIVE_INFINITY;
+  const counts: Record<string, number> = {};
+  for (const followUp of index.followUpsByTarget.get(spawn.name) ?? []) {
+    if (followUp.ts >= spawn.ts && followUp.ts < end) {
+      counts[followUp.kind] = (counts[followUp.kind] ?? 0) + 1;
+    }
+  }
+  return Object.keys(counts).length > 0 ? counts : null;
 }
 
 /**

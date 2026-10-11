@@ -200,15 +200,24 @@ function refNamespaces(db: Db): RefNamespaceLiveness[] {
        ) WHERE namespace <> '' GROUP BY namespace ORDER BY namespace`,
     )
     .all() as { namespace: string; n: number }[];
+  const present = existingTables(db);
 
   return rows.map(({ namespace, n }) => {
-    const targets = REF_TABLES[namespace];
-    if (!targets) return { namespace, edges: n, dangling: null };
+    // session-graph's migration 9 drops `artifact`, and the normalized tables when empty.
+    const targets = REF_TABLES[namespace]?.filter((target) => present.has(target.table)) ?? [];
+    if (targets.length === 0) return { namespace, edges: n, dangling: null };
     const { c } = db.prepare(danglingSql(namespace, targets)).get({ prefix: `${namespace}:%` }) as {
       c: number;
     };
     return { namespace, edges: n, dangling: c };
   });
+}
+
+function existingTables(db: Db): Set<string> {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+    name: string;
+  }[];
+  return new Set(rows.map((row) => row.name));
 }
 
 function danglingSql(namespace: string, targets: RefTarget[]): string {
