@@ -96,6 +96,9 @@ describe('openGraph on a graph with colliding migration numbers', () => {
       { version: 6, name: 'episode transcript ids' },
       { version: 7, name: 'origin task link' },
       { version: 8, name: 'review verdicts' },
+      { version: 9, name: 'stop storing bulk classes' },
+      { version: 10, name: 'request_cost model-id boundary' },
+      { version: 11, name: 'origin experiment arm' },
       { version: 1001, name: 'workspace index tables' },
       { version: 1002, name: 'preserved rows' },
     ]);
@@ -109,7 +112,7 @@ describe('openGraph on a graph with colliding migration numbers', () => {
     openGraph(dbPath).db.close();
 
     expect(migrationRows()).toEqual(fresh);
-    expect(fresh.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 1001, 1002]);
+    expect(fresh.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 1001, 1002]);
   });
 
   it('is idempotent across two opens', () => {
