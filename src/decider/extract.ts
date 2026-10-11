@@ -64,14 +64,18 @@ function askTranscripts(graphPath: string): () => Promise<TranscriptFile[]> {
 export async function extractPrecedents(options: ExtractOptions): Promise<ExtractResult> {
   const { activeRoot } = options;
   const policy = exclusionPolicy(await loadHumanOnlyInitiatives(activeRoot));
+  const resolveInitiative = cachedResolver(activeRoot);
   const sources = [
     v1PrecedentSource(activeRoot),
     transcriptSource({
       transcripts: askTranscripts(options.graphPath ?? defaultGraphPath()),
-      resolveInitiative: cachedResolver(activeRoot),
+      resolveInitiative,
     }),
     noteSource({ root: activeRoot }),
-    queueSource(options.eventsDbPath ?? path.join(agentChatHome(), 'events.db')),
+    queueSource(options.eventsDbPath ?? path.join(agentChatHome(), 'events.db'), {
+      activeRoot,
+      resolveInitiative,
+    }),
   ];
   const store = openLedger(activeRoot);
   try {
