@@ -337,6 +337,19 @@ function orientedBrief(assignment: string): string {
   ].join('\n\n');
 }
 
+function renamedOrientation(): string {
+  const openTasks = Array.from(
+    { length: 25 },
+    (_, i) => `- TP-${i + 1}: synthetic backlog ${i + 1}`,
+  );
+  return [
+    '# Orientation: active-work initiative "example"',
+    '## Charter (brief.md)\n\nThe example initiative tracks TP-2 as its first milestone.',
+    `## Backlog (25, highest priority first)\n\n${openTasks.join('\n')}`,
+    '## Nearby work (1, ranked; open with Read)\n\n- task:CC-9 "a related task"',
+  ].join('\n\n');
+}
+
 function knownOnly(...ids: string[]): IsKnownTask {
   const known = new Set(ids);
   return (id) => known.has(id);
@@ -365,6 +378,48 @@ describe('agent-chat origin task links', () => {
     const { origins } = resolve([WORKER_SESSION], isKnown);
 
     expect(brief.indexOf('TP-31')).toBeGreaterThan(BRIEF_EXCERPT_CHARS);
+    expect(origins[WORKER_SESSION]).toMatchObject({
+      taskIds: ['TP-31'],
+      taskSource: 'brief-anchor',
+    });
+  });
+
+  it('links the assigned task through renamed orientation headings when the spawn recorded briefing_chars', () => {
+    const orientation = renamedOrientation();
+    const brief = `${orientation}\n\nWrite the brief for task TP-31 of initiative example. Do not implement.`;
+    const rows = spawnedWorker('coord', 'aaaa1111');
+    rows[0].meta = { ...rows[0].meta, briefing_chars: String(orientation.length) };
+    writeEvents([...adoptedCoordinator('coord', 'aaaa1111'), ...rows]);
+    writePlan('bbbb2222', { args: ['--model', 'opus', '--', brief] });
+    const isKnown = knownOnly(
+      'TP-31',
+      'CC-9',
+      ...Array.from({ length: 25 }, (_, i) => `TP-${i + 1}`),
+    );
+
+    const { origins } = resolve([WORKER_SESSION], isKnown);
+
+    expect(origins[WORKER_SESSION]).toMatchObject({
+      taskIds: ['TP-31'],
+      taskSource: 'brief-paragraph',
+    });
+  });
+
+  it('ignores a briefing_chars past the end of the brief and falls back to the heading rules', () => {
+    const brief = orientedBrief('Task TP-31: add the widget.');
+    const rows = spawnedWorker('coord', 'aaaa1111');
+    rows[0].meta = { ...rows[0].meta, briefing_chars: String(brief.length + 100) };
+    writeEvents([...adoptedCoordinator('coord', 'aaaa1111'), ...rows]);
+    writePlan('bbbb2222', { args: ['--model', 'opus', '--', brief] });
+    const isKnown = knownOnly(
+      'TP-2',
+      'TP-31',
+      'CC-9',
+      ...Array.from({ length: 25 }, (_, i) => `TP-${i + 1}`),
+    );
+
+    const { origins } = resolve([WORKER_SESSION], isKnown);
+
     expect(origins[WORKER_SESSION]).toMatchObject({
       taskIds: ['TP-31'],
       taskSource: 'brief-anchor',
