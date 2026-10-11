@@ -54,11 +54,47 @@ describe('task.edit field-form guard', () => {
     });
   });
 
-  it('allows notes of equal or longer length', async () => {
+  it('refuses a longer value that does not keep the current notes', async () => {
+    await withTempActiveRoot(async (root) => {
+      await seedTask(root);
+      const run = edit(root, { field: 'notes', value: `Rewritten: ${NOTES}and more text` });
+      await expect(run).rejects.toBeInstanceOf(UsageError);
+      await expect(run).rejects.toThrow(/--append.*--force/);
+      expect((await readTask(root)).notes).toBe(NOTES);
+    });
+  });
+
+  it('refuses an equal-length value that differs from the current notes', async () => {
+    await withTempActiveRoot(async (root) => {
+      await seedTask(root);
+      const sameLength = 'X'.repeat(NOTES.length);
+      await expect(edit(root, { field: 'notes', value: sameLength })).rejects.toThrow(/--append/);
+      expect((await readTask(root)).notes).toBe(NOTES);
+    });
+  });
+
+  it('allows a value that extends the current notes', async () => {
     await withTempActiveRoot(async (root) => {
       await seedTask(root);
       await edit(root, { field: 'notes', value: `${NOTES}Line three\n` });
       expect((await readTask(root)).notes).toBe(`${NOTES}Line three\n`);
+    });
+  });
+
+  it('allows any value over empty notes', async () => {
+    await withTempActiveRoot(async (root) => {
+      await seedTask(root, { notes: undefined });
+      await edit(root, { field: 'notes', value: 'Fresh notes' });
+      expect((await readTask(root)).notes).toBe('Fresh notes');
+    });
+  });
+
+  it('lets --force replace notes with a longer different value', async () => {
+    await withTempActiveRoot(async (root) => {
+      await seedTask(root);
+      const replacement = `Rewritten: ${NOTES}and more text`;
+      await edit(root, { field: 'notes', value: replacement, force: true });
+      expect((await readTask(root)).notes).toBe(replacement);
     });
   });
 
