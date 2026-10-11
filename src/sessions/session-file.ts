@@ -20,6 +20,7 @@ export interface SessionWriteInput {
   next_steps?: NextStep[];
   resolves?: SessionResolve[];
   no_loops?: true;
+  parent_session_id?: string;
   /** A spawned worker's facts; also stamps `kind: worker`. */
   worker?: WorkerRecord;
   generated?: true;
@@ -122,6 +123,7 @@ export async function writeSessionFile(input: SessionWriteInput): Promise<Sessio
       next_steps: input.next_steps ?? [],
       resolves: input.resolves ?? [],
       ...(input.no_loops === true ? { no_loops: true } : {}),
+      ...(input.parent_session_id ? { parent_session_id: input.parent_session_id } : {}),
       ...(input.worker === undefined ? {} : { kind: 'worker', worker: input.worker }),
       ...(input.generated === true ? { generated: true } : {}),
       ...(input.transcript !== undefined ? { transcript: input.transcript } : {}),
