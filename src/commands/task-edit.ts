@@ -267,9 +267,9 @@ export function patchChange(task: Task, edit: PatchEdit): TaskChange {
 function guardFieldEdit(task: Task, field: EditableField, value: unknown): void {
   if (field === 'notes' && typeof value === 'string') {
     const current = task.notes ?? '';
-    if (value.length < current.length) {
+    if (!value.startsWith(current)) {
       throw new UsageError(
-        `Refusing to shrink notes (${current.length} -> ${value.length} chars). ` +
+        `Refusing to replace notes (${current.length} chars): the new value does not keep them. ` +
           'Use --append to add a line, or pass --force to replace the notes',
       );
     }
@@ -380,7 +380,7 @@ export default defineCommand<Args, TaskOrLine>({
       ...CATEGORY_OPTIONS,
       force: {
         long: '--force',
-        description: 'Let the field form shrink notes, drop tags or replace a non-empty done_when',
+        description: 'Let the field form replace notes, drop tags or replace a non-empty done_when',
       },
       quiet: quietOption('PRJ-12 edited: notes'),
     },
