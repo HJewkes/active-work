@@ -109,6 +109,7 @@ import minerRefresh from './miner-refresh.js';
 import minerLiveness from './miner-liveness.js';
 import minerStatus from './miner-status.js';
 import minerCost from './miner-cost.js';
+import minerOutcomes from './miner-outcomes.js';
 
 // agent-chat lifecycle hooks (AW-99)
 import hooksAgentChatSpawn from './hooks-agent-chat-spawn.js';
@@ -211,6 +212,7 @@ const ALL_COMMANDS: AnyCommand[] = [
   minerLiveness,
   minerStatus,
   minerCost,
+  minerOutcomes,
   // agent-chat lifecycle hooks (AW-99)
   hooksAgentChatSpawn,
   hooksAgentChatComplete,

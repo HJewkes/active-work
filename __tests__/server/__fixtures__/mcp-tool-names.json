@@ -39,6 +39,7 @@
   "active__miner__cost",
   "active__miner__drain-ingest",
   "active__miner__liveness",
+  "active__miner__outcomes",
   "active__miner__refresh",
   "active__miner__status",
   "active__new",
