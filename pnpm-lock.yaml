@@ -46,14 +46,14 @@ importers:
         specifier: 0.3.1
         version: 0.3.1
       '@titan-design/session-analytics':
-        specifier: ^0.13.3
-        version: 0.13.3(zod@4.4.3)
+        specifier: ^0.15.0
+        version: 0.15.0(zod@4.4.3)
       '@titan-design/session-graph':
-        specifier: ^0.16.0
-        version: 0.16.0(zod@4.4.3)
+        specifier: ^0.16.2
+        version: 0.16.2(zod@4.4.3)
       '@titan-design/session-read':
-        specifier: ^0.13.0
-        version: 0.13.0(zod@4.4.3)
+        specifier: ^0.13.2
+        version: 0.13.2(zod@4.4.3)
       '@titan-design/store-sqlite':
         specifier: ^0.4.0
         version: 0.4.0
@@ -720,6 +720,15 @@ packages:
       zod:
         optional: true
 
+  '@titan-design/agent-protocol@0.7.0':
+    resolution: {integrity: sha512-lR9nDf29odW8ezdf29exNAPlIRy0S6yI33XpWUj8gvthqvm4qrAaHyw5hYpmnetUvmi+RZricpzAR/+omhfBzA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
   '@titan-design/anthropic-account@0.3.0':
     resolution: {integrity: sha512-FdE9oSEnl4L5R4m19uGXpsU9czMuH56GSh2ns0I2aFlU3SEMIEwlomW54GIZSkBAH2mtdJHwQdcEsPW+cRDZzA==}
     engines: {node: '>=20'}
@@ -798,18 +807,22 @@ packages:
       '@huggingface/transformers':
         optional: true
 
-  '@titan-design/session-analytics@0.13.3':
-    resolution: {integrity: sha512-uR55dGmu11WaB5agmW/dcUI2YoI1Fk5u2ZVTT/rBdMps1I6ABu2vYWJjFh9zCPJ3NhqMftdgWmdUdg/rvG0i7A==}
+  '@titan-design/session-analytics@0.15.0':
+    resolution: {integrity: sha512-vnDA3teFEaCw3IOi2IINv7yM0RguEX3t23I6YT1zpRfmH3lf2UNtNhyTJ57yDBedTFe3kaokUaGs7LjellLMWw==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/session-graph@0.16.0':
-    resolution: {integrity: sha512-ot007nVk9VcnSjDAO1l3xAl9u5anP1oLCFwcfLc72rKSIoLLmGMDEGi+2/S7Id/xbDr1QnsjLX2oxLNW5SPE7Q==}
+  '@titan-design/session-graph@0.16.2':
+    resolution: {integrity: sha512-nm98FPeCKSmXheA3idQIpado4luZrW5gRlGkEoRraC6XJtdApac7ve8XZFdzl68CQsgI0XeOW+xhYKxwVCyldA==}
     engines: {node: '>=20'}
 
-  '@titan-design/session-read@0.13.0':
-    resolution: {integrity: sha512-Umdxak9U9oMhqPFNB4m2/SJK43ogQRCOP6XHjkIn/h1LqKMF3ERVkrxqDSuDUj62obbj40p3+45OxiA6hM1uDw==}
+  '@titan-design/session-read@0.13.2':
+    resolution: {integrity: sha512-/LEWAWBVRCrPTxxAZSBS3HQrlL0BhNcXPHlKeihFLE6u8sWq2Ebio/P7Rm1oDsbiwRSrPA1awXvExFEl3lYbnQ==}
+    engines: {node: '>=20'}
+
+  '@titan-design/session-read@0.14.0':
+    resolution: {integrity: sha512-+KEN/MIa0S+ecQjscs24jSOUnbbwbJFfKDdo325y04NmwA3dCcxmb1olKp3WEtKtErbhb1kCJZh/OPERDfj5Tw==}
     engines: {node: '>=20'}
 
   '@titan-design/session-read@0.8.1':
@@ -986,8 +999,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  acorn@8.18.0:
-    resolution: {integrity: sha512-lGq+9yr1/GuAWaVYIHRjvvySG5/4VfKIvC8EWxStPdcDh/Ka7FG3twP6v4d5BkravUilhIAsG4Qj83t02LWUPQ==}
+  acorn@8.19.0:
+    resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
 
@@ -2923,6 +2936,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
+  '@titan-design/agent-protocol@0.7.0(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
   '@titan-design/anthropic-account@0.3.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
@@ -2987,26 +3004,34 @@ snapshots:
       '@titan-design/embed': 0.2.0
       '@titan-design/store-sqlite': 0.4.0
 
-  '@titan-design/session-analytics@0.13.3(zod@4.4.3)':
+  '@titan-design/session-analytics@0.15.0(zod@4.4.3)':
     dependencies:
-      '@titan-design/agent-protocol': 0.6.0(zod@4.4.3)
-      '@titan-design/session-graph': 0.16.0(zod@4.4.3)
-      '@titan-design/session-read': 0.13.0(zod@4.4.3)
+      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
+      '@titan-design/session-graph': 0.16.2(zod@4.4.3)
+      '@titan-design/session-read': 0.13.2(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
       zod: 4.4.3
 
-  '@titan-design/session-graph@0.16.0(zod@4.4.3)':
+  '@titan-design/session-graph@0.16.2(zod@4.4.3)':
     dependencies:
-      '@titan-design/agent-protocol': 0.6.0(zod@4.4.3)
+      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
       '@titan-design/locator': 0.2.1
-      '@titan-design/session-read': 0.13.0(zod@4.4.3)
+      '@titan-design/session-read': 0.14.0(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
     transitivePeerDependencies:
       - zod
 
-  '@titan-design/session-read@0.13.0(zod@4.4.3)':
+  '@titan-design/session-read@0.13.2(zod@4.4.3)':
     dependencies:
-      '@titan-design/agent-protocol': 0.6.0(zod@4.4.3)
+      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
+      '@titan-design/anthropic-account': 0.3.0(zod@4.4.3)
+      '@titan-design/locator': 0.2.1
+    transitivePeerDependencies:
+      - zod
+
+  '@titan-design/session-read@0.14.0(zod@4.4.3)':
+    dependencies:
+      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
       '@titan-design/anthropic-account': 0.3.0(zod@4.4.3)
       '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
@@ -3235,7 +3260,7 @@ snapshots:
 
   acorn@8.16.0: {}
 
-  acorn@8.18.0:
+  acorn@8.19.0:
     optional: true
 
   ajv-formats@3.0.1(ajv@8.20.0):
@@ -4480,7 +4505,7 @@ snapshots:
   terser@5.47.1:
     dependencies:
       '@jridgewell/source-map': 0.3.11
-      acorn: 8.18.0
+      acorn: 8.19.0
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
