@@ -437,6 +437,26 @@ describe('agent-chat origin task links', () => {
     expect(origins[WORKER_SESSION]).toMatchObject({ taskIds: ['TP-31'], taskSource: 'name' });
   });
 
+  it('links from the spawn meta task over a name that names another task', () => {
+    const rows = spawnedWorker('coord', 'aaaa1111', T0 + 1_000, 'tp-31-impl');
+    rows[0].meta = { ...rows[0].meta, task: 'CC-12' };
+    writeEvents([...adoptedCoordinator('coord', 'aaaa1111'), ...rows]);
+
+    const { origins } = resolve([WORKER_SESSION], knownOnly('TP-31', 'CC-12'));
+
+    expect(origins[WORKER_SESSION]).toMatchObject({ taskIds: ['CC-12'], taskSource: 'spawn-meta' });
+  });
+
+  it('falls back to the name when the spawn meta task is not a known task', () => {
+    const rows = spawnedWorker('coord', 'aaaa1111', T0 + 1_000, 'tp-31-impl');
+    rows[0].meta = { ...rows[0].meta, task: 'CC-12' };
+    writeEvents([...adoptedCoordinator('coord', 'aaaa1111'), ...rows]);
+
+    const { origins } = resolve([WORKER_SESSION], knownOnly('TP-31'));
+
+    expect(origins[WORKER_SESSION]).toMatchObject({ taskIds: ['TP-31'], taskSource: 'name' });
+  });
+
   it('an unlinked session gets empty taskIds and source none', () => {
     writeEvents([
       ...adoptedCoordinator('coord', 'aaaa1111'),

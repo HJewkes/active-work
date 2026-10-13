@@ -272,12 +272,14 @@ function toOrigin(
   // The full brief: the excerpt ends inside the orientation block, before the assignment.
   // A recorded briefing_chars (CC-171) marks where that block ends, so it wins over the
   // heading rules, which break whenever agent-chat renames a heading.
-  const task = assignedTaskIds({
-    agentName: spawn.name,
-    brief: plan?.brief ?? '',
-    briefingChars: integer(meta.briefing_chars) ?? undefined,
-    isKnown,
-  });
+  const task =
+    spawnMetaTask(meta, isKnown) ??
+    assignedTaskIds({
+      agentName: spawn.name,
+      brief: plan?.brief ?? '',
+      briefingChars: integer(meta.briefing_chars) ?? undefined,
+      isKnown,
+    });
   return {
     originSystem: ORIGIN_SYSTEM,
     agentId: spawn.agentId,
@@ -303,6 +305,18 @@ function toOrigin(
     predecessor: text(meta.predecessor),
     followupKinds: followupKinds(spawn, index),
   };
+}
+
+/**
+ * The launcher's own `--task` (CC-636) is a statement, not a guess, so a known
+ * id there wins over the name and brief heuristics.
+ */
+function spawnMetaTask(
+  meta: Record<string, unknown>,
+  isKnown: IsKnownTask,
+): { taskIds: string[]; source: string } | null {
+  const taskId = text(meta.task);
+  return taskId && isKnown(taskId) ? { taskIds: [taskId], source: 'spawn-meta' } : null;
 }
 
 /**
