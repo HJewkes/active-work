@@ -12,16 +12,23 @@ export async function exitAfterFlush(code: number): Promise<never> {
   process.exit(code);
 }
 
-/**
- * Resolves once every write queued on `stream` before this call has completed.
- * Writes complete in order, so an empty write's callback fires after them. An
- * error (EPIPE when the reader closed early, e.g. `| head`) means nothing more
- * can be delivered, so it resolves too instead of crashing on an unhandled
- * 'error' event.
- */
+/** Writes complete in order, so an empty write's callback fires after every earlier one. */
 function flushed(stream: NodeJS.WriteStream): Promise<void> {
   return new Promise((resolve) => {
-    stream.on('error', () => resolve());
     stream.write('', () => resolve());
   });
+}
+
+/**
+ * A reader that closed early (`| head`) wants no more output. Without a
+ * listener the resulting EPIPE is an unhandled 'error' event, which prints a
+ * stack trace and exits 1; stop quietly instead.
+ */
+export function exitQuietlyOnBrokenPipe(): void {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code !== 'EPIPE') throw err;
+      process.exit(0);
+    });
+  }
 }

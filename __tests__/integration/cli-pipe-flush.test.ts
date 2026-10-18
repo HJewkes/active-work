@@ -75,6 +75,18 @@ function listToSlowPipe(): Promise<{ status: number | null; stdout: Buffer }> {
   });
 }
 
+/** stdout to a reader that closes after the first chunk, like `| head -c 10`. */
+function listToClosingPipe(): Promise<{ status: number | null; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, listArgs, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+    child.stdout.once('data', () => child.stdout.destroy());
+    child.on('error', reject);
+    child.on('close', (status) => resolve({ status, stderr }));
+  });
+}
+
 describe('cli output to a pipe', () => {
   beforeAll(() => {
     if (!existsSync(DIST_BIN)) {
@@ -113,5 +125,12 @@ describe('cli output to a pipe', () => {
     };
     expect(parsed.ok).toBe(true);
     expect(parsed.data.tasks).toHaveLength(TASK_COUNT);
+  });
+
+  it('stops quietly when the reader closes the pipe early', async () => {
+    const result = await listToClosingPipe();
+
+    expect(result.stderr).not.toMatch(/EPIPE/);
+    expect(result.status).toBe(0);
   });
 });

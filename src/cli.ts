@@ -16,7 +16,7 @@ import { readCommanderOption } from '@titan-design/registry';
 import { BUILD_VERSION } from './version.js';
 import { color } from './utils/color.js';
 import { appendUsage } from './utils/usage-log.js';
-import { exitAfterFlush } from './utils/exit.js';
+import { exitAfterFlush, exitQuietlyOnBrokenPipe } from './utils/exit.js';
 
 /**
  * Look up the inner zod type, skipping optional/nullable/default wrappers.
@@ -309,6 +309,7 @@ function buildProgram(): Command {
  * USAGE exit code; everything else surfaces via the per-command action.
  */
 export async function main(argv: string[]): Promise<void> {
+  exitQuietlyOnBrokenPipe();
   const program = buildProgram();
   try {
     await program.parseAsync(argv);
