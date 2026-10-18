@@ -193,6 +193,7 @@ describe('order-independent index state', () => {
     expect(pr).toEqual({ state: 'merged', merged_at: '2026-07-01T03:00:01Z' });
   });
 
+  // Three refresh passes take about 5s alone, so the 5s default fails it under a loaded run.
   it('reaches the same state whether the corpus arrives at once or in stages', async () => {
     writeCorpus();
     const whole = await refreshAndRead('whole');
@@ -230,5 +231,5 @@ describe('order-independent index state', () => {
     } finally {
       graph.db.close();
     }
-  });
+  }, 30_000);
 });
