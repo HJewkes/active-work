@@ -16,7 +16,7 @@ function post(app: ReturnType<typeof buildHttpApp>, p: string, body: unknown): P
   return app.fetch(
     new Request(`http://127.0.0.1:${TEST_PORT}${p}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-titan-client': 'test' },
       body: JSON.stringify(body),
     }),
   );

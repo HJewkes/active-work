@@ -118,7 +118,6 @@ const REF_TABLES: Record<string, RefTarget[]> = {
     { table: 'task', column: 'task_ref' },
     { table: 'workspace_task', column: 'task_ref' },
   ],
-  artifact: [{ table: 'artifact', column: 'artifact_ref' }],
   // `pr` is keyed by `pr_ref` like every other entity table. It was left
   // unmapped on the belief that it was keyed by `(number, repo)` — that is
   // `pr_merge_observation`, a different table (AW-107).
@@ -203,7 +202,7 @@ function refNamespaces(db: Db): RefNamespaceLiveness[] {
   const present = existingTables(db);
 
   return rows.map(({ namespace, n }) => {
-    // session-graph's migration 9 drops `artifact`, and the normalized tables when empty.
+    // session-graph drops the normalized tables when empty.
     const targets = REF_TABLES[namespace]?.filter((target) => present.has(target.table)) ?? [];
     if (targets.length === 0) return { namespace, edges: n, dangling: null };
     const { c } = db.prepare(danglingSql(namespace, targets)).get({ prefix: `${namespace}:%` }) as {

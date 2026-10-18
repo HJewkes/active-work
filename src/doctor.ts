@@ -11,6 +11,7 @@
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import os from 'node:os';
+import { CLIENT_HEADER } from '@titan-design/daemon';
 import { ConfigError } from './errors.js';
 import { getActiveRoot } from './utils/paths.js';
 import { isProcessAlive, probeHealth, readPidFile, resolveDaemonPort } from './server/lifecycle.js';
@@ -148,18 +149,31 @@ async function fileExists(fs: typeof fsp, target: string): Promise<boolean> {
 // either name.
 const MCP_SERVER_NAMES = ['@hjewkes/active-work', 'active-work'];
 
-async function readMcpRegistered(fs: typeof fsp, homeDir: string): Promise<boolean> {
+interface McpServerEntry {
+  type?: string;
+  headers?: Record<string, string>;
+}
+
+async function readMcpRegistrations(fs: typeof fsp, homeDir: string): Promise<McpServerEntry[]> {
   const configPath = nodePath.join(homeDir, '.claude.json');
   try {
     const raw = await fs.readFile(configPath, 'utf8');
     const parsed = JSON.parse(raw) as {
-      mcpServers?: Record<string, unknown>;
+      mcpServers?: Record<string, McpServerEntry | undefined>;
     };
     const servers = parsed.mcpServers ?? {};
-    return MCP_SERVER_NAMES.some((name) => Boolean(servers[name]));
+    return MCP_SERVER_NAMES.flatMap((name) => (servers[name] ? [servers[name]] : []));
   } catch {
-    return false;
+    return [];
   }
+}
+
+// The daemon refuses a POST that has neither an Origin nor this header with a 403,
+// and Claude Code's http transport sends no Origin.
+function lacksClientHeader(entry: McpServerEntry): boolean {
+  if (entry.type !== 'http') return false;
+  const names = Object.keys(entry.headers ?? {}).map((name) => name.toLowerCase());
+  return !names.includes(CLIENT_HEADER);
 }
 
 async function checkNode(deps: DoctorDeps): Promise<DoctorCheck> {
@@ -234,14 +248,22 @@ async function checkDaemon(deps: DoctorDeps): Promise<DoctorCheck> {
 async function checkMcp(deps: DoctorDeps): Promise<DoctorCheck> {
   const fs = deps.fs ?? fsp;
   const homeDir = deps.homeDir ?? os.homedir();
-  if (await readMcpRegistered(fs, homeDir)) {
-    return { name: 'mcp-registration', status: 'ok', detail: 'registered in ~/.claude.json' };
+  const entries = await readMcpRegistrations(fs, homeDir);
+  if (entries.length === 0) {
+    return {
+      name: 'mcp-registration',
+      status: 'warn',
+      detail: 'not registered with Claude Code — run `active-work setup`',
+    };
   }
-  return {
-    name: 'mcp-registration',
-    status: 'warn',
-    detail: 'not registered with Claude Code — run `active-work setup`',
-  };
+  if (entries.some(lacksClientHeader)) {
+    return {
+      name: 'mcp-registration',
+      status: 'warn',
+      detail: `http registration has no \`${CLIENT_HEADER}\` header, so the daemon answers 403 — add \`"headers": { "${CLIENT_HEADER}": "claude-code" }\``,
+    };
+  }
+  return { name: 'mcp-registration', status: 'ok', detail: 'registered in ~/.claude.json' };
 }
 
 async function checkSkill(deps: DoctorDeps): Promise<DoctorCheck> {

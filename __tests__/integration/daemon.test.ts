@@ -166,7 +166,7 @@ describe('integration: daemon over HTTP', () => {
 
       const rpcRes = await fetch(`http://127.0.0.1:${port}/rpc/list`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-titan-client': 'test' },
         body: '{}',
       });
       expect(rpcRes.status).toBe(200);
@@ -180,6 +180,7 @@ describe('integration: daemon over HTTP', () => {
         headers: {
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
+          'x-titan-client': 'test',
         },
         body: JSON.stringify({
           jsonrpc: '2.0',

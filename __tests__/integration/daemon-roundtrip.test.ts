@@ -93,7 +93,7 @@ async function postJson<T>(
 ): Promise<{ status: number; envelope: JsonOk<T> }> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-titan-client': 'test' },
     body: JSON.stringify(body),
   });
   const envelope = (await res.json()) as JsonOk<T>;
@@ -187,6 +187,7 @@ describe('integration: live daemon roundtrip on a random port', () => {
         headers: {
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
+          'x-titan-client': 'test',
         },
         body: JSON.stringify({
           jsonrpc: '2.0',
@@ -206,6 +207,7 @@ describe('integration: live daemon roundtrip on a random port', () => {
         headers: {
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
+          'x-titan-client': 'test',
         },
         body: JSON.stringify({
           jsonrpc: '2.0',

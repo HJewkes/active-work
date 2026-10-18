@@ -60,7 +60,15 @@ describe('runDoctor', () => {
   async function writeMcpConfig(): Promise<void> {
     await fs.writeFile(
       path.join(homeDir, '.claude.json'),
-      JSON.stringify({ mcpServers: { '@hjewkes/active-work': { type: 'http' } } }),
+      JSON.stringify({
+        mcpServers: {
+          '@hjewkes/active-work': {
+            type: 'stdio',
+            command: 'active-work',
+            args: ['mcp', 'serve', '--stdio'],
+          },
+        },
+      }),
       'utf8',
     );
   }
@@ -191,18 +199,34 @@ describe('runDoctor', () => {
     expect(statusOf(report.checks, 'mcp-registration')).toBe('warn');
   });
 
-  it('accepts the http `active-work` server name too', async () => {
-    await fs.mkdir(homeDir, { recursive: true });
-    await writeSkill();
+  async function writeHttpMcpConfig(headers?: Record<string, string>): Promise<void> {
     await fs.writeFile(
       path.join(homeDir, '.claude.json'),
       JSON.stringify({
-        mcpServers: { 'active-work': { type: 'http', url: 'http://127.0.0.1:7400/mcp' } },
+        mcpServers: {
+          'active-work': { type: 'http', url: 'http://127.0.0.1:7400/mcp', headers },
+        },
       }),
       'utf8',
     );
+  }
+
+  it('accepts the http `active-work` server name too', async () => {
+    await fs.mkdir(homeDir, { recursive: true });
+    await writeSkill();
+    await writeHttpMcpConfig({ 'X-Titan-Client': 'claude-code' });
     const report = await runDoctor(healthyDeps());
     expect(statusOf(report.checks, 'mcp-registration')).toBe('ok');
+  });
+
+  it('warns when an http registration would be refused for lacking the client header', async () => {
+    await fs.mkdir(homeDir, { recursive: true });
+    await writeSkill();
+    await writeHttpMcpConfig();
+    const report = await runDoctor(healthyDeps());
+    const check = report.checks.find((c) => c.name === 'mcp-registration')!;
+    expect(check.status).toBe('warn');
+    expect(check.detail).toContain('x-titan-client');
   });
 
   it('warns when the skill is not installed', async () => {
