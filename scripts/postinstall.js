@@ -2,7 +2,7 @@
 // /aw-prompt slash command into ~/.claude/commands/ when ~/.claude exists. Skip
 // silently otherwise. Fail-soft: never abort an npm install if a copy fails.
 import { existsSync, mkdirSync, cpSync, copyFileSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,13 @@ const commandSource = join(__dirname, '..', 'claude-commands', 'aw-prompt.md');
 const claudeDir = join(homedir(), '.claude');
 const claudeSkillsDir = join(claudeDir, 'skills', 'active-work');
 const claudeCommandsDir = join(claudeDir, 'commands');
+
+// A workspace or checkout install runs these hooks too; only an installed copy
+// (a package dir under node_modules) may touch ~/.claude.
+const packageDir = join(__dirname, '..');
+if (!packageDir.split(sep).includes('node_modules')) {
+  process.exit(0);
+}
 
 if (!existsSync(claudeDir)) {
   // User doesn't have Claude Code installed — skip silently.
