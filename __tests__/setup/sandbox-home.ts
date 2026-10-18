@@ -27,6 +27,11 @@ const sandboxHome = mkdtempSync(path.join(os.tmpdir(), 'aw-test-home-'));
 process.env.HOME = sandboxHome;
 process.env.USERPROFILE = sandboxHome;
 
+// A live root exported by the operator's shell or daemon unit would make every
+// test that falls back to the default root read the real workspace (CC-914).
+// Tests that need a root set their own through the helpers in test-helpers.ts.
+delete process.env.ACTIVE_ROOT;
+
 os.homedir = () => process.env.HOME ?? process.env.USERPROFILE ?? realHomedir();
 
 afterAll(() => {

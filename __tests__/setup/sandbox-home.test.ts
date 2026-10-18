@@ -20,4 +20,8 @@ describe('home sandbox', () => {
     expect(process.env.HOME).toBe(os.homedir());
     expect(process.env.USERPROFILE).toBe(os.homedir());
   });
+
+  it('starts every test file without a live ACTIVE_ROOT', () => {
+    expect(process.env.ACTIVE_ROOT).toBeUndefined();
+  });
 });
