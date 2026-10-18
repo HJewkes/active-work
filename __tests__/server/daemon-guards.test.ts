@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { silentLogger, type DaemonHandle } from '@titan-design/daemon';
+import { CLIENT_HEADER, silentLogger, type DaemonHandle } from '@titan-design/daemon';
 import { fetchInitiatives } from '../../src/dashboard/utils/api.js';
 import { startActiveWorkDaemon } from '../../src/server/daemon.js';
 import { probeHealth } from '../../src/server/lifecycle.js';
@@ -68,7 +68,7 @@ function get(port: number, route: string, host: string): Promise<RawResponse> {
 
 function jsonHeaders(route: string, extra: Record<string, string> = {}): Record<string, string> {
   const accept = route === '/mcp' ? { accept: MCP_ACCEPT } : {};
-  return { 'content-type': 'application/json', ...accept, ...extra };
+  return { 'content-type': 'application/json', [CLIENT_HEADER]: 'test', ...accept, ...extra };
 }
 
 /** The browser half of the dashboard: relative URLs resolve against the page, and a POST carries its Origin. */
@@ -143,7 +143,17 @@ describe.each(ROUTES)('daemon request guards on $route', ({ route, body }) => {
     });
   });
 
-  it('serves a JSON POST with no Origin, as the CLI, agent-chat and Claude Code send it', async () => {
+  it('refuses a JSON POST with neither an Origin nor a client header with 403', async () => {
+    await withDaemon(async (port) => {
+      const accept = route === '/mcp' ? { accept: MCP_ACCEPT } : {};
+      const headers = { 'content-type': 'application/json', ...accept };
+      const res = await post(port, route, headers, body);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  it('serves a JSON POST with no Origin that names its client, as non-browser callers must', async () => {
     await withDaemon(async (port) => {
       const res = await post(port, route, jsonHeaders(route), body);
 
