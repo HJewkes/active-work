@@ -203,8 +203,6 @@ const DIGEST_QUERIES = {
              FROM branch ORDER BY branch_ref`,
   file: `SELECT file_ref, repo, path FROM file ORDER BY file_ref`,
   task: `SELECT task_ref, task_id, initiative, title, status FROM task ORDER BY task_ref`,
-  artifact: `SELECT artifact_ref, kind, title, url, path, created_at
-               FROM artifact ORDER BY artifact_ref`,
   edge: `SELECT source_ref, relation, target_ref, t_valid, t_invalid, t_expired, confidence
            FROM edge ORDER BY source_ref, relation, target_ref, t_valid`,
   search_span: `SELECT t.source_key AS path, s.byte_offset, s.byte_length, s.field
