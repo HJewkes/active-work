@@ -16,6 +16,7 @@ import { readCommanderOption } from '@titan-design/registry';
 import { BUILD_VERSION } from './version.js';
 import { color } from './utils/color.js';
 import { appendUsage } from './utils/usage-log.js';
+import { exitAfterFlush, exitQuietlyOnBrokenPipe } from './utils/exit.js';
 
 /**
  * Look up the inner zod type, skipping optional/nullable/default wrappers.
@@ -185,7 +186,7 @@ function makeAction(
       success: result.success,
       exit_code: result.exitCode,
     });
-    process.exit(result.exitCode);
+    await exitAfterFlush(result.exitCode);
   };
 }
 
@@ -308,6 +309,7 @@ function buildProgram(): Command {
  * USAGE exit code; everything else surfaces via the per-command action.
  */
 export async function main(argv: string[]): Promise<void> {
+  exitQuietlyOnBrokenPipe();
   const program = buildProgram();
   try {
     await program.parseAsync(argv);
@@ -315,13 +317,13 @@ export async function main(argv: string[]): Promise<void> {
     if (err instanceof CommanderError) {
       // Commander already wrote to stderr for help / version. Just exit.
       if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
-        process.exit(0);
+        return exitAfterFlush(0);
       }
-      process.exit(EXIT.USAGE);
+      return exitAfterFlush(EXIT.USAGE);
     }
     const { message, code } = formatError(err);
     emitError(message, code, 'human');
-    process.exit(code);
+    return exitAfterFlush(code);
   }
 }
 

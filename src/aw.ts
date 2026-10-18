@@ -32,6 +32,7 @@ import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './laun
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT, NotFoundError } from './errors.js';
 import { color } from './utils/color.js';
+import { exitAfterFlush } from './utils/exit.js';
 import type { CommandContext } from './registry/index.js';
 
 interface InitiativeSummary {
@@ -110,7 +111,7 @@ async function initInitiative(slug: string, notFound: unknown): Promise<OpenSucc
     initialValue: defaultTitleFromSlug(slug),
     validate: (value) => (value?.trim() ? undefined : 'A title is required.'),
   });
-  if (clackPrompts.isCancel(title)) process.exit(EXIT.OK);
+  if (clackPrompts.isCancel(title)) return exitAfterFlush(EXIT.OK);
   const parsed = newCommand.args.parse({ slug, title: title.trim() });
   const created = await newCommand.run(parsed, launcherContext());
   process.stderr.write(color.dim(`Created ${slug} at ${created.dir}\n`));
@@ -243,7 +244,7 @@ async function runResume(argv: string[]): Promise<void> {
   const rest = tail.filter((a) => !NO_RC_FLAGS.includes(a));
   if (rest.length !== 1 || rest[0]!.startsWith('-')) {
     process.stderr.write(color.red('usage: aw resume <session_id> [--no-rc]\n'));
-    process.exit(EXIT.USAGE);
+    return exitAfterFlush(EXIT.USAGE);
   }
   const sessionId = rest[0]!;
   const ctx: CommandContext = {
@@ -270,11 +271,11 @@ async function runResume(argv: string[]): Promise<void> {
       remoteControl,
       resolved.configDir,
     );
-    process.exit(code);
+    return exitAfterFlush(code);
   } catch (err) {
     const { message, code } = formatError(err);
     process.stderr.write(color.red(`error: ${message}\n`));
-    process.exit(code);
+    return exitAfterFlush(code);
   }
 }
 
@@ -316,11 +317,11 @@ export async function main(argv: string[]): Promise<void> {
   const args = argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
     printHelp();
-    process.exit(EXIT.OK);
+    return exitAfterFlush(EXIT.OK);
   }
   if (args.includes('--version') || args.includes('-V')) {
     process.stdout.write('0.1.0\n');
-    process.exit(EXIT.OK);
+    return exitAfterFlush(EXIT.OK);
   }
   if (args[0] === 'resume') {
     await runResume(argv);
@@ -337,7 +338,7 @@ export async function main(argv: string[]): Promise<void> {
           'Use `active-work` for other commands.\n',
       ),
     );
-    process.exit(EXIT.USAGE);
+    return exitAfterFlush(EXIT.USAGE);
   }
 
   try {
@@ -350,7 +351,7 @@ export async function main(argv: string[]): Promise<void> {
       if ('picker' in result) {
         const choice = await pickInitiative(result.initiatives);
         if (!choice) {
-          process.exit(EXIT.OK);
+          return exitAfterFlush(EXIT.OK);
         }
         opened = (await runOpen({ slug: choice, adhoc })) as OpenSuccess;
       } else {
@@ -376,11 +377,11 @@ export async function main(argv: string[]): Promise<void> {
       },
       (leaseId) => spawnClaude(opened, launchCwd, remoteControl, leaseId),
     );
-    process.exit(code);
+    return exitAfterFlush(code);
   } catch (err) {
     const { message, code } = formatError(err);
     process.stderr.write(color.red(`error: ${message}\n`));
-    process.exit(code);
+    return exitAfterFlush(code);
   }
 }
 
