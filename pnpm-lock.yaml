@@ -22,8 +22,8 @@ importers:
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       '@titan-design/agent-protocol':
-        specifier: ^0.7.0
-        version: 0.7.0(zod@4.4.3)
+        specifier: ^0.9.0
+        version: 0.9.1(zod@4.4.3)
       '@titan-design/cluster':
         specifier: ^0.2.0
         version: 0.2.0
@@ -46,14 +46,14 @@ importers:
         specifier: 0.3.1
         version: 0.3.1
       '@titan-design/session-analytics':
-        specifier: ^0.16.0
-        version: 0.16.0(zod@4.4.3)
+        specifier: ^0.17.4
+        version: 0.17.4(zod@4.4.3)
       '@titan-design/session-graph':
-        specifier: ^0.16.2
-        version: 0.16.2(zod@4.4.3)
+        specifier: ^0.18.0
+        version: 0.18.0(zod@4.4.3)
       '@titan-design/session-read':
-        specifier: ^0.14.0
-        version: 0.14.0(zod@4.4.3)
+        specifier: ^0.16.1
+        version: 0.16.1(zod@4.4.3)
       '@titan-design/store-sqlite':
         specifier: ^0.4.0
         version: 0.4.0
@@ -711,6 +711,15 @@ packages:
       zod:
         optional: true
 
+  '@titan-design/agent-protocol@0.9.1':
+    resolution: {integrity: sha512-tQXMNEF2ekcG4WdHGoQR0Xi4U9l1GpeYRZ9+8Af/4B9SR3qYs7S0sykemDEgew7+0DfL3PZ61gne9H3asVCr4w==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
   '@titan-design/anthropic-account@0.3.0':
     resolution: {integrity: sha512-FdE9oSEnl4L5R4m19uGXpsU9czMuH56GSh2ns0I2aFlU3SEMIEwlomW54GIZSkBAH2mtdJHwQdcEsPW+cRDZzA==}
     engines: {node: '>=20'}
@@ -749,8 +758,17 @@ packages:
       '@huggingface/transformers':
         optional: true
 
+  '@titan-design/evidence@0.4.0':
+    resolution: {integrity: sha512-ZtKmMrJ2nL9/iUMvZpsBehkD3s+l0yMnWOxIq7GZnSkmMwe3aFPM/1Zw3JyprXevawCyk4LVOKO8q/ybjwy5oQ==}
+    engines: {node: '>=20'}
+
   '@titan-design/fix-proof@0.4.0':
     resolution: {integrity: sha512-RCZPQw5FlybzHKvrnhViBfLb0q8h2nlqWDuMTmU6pEzB9lFS2U/maCsY4l+z5OhUzRiDjtGM1ibFtLNiWW58nQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  '@titan-design/fix-proof@0.8.0':
+    resolution: {integrity: sha512-/YtU4t9lmyORktbYsv02BRRxhh3M3quVNSbLt6ZeV5LqJcJ6K7oof/xOdiZwVfs5m28JDdtMgS7x8l5h1wZKpQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -785,22 +803,32 @@ packages:
       '@huggingface/transformers':
         optional: true
 
-  '@titan-design/rpc-protocol@0.3.0':
-    resolution: {integrity: sha512-4bzJLI8mWAkI2GunInAoWNVENWUpt2OoDLBTluGoTdqKQ587rvULIks44e2o7RgQ0R5ylFUp8YLgTV772Cs0+A==}
-    engines: {node: '>=20'}
-
-  '@titan-design/session-analytics@0.16.0':
-    resolution: {integrity: sha512-q8Xc3ZGn+02nplIGhsuVOQK/gRdcn2uk0T/7Pr0QGnbFk2IWpDTjj8N7e+3xJJPDjW+1Rubz93hkKoubdvae0w==}
+  '@titan-design/review-panel@0.8.1':
+    resolution: {integrity: sha512-8PqBxN18S6Rdo76wkyLoJNZHyrXfzYxTZZvwM0JUB5ee8RREemYPDoBg3f3dRJK72/odKP4nZkyp4l/+nmJEFg==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/session-graph@0.16.2':
-    resolution: {integrity: sha512-nm98FPeCKSmXheA3idQIpado4luZrW5gRlGkEoRraC6XJtdApac7ve8XZFdzl68CQsgI0XeOW+xhYKxwVCyldA==}
+  '@titan-design/rpc-protocol@0.3.0':
+    resolution: {integrity: sha512-4bzJLI8mWAkI2GunInAoWNVENWUpt2OoDLBTluGoTdqKQ587rvULIks44e2o7RgQ0R5ylFUp8YLgTV772Cs0+A==}
+    engines: {node: '>=20'}
+
+  '@titan-design/session-analytics@0.17.4':
+    resolution: {integrity: sha512-lJ6f5P7y/3WeMBuj7/LZTZsUs1DfJO/HHD97J0rxvP5GykPvuH73sezrF6s1N7lOHSAkftZ5D/dNP6kpOcFU3w==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      zod: ^4.0.0
+
+  '@titan-design/session-graph@0.18.0':
+    resolution: {integrity: sha512-2OCfES9T9t0lZag0TodVlqXjS06Atytx0gzU2Eovvyult7eK6dkg4Y/EKy9yi+lmxS4BnFhKq7WoBttcsEcPig==}
     engines: {node: '>=20'}
 
   '@titan-design/session-read@0.14.0':
     resolution: {integrity: sha512-+KEN/MIa0S+ecQjscs24jSOUnbbwbJFfKDdo325y04NmwA3dCcxmb1olKp3WEtKtErbhb1kCJZh/OPERDfj5Tw==}
+    engines: {node: '>=20'}
+
+  '@titan-design/session-read@0.16.1':
+    resolution: {integrity: sha512-ViCyO+5p9X4pbemtdrY+b498qpaO9XvOkb2AK/TqN9EVzgy05nUXDbta6pAUKbgZAra5BYEow14vWx/eeEACFw==}
     engines: {node: '>=20'}
 
   '@titan-design/store-sqlite@0.4.0':
@@ -2902,6 +2930,10 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
+  '@titan-design/agent-protocol@0.9.1(zod@4.4.3)':
+    optionalDependencies:
+      zod: 4.4.3
+
   '@titan-design/anthropic-account@0.3.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
@@ -2937,7 +2969,11 @@ snapshots:
 
   '@titan-design/embed@0.2.0': {}
 
+  '@titan-design/evidence@0.4.0': {}
+
   '@titan-design/fix-proof@0.4.0': {}
+
+  '@titan-design/fix-proof@0.8.0': {}
 
   '@titan-design/locator@0.2.1': {}
 
@@ -2965,21 +3001,29 @@ snapshots:
       '@titan-design/embed': 0.2.0
       '@titan-design/store-sqlite': 0.4.0
 
+  '@titan-design/review-panel@0.8.1(zod@4.4.3)':
+    dependencies:
+      '@titan-design/evidence': 0.4.0
+      '@titan-design/fix-proof': 0.8.0
+      '@titan-design/session-read': 0.16.1(zod@4.4.3)
+      zod: 4.4.3
+
   '@titan-design/rpc-protocol@0.3.0': {}
 
-  '@titan-design/session-analytics@0.16.0(zod@4.4.3)':
+  '@titan-design/session-analytics@0.17.4(zod@4.4.3)':
     dependencies:
-      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
-      '@titan-design/session-graph': 0.16.2(zod@4.4.3)
-      '@titan-design/session-read': 0.14.0(zod@4.4.3)
+      '@titan-design/agent-protocol': 0.9.1(zod@4.4.3)
+      '@titan-design/review-panel': 0.8.1(zod@4.4.3)
+      '@titan-design/session-graph': 0.18.0(zod@4.4.3)
+      '@titan-design/session-read': 0.16.1(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
       zod: 4.4.3
 
-  '@titan-design/session-graph@0.16.2(zod@4.4.3)':
+  '@titan-design/session-graph@0.18.0(zod@4.4.3)':
     dependencies:
-      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
+      '@titan-design/agent-protocol': 0.9.1(zod@4.4.3)
       '@titan-design/locator': 0.2.1
-      '@titan-design/session-read': 0.14.0(zod@4.4.3)
+      '@titan-design/session-read': 0.16.1(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
     transitivePeerDependencies:
       - zod
@@ -2987,6 +3031,14 @@ snapshots:
   '@titan-design/session-read@0.14.0(zod@4.4.3)':
     dependencies:
       '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
+      '@titan-design/anthropic-account': 0.3.0(zod@4.4.3)
+      '@titan-design/locator': 0.2.1
+    transitivePeerDependencies:
+      - zod
+
+  '@titan-design/session-read@0.16.1(zod@4.4.3)':
+    dependencies:
+      '@titan-design/agent-protocol': 0.9.1(zod@4.4.3)
       '@titan-design/anthropic-account': 0.3.0(zod@4.4.3)
       '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
