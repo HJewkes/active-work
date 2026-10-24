@@ -92,13 +92,46 @@ export const ADHOC_FLAGS = ['--adhoc', '--ad-hoc'];
 /** Opt out of Remote Control for one launch; `--no-remote-control` is the long alias. */
 export const NO_RC_FLAGS = ['--no-rc', '--no-remote-control'];
 
+export const PROFILE_FLAG = '--profile';
+
+export interface ProfileFlag {
+  /** The `--profile <name>` / `--profile=<name>` value; the last one given wins. */
+  profile?: string;
+  /** `args` with every `--profile` occurrence (and its value) removed. */
+  rest: string[];
+  /** True when `--profile` was given without a name. */
+  missingValue: boolean;
+}
+
+/** Pull `--profile <name>` and `--profile=<name>` out of an argument list. */
+export function extractProfileFlag(args: string[]): ProfileFlag {
+  const rest: string[] = [];
+  let profile: string | undefined;
+  let missingValue = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg.startsWith(`${PROFILE_FLAG}=`)) {
+      profile = arg.slice(PROFILE_FLAG.length + 1);
+    } else if (arg === PROFILE_FLAG) {
+      profile = args[++i];
+    } else {
+      rest.push(arg);
+      continue;
+    }
+    missingValue ||= !profile || profile.startsWith('-');
+  }
+  return { profile: missingValue ? undefined : profile, rest, missingValue };
+}
+
 export interface LauncherFlags {
   pick: boolean;
   adhoc: boolean;
   /** False when `--no-rc` (or `--no-remote-control`) was given. */
   remoteControl: boolean;
+  /** Claude profile chosen with `--profile`; beats the brief's `profile:`. */
+  profile?: string;
   positional: string[];
-  /** True when a positional looks like an unknown flag, or more than one slug was given. */
+  /** True when a positional looks like an unknown flag, more than one slug was given, or `--profile` lacks a name. */
   usageError: boolean;
 }
 
@@ -108,13 +141,15 @@ export interface LauncherFlags {
  * alias — is unit-testable without executing the launcher.
  */
 export function parseLauncherFlags(args: string[]): LauncherFlags {
+  const { profile, rest, missingValue } = extractProfileFlag(args);
   const known = new Set(['--pick', ...ADHOC_FLAGS, ...NO_RC_FLAGS]);
-  const positional = args.filter((a) => !known.has(a));
+  const positional = rest.filter((a) => !known.has(a));
   return {
-    pick: args.includes('--pick'),
-    adhoc: args.some((a) => ADHOC_FLAGS.includes(a)),
-    remoteControl: !args.some((a) => NO_RC_FLAGS.includes(a)),
+    pick: rest.includes('--pick'),
+    adhoc: rest.some((a) => ADHOC_FLAGS.includes(a)),
+    remoteControl: !rest.some((a) => NO_RC_FLAGS.includes(a)),
+    ...(profile ? { profile } : {}),
     positional,
-    usageError: positional.some((a) => a.startsWith('-')) || positional.length > 1,
+    usageError: missingValue || positional.some((a) => a.startsWith('-')) || positional.length > 1,
   };
 }

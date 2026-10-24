@@ -237,6 +237,29 @@ describe('parseLauncherFlags', () => {
   it('still flags more than one slug as a usage error', () => {
     expect(parseLauncherFlags(['a', 'b']).usageError).toBe(true);
   });
+
+  it.each([
+    [['example-app', '--profile', 'server']],
+    [['--profile', 'server', 'example-app']],
+    [['example-app', '--profile=server']],
+  ])('takes the profile name from %j without treating it as a slug', (args) => {
+    const f = parseLauncherFlags(args);
+
+    expect(f.profile).toBe('server');
+    expect(f.positional).toEqual(['example-app']);
+    expect(f.usageError).toBe(false);
+  });
+
+  it.each([
+    [['example-app', '--profile']],
+    [['example-app', '--profile=']],
+    [['--profile', '--pick']],
+  ])('flags --profile without a name in %j as a usage error', (args) => {
+    const f = parseLauncherFlags(args);
+
+    expect(f.usageError).toBe(true);
+    expect(f.profile).toBeUndefined();
+  });
 });
 
 describe('buildLauncherEnv', () => {
