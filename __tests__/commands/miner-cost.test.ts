@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import minerCost from '../../src/commands/miner-cost.js';
 import type { CommandContext } from '../../src/registry/types.js';
 import { defaultGraphPath, openGraph, openGraphReadOnly } from '../../src/session-index/graph.js';
+import { runRefresh } from '../../src/session-index/refresh.js';
 import { withEmptyActiveRoot } from '../setup/test-helpers.js';
 
 /**
@@ -185,6 +186,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe('miner cost', () => {
@@ -271,6 +273,41 @@ describe('miner cost', () => {
       await expect(minerCost.run({}, ctx())).resolves.toMatchObject({ totals: { requests: 4 } });
 
       chmodSync(defaultGraphPath(), 0o644);
+    });
+  });
+
+  it('a refresh re-prices an index left on an older price table (TP-4127)', async () => {
+    await withEmptyActiveRoot(async (root) => {
+      vi.stubEnv('AGENT_CHAT_HOME', path.join(root, 'agent-chat'));
+      const transcripts = path.join(root, 'transcripts');
+      mkdirSync(path.join(transcripts, 'demo'), { recursive: true });
+      const cwd = repo(root, 'alpha');
+      const lines = [
+        userPrompt('sess-opus55', cwd, 'p1', '2026-10-23T00:00:00Z', 'prompt'),
+        assistant('sess-opus55', cwd, '2026-10-23T00:00:05Z', 'req-o1', 'claude-opus-5-5', {
+          input_tokens: 1000,
+          output_tokens: 1000,
+          cache_read_input_tokens: 10000,
+          cache_creation_input_tokens: 0,
+        }),
+      ];
+      writeFileSync(
+        path.join(transcripts, 'demo', 'opus55.jsonl'),
+        lines.map((l) => JSON.stringify(l)).join('\n') + '\n',
+        'utf8',
+      );
+      const stale = openGraph(defaultGraphPath());
+      const v1Rows = PRICE_TABLE.filter((r) => r.modelPrefix !== 'claude-opus-5-5');
+      syncPrices(stale, v1Rows, { tableVersion: 1 });
+      stale.db.close();
+
+      await runRefresh({ root: transcripts, skipPrOutcomes: true, skipWorkspace: true });
+      const result = await minerCost.run({ since: '2026-10-23' }, ctx('json'));
+
+      expect(result.priceTableVersion).toBe(4);
+      expect(result.totals.unpricedRequests).toBe(0);
+      // Opus 5.5 at v4: input 4, cache read 0.2, output 20 $/Mtok.
+      expect(result.totals.costUsd).toBeCloseTo((1000 * 4 + 10000 * 0.2 + 1000 * 20) / 1e6, 9);
     });
   });
 
