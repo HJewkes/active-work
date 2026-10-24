@@ -1,11 +1,16 @@
-import { homedir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { UsageError } from '../src/errors.js';
 import {
   CONFIG_DIR_ENV,
   PROFILE_ROOT_ENV,
   applyProfileEnv,
+  launchProfileEnv,
+  listProfiles,
   profileRoot,
+  requireProfileDir,
   resolveProfileDir,
 } from '../src/launcher-profile.js';
 
@@ -69,5 +74,80 @@ describe('applyProfileEnv', () => {
     const base = { [PROFILE_ROOT_ENV]: '/tmp/profiles' };
     applyProfileEnv(base, 'agents', exists);
     expect(base[CONFIG_DIR_ENV]).toBeUndefined();
+  });
+});
+
+describe('launchProfileEnv', () => {
+  const base = { [PROFILE_ROOT_ENV]: '/tmp/profiles', [CONFIG_DIR_ENV]: '/inherited' };
+
+  it('uses the --profile flag over the brief and the inherited config dir', () => {
+    const result = launchProfileEnv(base, { flag: 'server', brief: 'agents' }, exists);
+
+    expect(result.env[CONFIG_DIR_ENV]).toBe('/tmp/profiles/server');
+  });
+
+  it('falls back to the brief profile when no flag is given', () => {
+    const result = launchProfileEnv(base, { brief: 'agents' }, exists);
+
+    expect(result.env[CONFIG_DIR_ENV]).toBe('/tmp/profiles/agents');
+  });
+
+  it('keeps the inherited config dir when neither flag nor brief names a profile', () => {
+    const result = launchProfileEnv(base, {}, exists);
+
+    expect(result.env[CONFIG_DIR_ENV]).toBe('/inherited');
+  });
+});
+
+describe('requireProfileDir', () => {
+  let root: string;
+  let env: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    root = mkdtempSync(path.join(tmpdir(), 'aw-profiles-'));
+    mkdirSync(path.join(root, 'workout'));
+    mkdirSync(path.join(root, 'agents'));
+    writeFileSync(path.join(root, 'notes.txt'), '');
+    env = { [PROFILE_ROOT_ENV]: root };
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('returns the directory of a profile that exists', () => {
+    expect(requireProfileDir('agents', env)).toBe(path.join(root, 'agents'));
+  });
+
+  it('rejects an unknown name with a usage error listing the profile directories', () => {
+    const attempt = () => requireProfileDir('ghost', env);
+
+    expect(attempt).toThrow(UsageError);
+    expect(attempt).toThrow(`Available profiles in ${root}: agents, workout`);
+  });
+
+  it('rejects a name that escapes the profile root', () => {
+    expect(() => requireProfileDir('..', env)).toThrow(UsageError);
+  });
+
+  it('reports no profiles when the root does not exist', () => {
+    const attempt = () =>
+      requireProfileDir('agents', { [PROFILE_ROOT_ENV]: path.join(root, 'nope') });
+
+    expect(attempt).toThrow('(none)');
+  });
+});
+
+describe('listProfiles', () => {
+  it('lists only directories, sorted', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'aw-profiles-'));
+    mkdirSync(path.join(root, 'server'));
+    mkdirSync(path.join(root, 'personal'));
+    writeFileSync(path.join(root, 'README'), '');
+
+    const names = listProfiles({ [PROFILE_ROOT_ENV]: root });
+
+    expect(names).toEqual(['personal', 'server']);
+    rmSync(root, { recursive: true, force: true });
   });
 });
