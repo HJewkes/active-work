@@ -23,11 +23,12 @@ import { resolveLaunchCwd } from './commands/_open-helpers.js';
 import {
   buildClaudeArgs,
   buildResumeArgs,
+  extractProfileFlag,
   NO_RC_FLAGS,
   parseLauncherFlags,
 } from './launcher-args.js';
 import { buildLauncherEnv, withLauncherLease } from './launcher-lease.js';
-import { applyProfileEnv, CONFIG_DIR_ENV } from './launcher-profile.js';
+import { CONFIG_DIR_ENV, launchProfileEnv, requireProfileDir } from './launcher-profile.js';
 import { defaultTitleFromSlug, isInvalidSlugMiss, shouldOfferInit } from './launcher-init.js';
 import { getActiveRoot } from './utils/paths.js';
 import { formatError, EXIT, NotFoundError } from './errors.js';
@@ -147,14 +148,22 @@ async function pickInitiative(initiatives: InitiativeSummary[]): Promise<string 
   return String(choice);
 }
 
+interface LaunchOptions {
+  remoteControl: boolean;
+  /** `--profile`, already checked to exist; beats `opened.profile`. */
+  profile?: string;
+}
+
 function spawnClaude(
   opened: OpenSuccess,
   cwd: string,
-  remoteControl: boolean,
+  { remoteControl, profile }: LaunchOptions,
   leaseId?: string,
 ): Promise<number> {
-  const { env: profileEnv, warning } = applyProfileEnv(process.env, opened.profile, (dir) =>
-    existsSync(dir),
+  const { env: profileEnv, warning } = launchProfileEnv(
+    process.env,
+    { flag: profile, brief: opened.profile },
+    (dir) => existsSync(dir),
   );
   if (warning) process.stderr.write(color.yellow(`warning: ${warning}\n`));
   const claudeArgs = buildClaudeArgs(opened.prompt, opened.channels, { remoteControl });
@@ -239,11 +248,11 @@ export function spawnClaudeResume(
  * doesn't need to already know or remember where the session ran.
  */
 async function runResume(argv: string[]): Promise<void> {
-  const tail = argv.slice(3);
+  const { profile, rest: tail, missingValue } = extractProfileFlag(argv.slice(3));
   const remoteControl = !tail.some((a) => NO_RC_FLAGS.includes(a));
   const rest = tail.filter((a) => !NO_RC_FLAGS.includes(a));
-  if (rest.length !== 1 || rest[0]!.startsWith('-')) {
-    process.stderr.write(color.red('usage: aw resume <session_id> [--no-rc]\n'));
+  if (missingValue || rest.length !== 1 || rest[0]!.startsWith('-')) {
+    process.stderr.write(color.red('usage: aw resume <session_id> [--no-rc] [--profile <name>]\n'));
     return exitAfterFlush(EXIT.USAGE);
   }
   const sessionId = rest[0]!;
@@ -254,23 +263,20 @@ async function runResume(argv: string[]): Promise<void> {
     cwd: process.cwd(),
   };
   try {
+    const profileDir = profile ? requireProfileDir(profile) : undefined;
     const parsed = resumeCommand.args.parse({ session_id: sessionId });
     const resolved = (await resumeCommand.run(parsed, ctx)) as {
       cwd: string;
       source: string;
       configDir?: string;
     };
+    const configDir = profileDir ?? resolved.configDir;
     process.stderr.write(
       color.dim(
-        `Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}${resolved.configDir ? `, config dir ${resolved.configDir}` : ''}).\n`,
+        `Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}${configDir ? `, config dir ${configDir}` : ''}).\n`,
       ),
     );
-    const code = await spawnClaudeResume(
-      sessionId,
-      resolved.cwd,
-      remoteControl,
-      resolved.configDir,
-    );
+    const code = await spawnClaudeResume(sessionId, resolved.cwd, remoteControl, configDir);
     return exitAfterFlush(code);
   } catch (err) {
     const { message, code } = formatError(err);
@@ -279,44 +285,48 @@ async function runResume(argv: string[]): Promise<void> {
   }
 }
 
-function printHelp(): void {
-  process.stdout.write(
-    [
-      'aw — launch a Claude session for an active-work initiative.',
-      '',
-      'Usage:',
-      '  aw [slug]      Bootstrap and launch a Claude session for <slug>.',
-      '                 <slug> may be a facet alias (`active-work facet list`):',
-      '                 it opens the owning initiative scoped to the facet.',
-      '                 Omit slug to resolve the initiative from the current',
-      '                 directory, falling back to an interactive picker.',
-      '                 An unknown slug offers to create the initiative and',
-      '                 start a session that sets it up with you.',
-      '  aw --pick      Skip cwd resolution and always show the picker.',
-      '  aw <slug> --adhoc',
-      '                 Frame the session as ad-hoc work on the workstream',
-      '                 (awaiting your task), not a handoff continuation.',
-      '                 `--ad-hoc` is accepted as an alias.',
-      '  aw <slug> --no-rc',
-      '                 Launch without Remote Control (on by default).',
-      '                 `--no-remote-control` is accepted as an alias.',
-      '  aw resume <session_id> [--no-rc]',
-      "                 Find the directory a session id ran in (active-work's",
-      "                 session log, then every config dir's projects) and resume",
-      "                 it there, under the profile's config dir if it has one.",
-      '  aw --help      Show this message.',
-      '  aw --version   Print version.',
-      '',
-      'For the full management CLI (new, task, focus, session, …) use `active-work`.',
-      '',
-    ].join('\n'),
-  );
+export function helpText(): string {
+  return [
+    'aw — launch a Claude session for an active-work initiative.',
+    '',
+    'Usage:',
+    '  aw [slug]      Bootstrap and launch a Claude session for <slug>.',
+    '                 <slug> may be a facet alias (`active-work facet list`):',
+    '                 it opens the owning initiative scoped to the facet.',
+    '                 Omit slug to resolve the initiative from the current',
+    '                 directory, falling back to an interactive picker.',
+    '                 An unknown slug offers to create the initiative and',
+    '                 start a session that sets it up with you.',
+    '  aw --pick      Skip cwd resolution and always show the picker.',
+    '  aw <slug> --adhoc',
+    '                 Frame the session as ad-hoc work on the workstream',
+    '                 (awaiting your task), not a handoff continuation.',
+    '                 `--ad-hoc` is accepted as an alias.',
+    '  aw <slug> --no-rc',
+    '                 Launch without Remote Control (on by default).',
+    '                 `--no-remote-control` is accepted as an alias.',
+    '  aw <slug> --profile <name>',
+    '                 Launch on the Claude account in ~/.claude-profiles/<name>',
+    "                 (CLAUDE_CONFIG_DIR), overriding the brief's `profile:`.",
+    '                 `--profile=<name>` also works. An unknown name exits',
+    '                 with the list of profiles that exist.',
+    '  aw resume <session_id> [--no-rc] [--profile <name>]',
+    "                 Find the directory a session id ran in (active-work's",
+    "                 session log, then every config dir's projects) and resume",
+    "                 it there, under the profile's config dir if it has one.",
+    '                 `--profile` resumes under that profile instead.',
+    '  aw --help      Show this message.',
+    '  aw --version   Print version.',
+    '',
+    'For the full management CLI (new, task, focus, session, …) use `active-work`.',
+    '',
+  ].join('\n');
 }
 
 export async function main(argv: string[]): Promise<void> {
   const args = argv.slice(2);
   if (args.includes('--help') || args.includes('-h')) {
-    printHelp();
+    process.stdout.write(helpText());
     return exitAfterFlush(EXIT.OK);
   }
   if (args.includes('--version') || args.includes('-V')) {
@@ -329,8 +339,8 @@ export async function main(argv: string[]): Promise<void> {
   }
   // `--pick` forces the interactive picker instead of resolving from cwd;
   // `--adhoc` (alias `--ad-hoc`) reframes the prompt as ad-hoc work;
-  // `--no-rc` launches without Remote Control.
-  const { pick, adhoc, remoteControl, positional, usageError } = parseLauncherFlags(args);
+  // `--no-rc` launches without Remote Control; `--profile` picks the account.
+  const { pick, adhoc, remoteControl, profile, positional, usageError } = parseLauncherFlags(args);
   if (usageError) {
     process.stderr.write(
       color.red(
@@ -342,6 +352,7 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   try {
+    if (profile) requireProfileDir(profile);
     let opened: OpenSuccess;
     if (positional.length === 0) {
       // No slug: `open` first tries to resolve the initiative from the
@@ -375,7 +386,7 @@ export async function main(argv: string[]): Promise<void> {
         slug: opened.slug,
         cwd: launchCwd,
       },
-      (leaseId) => spawnClaude(opened, launchCwd, remoteControl, leaseId),
+      (leaseId) => spawnClaude(opened, launchCwd, { remoteControl, profile }, leaseId),
     );
     return exitAfterFlush(code);
   } catch (err) {
