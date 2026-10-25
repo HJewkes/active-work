@@ -7,9 +7,10 @@ import { getActiveRoot, getInitiativeDir, getLockPath } from '../utils/paths.js'
 import { withFileLock } from '../utils/fs-atomic.js';
 import {
   loadBrief,
-  loadExistingTasks,
   maxOnDiskTaskNumber,
+  maxOnDiskTaskNumberFromFilenames,
   readTaskSeq,
+  scanExistingTasks,
 } from '../utils/task-seq.js';
 import { writeYaml } from '../utils/yaml-io.js';
 import { nowIso, today } from '../utils/today.js';
@@ -20,6 +21,7 @@ import {
   CATEGORY_OPTIONS,
   changedCategoryFields,
   DueArg,
+  warn,
 } from './_categories.js';
 import {
   quietOption,
@@ -55,11 +57,15 @@ type Args = z.infer<typeof ArgsSchema>;
 // that case; it only needs to move when a delete removes the current highest
 // id (see task-delete.ts), so `task.add` itself never has to write brief.md
 // (AW-94) — it only reads the mark to guard against a stale on-disk scan.
-function allocateTaskNumber(
+// Filenames count too, so a skipped file that does not validate keeps its id.
+async function allocateTaskNumber(
   brief: Awaited<ReturnType<typeof loadBrief>>,
   existing: Task[],
-): number {
-  const onDisk = maxOnDiskTaskNumber(brief.prefix, existing);
+): Promise<number> {
+  const onDisk = Math.max(
+    maxOnDiskTaskNumber(brief.prefix, existing),
+    await maxOnDiskTaskNumberFromFilenames(brief.prefix, brief.slug),
+  );
   return Math.max(readTaskSeq(brief, onDisk), onDisk) + 1;
 }
 
@@ -135,8 +141,10 @@ export default defineCommand<Args, TaskOrLine>({
     if (args.deliverable !== undefined) await assertKnownDeliverables(activeRoot, args.deliverable);
     return withFileLock(getLockPath(args.slug), async () => {
       const brief = await loadBrief(args.slug);
-      const existing = await loadExistingTasks(args.slug);
-      const n = allocateTaskNumber(brief, existing);
+      const { tasks: existing, skipped } = await scanExistingTasks(args.slug);
+      for (const reason of skipped)
+        warn(ctx, `Skipped a task file that does not validate. ${reason}`);
+      const n = await allocateTaskNumber(brief, existing);
       const id = `${brief.prefix}-${n}`;
       if (args.parent !== undefined || args.dep !== undefined) {
         await assertEdgeWrite({ slug: args.slug, id, parent: args.parent, dep: args.dep });
