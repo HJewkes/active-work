@@ -205,6 +205,44 @@ describe('task.add', () => {
       expect(after.mtimeMs).toBe(before.mtimeMs);
     });
   });
+
+  // TP-4191: one hand-edited sibling used to fail every task add in the initiative.
+  describe('with a sibling task file that does not validate', () => {
+    async function writeSibling(root: string, id: string, doneAt: string): Promise<void> {
+      await fs.writeFile(
+        path.join(root, SLUG, 'tasks', `${id}.yml`),
+        `id: ${id}\ntitle: Hand edited\npriority: 9\nstatus: done\n` +
+          `created: 2026-10-20\nupdated: 2026-10-24\ndone_at: ${doneAt}\n`,
+        'utf8',
+      );
+    }
+
+    it('adds the task, warns with the file name, and skips past its id', async () => {
+      await withTempActiveRoot(async (root) => {
+        await writeSibling(root, 'SI-5', '2026-10-24T19:30:00');
+        const context = ctx(root);
+
+        const created = await taskAdd.run({ slug: SLUG, title: 'After bad sibling' }, context);
+
+        expect(created.id).toBe('SI-6');
+        expect(context.warnings).toHaveLength(1);
+        expect(context.warnings[0]).toContain(path.join(SLUG, 'tasks', 'SI-5.yml'));
+        expect(context.warnings[0]).toContain('done_at');
+      });
+    });
+
+    it('still accepts an offset timestamp done_at without a warning', async () => {
+      await withTempActiveRoot(async (root) => {
+        await writeSibling(root, 'SI-5', '2026-10-24T19:30:00Z');
+        const context = ctx(root);
+
+        const created = await taskAdd.run({ slug: SLUG, title: 'After good sibling' }, context);
+
+        expect(created.id).toBe('SI-6');
+        expect(context.warnings).toEqual([]);
+      });
+    });
+  });
 });
 
 describe('task.done', () => {

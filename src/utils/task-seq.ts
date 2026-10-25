@@ -41,20 +41,44 @@ export async function loadBrief(slug: string): Promise<Brief> {
   };
 }
 
-export async function loadExistingTasks(slug: string): Promise<Task[]> {
+async function taskFilePaths(slug: string): Promise<string[]> {
   const dir = path.join(getInitiativeDir(slug), 'tasks');
-  let entries: string[];
   try {
-    entries = (await fs.readdir(dir)).filter((e) => e.endsWith('.yml'));
+    return (await fs.readdir(dir)).filter((e) => e.endsWith('.yml')).map((e) => path.join(dir, e));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw err;
   }
+}
+
+export async function loadExistingTasks(slug: string): Promise<Task[]> {
   const tasks: Task[] = [];
-  for (const file of entries) {
-    tasks.push(await readYaml(path.join(dir, file), TaskSchema));
+  for (const file of await taskFilePaths(slug)) {
+    tasks.push(await readYaml(file, TaskSchema));
   }
   return tasks;
+}
+
+export interface TaskScan {
+  tasks: Task[];
+  /** One message per task file that failed to parse or validate, naming the file. */
+  skipped: string[];
+}
+
+/**
+ * Like loadExistingTasks, but one hand-edited file that no longer validates is
+ * reported and skipped instead of failing every caller for the whole initiative.
+ */
+export async function scanExistingTasks(slug: string): Promise<TaskScan> {
+  const scan: TaskScan = { tasks: [], skipped: [] };
+  for (const file of await taskFilePaths(slug)) {
+    try {
+      scan.tasks.push(await readYaml(file, TaskSchema));
+    } catch (err) {
+      scan.skipped.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return scan;
 }
 
 // Scans task filenames directly rather than parsing every task file's YAML.
