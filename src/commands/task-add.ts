@@ -142,7 +142,8 @@ export default defineCommand<Args, TaskOrLine>({
     return withFileLock(getLockPath(args.slug), async () => {
       const brief = await loadBrief(args.slug);
       const { tasks: existing, skipped } = await scanExistingTasks(args.slug);
-      for (const reason of skipped) warn(ctx, `Skipped a task file that does not validate. ${reason}`);
+      for (const reason of skipped)
+        warn(ctx, `Skipped a task file that does not validate. ${reason}`);
       const n = await allocateTaskNumber(brief, existing);
       const id = `${brief.prefix}-${n}`;
       if (args.parent !== undefined || args.dep !== undefined) {
