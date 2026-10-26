@@ -288,9 +288,10 @@ function guardFieldEdit(task: Task, field: EditableField, value: unknown): void 
   }
 }
 
-/** Wall-clock stamps a status change records: started_at once, on the first in-progress. */
+/** Wall-clock stamps a status change records: started_at once, on the first in-progress; reopening clears done_at. */
 function statusStamps(task: Task, status: unknown): Partial<Task> {
   if (status === 'done') return { done_at: nowIso() };
+  if (status === 'open') return { done_at: null };
   if (status === 'in-progress' && task.started_at === undefined) return { started_at: nowIso() };
   return {};
 }
