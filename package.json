@@ -49,6 +49,7 @@
     "prepare": "titan-egress-scan install-hook || echo \"egress-scan: pre-push hook not installed; run pnpm install, then pnpm run prepare\"",
     "test": "vitest run",
     "test:sandboxed": "bash scripts/test-sandboxed.sh",
+    "test:affected": "vitest run --changed ${TEST_AFFECTED_BASE:-origin/main}",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
