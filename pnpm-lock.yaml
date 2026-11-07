@@ -22,26 +22,26 @@ importers:
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
       '@titan-design/agent-protocol':
-        specifier: ^0.9.0
+        specifier: ^0.9.1
         version: 0.9.1(zod@4.4.3)
       '@titan-design/cluster':
         specifier: ^0.2.0
         version: 0.2.0
       '@titan-design/daemon':
-        specifier: ^0.6.0
-        version: 0.6.0(zod@4.4.3)
+        specifier: ^0.8.0
+        version: 0.8.0(zod@4.4.3)
       '@titan-design/decider':
-        specifier: 0.6.4
-        version: 0.6.4(zod@4.4.3)
+        specifier: 0.6.6
+        version: 0.6.6(zod@4.4.3)
       '@titan-design/locator':
         specifier: ^0.2.1
         version: 0.2.1
       '@titan-design/pm':
-        specifier: ^0.2.0
-        version: 0.2.0(zod@4.4.3)
-      '@titan-design/registry':
         specifier: ^0.4.0
         version: 0.4.0(zod@4.4.3)
+      '@titan-design/registry':
+        specifier: ^0.5.0
+        version: 0.5.0(zod@4.4.3)
       '@titan-design/retrieval':
         specifier: 0.3.1
         version: 0.3.1
@@ -95,8 +95,8 @@ importers:
         specifier: ^9.39.4
         version: 9.39.4
       '@titan-design/egress-scan':
-        specifier: ^0.6.3
-        version: 0.6.3
+        specifier: ^0.6.7
+        version: 0.6.7
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
@@ -702,15 +702,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@titan-design/agent-protocol@0.7.0':
-    resolution: {integrity: sha512-lR9nDf29odW8ezdf29exNAPlIRy0S6yI33XpWUj8gvthqvm4qrAaHyw5hYpmnetUvmi+RZricpzAR/+omhfBzA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      zod: ^4.0.0
-    peerDependenciesMeta:
-      zod:
-        optional: true
-
   '@titan-design/agent-protocol@0.9.1':
     resolution: {integrity: sha512-tQXMNEF2ekcG4WdHGoQR0Xi4U9l1GpeYRZ9+8Af/4B9SR3qYs7S0sykemDEgew7+0DfL3PZ61gne9H3asVCr4w==}
     engines: {node: '>=20'}
@@ -731,21 +722,21 @@ packages:
     resolution: {integrity: sha512-hPwCakLMiV9It6nlV+8Ml6T7jNdmORSfemDTEVHBkatdZeeF1an5Oxyn0sNO3cWmtXDGeu5Qe/kWIBn6NZ7zsA==}
     engines: {node: '>=20'}
 
-  '@titan-design/daemon@0.6.0':
-    resolution: {integrity: sha512-9reTT/KRhI3dZrm8607mPI9nMcifsP5V4HKgeoRh7h7Uw/M7jOm/8eZHrrKkokXoo0QYBHsiWVHlvm5R/wAyEw==}
+  '@titan-design/daemon@0.8.0':
+    resolution: {integrity: sha512-e1MvFvnMAtBv8lxMXOZ6iwXVv7m5wC/rvBafjCUO54vzuKXu6cMzuWWXZ+cthP0dzT16NBl2q6AxSi2dR3Ue5Q==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/decider@0.6.4':
-    resolution: {integrity: sha512-HR2PupEDBVFiD6Y7H9kY4ybeezKGgNaSHq9siNJpA9asLAo7MErmZABBCZSh58Ob96dDN4uksB2z8V/FHqi+wg==}
+  '@titan-design/decider@0.6.6':
+    resolution: {integrity: sha512-V/4C3ajy688Qtb/vJbIYIRE7Jg1S4K7KX9dh36bTzBe9/jTgVjC0MmdibRRgNFPEDJVl6VNBqBG3zr8zhVARNA==}
     engines: {node: '>=20'}
     hasBin: true
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/egress-scan@0.6.3':
-    resolution: {integrity: sha512-2/IGW9JGqyzEr38QAmg0vkUfEbdf2JSzVMv6w8Bv1E599sMp596GW2DyY2S94CqNq/aHBuIDVuZOngpVeH0NUQ==}
+  '@titan-design/egress-scan@0.6.7':
+    resolution: {integrity: sha512-ROa8ZPNveZBGXW4j/ZkZVpsIS6CJOottzbktjIms3PyXUUUL1/r2D/ZrfSSM9psv6w4ox6y3oujTnnWFZBWvrQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -762,11 +753,6 @@ packages:
     resolution: {integrity: sha512-ZtKmMrJ2nL9/iUMvZpsBehkD3s+l0yMnWOxIq7GZnSkmMwe3aFPM/1Zw3JyprXevawCyk4LVOKO8q/ybjwy5oQ==}
     engines: {node: '>=20'}
 
-  '@titan-design/fix-proof@0.4.0':
-    resolution: {integrity: sha512-RCZPQw5FlybzHKvrnhViBfLb0q8h2nlqWDuMTmU6pEzB9lFS2U/maCsY4l+z5OhUzRiDjtGM1ibFtLNiWW58nQ==}
-    engines: {node: '>=20'}
-    hasBin: true
-
   '@titan-design/fix-proof@0.8.0':
     resolution: {integrity: sha512-/YtU4t9lmyORktbYsv02BRRxhh3M3quVNSbLt6ZeV5LqJcJ6K7oof/xOdiZwVfs5m28JDdtMgS7x8l5h1wZKpQ==}
     engines: {node: '>=20'}
@@ -776,20 +762,20 @@ packages:
     resolution: {integrity: sha512-iu4LaYpsAmZBD0V8bS7dnxH4c++CnaXOEGneIueJ/G5wX+U/LLTEYc8CmMdt9y3AVwwqTr4/qRyRLFSwFXoiHg==}
     engines: {node: '>=20'}
 
-  '@titan-design/memory@0.2.0':
-    resolution: {integrity: sha512-PA2eQx66CFaWeyDDs4HKJWqNoHgFvbzPb6/2B/aSzy95zfDOfjySE1ax2pmwGxHDhdpeOzSPbYOlg+QIzgtunQ==}
+  '@titan-design/memory@0.3.0':
+    resolution: {integrity: sha512-Z0WBAN9+uYJdnpylH3A0qBFuuHzFXzbneDyGi0kuK7RLJue1SHySE30uBdwWE43XSO8lChqRlpckm1kBc8HYGg==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/pm@0.2.0':
-    resolution: {integrity: sha512-C4wOOOT0R0JC456eVVOqc8w6XpgE5CPdzMScMwdybpANMSLZMfIRU4Hl7RzeLdOenFKZRjIJdBwYxYSJRfZU2A==}
+  '@titan-design/pm@0.4.0':
+    resolution: {integrity: sha512-4+B7JxPJIsNNKFARU4mWJqsxE9xkkTNK/jId1XX9oO5ob+i/3AQetYZaHX2If7qpTnQhjhCtWsxw2wztExAIRQ==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/registry@0.4.0':
-    resolution: {integrity: sha512-NRg48nEdC9X99Ri70WOCubJChLpVALLY5ttTaSbHImA64Qn90KQmerFr1IzHiFqgdsqL1tGxXvQrBq/CBogR9g==}
+  '@titan-design/registry@0.5.0':
+    resolution: {integrity: sha512-Qie1ACO/Q8f16DV5W7ZlP6Vtv40LljSKyaw17gim3e+m3wqHHorZSko3tywU65vTYG9yuNf7GgHvPSDXnL79PQ==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -821,10 +807,6 @@ packages:
 
   '@titan-design/session-graph@0.18.0':
     resolution: {integrity: sha512-2OCfES9T9t0lZag0TodVlqXjS06Atytx0gzU2Eovvyult7eK6dkg4Y/EKy9yi+lmxS4BnFhKq7WoBttcsEcPig==}
-    engines: {node: '>=20'}
-
-  '@titan-design/session-read@0.14.0':
-    resolution: {integrity: sha512-+KEN/MIa0S+ecQjscs24jSOUnbbwbJFfKDdo325y04NmwA3dCcxmb1olKp3WEtKtErbhb1kCJZh/OPERDfj5Tw==}
     engines: {node: '>=20'}
 
   '@titan-design/session-read@0.16.1':
@@ -1293,6 +1275,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -2926,10 +2909,6 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.60.3':
     optional: true
 
-  '@titan-design/agent-protocol@0.7.0(zod@4.4.3)':
-    optionalDependencies:
-      zod: 4.4.3
-
   '@titan-design/agent-protocol@0.9.1(zod@4.4.3)':
     optionalDependencies:
       zod: 4.4.3
@@ -2940,11 +2919,11 @@ snapshots:
 
   '@titan-design/cluster@0.2.0': {}
 
-  '@titan-design/daemon@0.6.0(zod@4.4.3)':
+  '@titan-design/daemon@0.8.0(zod@4.4.3)':
     dependencies:
       '@hono/node-server': 2.0.2(hono@4.12.18)
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
-      '@titan-design/registry': 0.4.0(zod@4.4.3)
+      '@titan-design/registry': 0.5.0(zod@4.4.3)
       '@titan-design/rpc-protocol': 0.3.0
       hono: 4.12.18
       zod: 4.4.3
@@ -2952,32 +2931,30 @@ snapshots:
       - '@cfworker/json-schema'
       - supports-color
 
-  '@titan-design/decider@0.6.4(zod@4.4.3)':
+  '@titan-design/decider@0.6.6(zod@4.4.3)':
     dependencies:
       '@titan-design/locator': 0.2.1
-      '@titan-design/memory': 0.2.0(zod@4.4.3)
-      '@titan-design/session-read': 0.14.0(zod@4.4.3)
+      '@titan-design/memory': 0.3.0(zod@4.4.3)
+      '@titan-design/session-read': 0.16.1(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
       yaml: 2.9.1
       zod: 4.4.3
     transitivePeerDependencies:
       - '@huggingface/transformers'
 
-  '@titan-design/egress-scan@0.6.3':
+  '@titan-design/egress-scan@0.6.7':
     dependencies:
-      '@titan-design/fix-proof': 0.4.0
+      '@titan-design/fix-proof': 0.8.0
 
   '@titan-design/embed@0.2.0': {}
 
   '@titan-design/evidence@0.4.0': {}
 
-  '@titan-design/fix-proof@0.4.0': {}
-
   '@titan-design/fix-proof@0.8.0': {}
 
   '@titan-design/locator@0.2.1': {}
 
-  '@titan-design/memory@0.2.0(zod@4.4.3)':
+  '@titan-design/memory@0.3.0(zod@4.4.3)':
     dependencies:
       '@titan-design/embed': 0.2.0
       '@titan-design/retrieval': 0.3.1
@@ -2987,11 +2964,11 @@ snapshots:
     transitivePeerDependencies:
       - '@huggingface/transformers'
 
-  '@titan-design/pm@0.2.0(zod@4.4.3)':
+  '@titan-design/pm@0.4.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
-  '@titan-design/registry@0.4.0(zod@4.4.3)':
+  '@titan-design/registry@0.5.0(zod@4.4.3)':
     dependencies:
       '@titan-design/rpc-protocol': 0.3.0
       zod: 4.4.3
@@ -3025,14 +3002,6 @@ snapshots:
       '@titan-design/locator': 0.2.1
       '@titan-design/session-read': 0.16.1(zod@4.4.3)
       '@titan-design/store-sqlite': 0.4.0
-    transitivePeerDependencies:
-      - zod
-
-  '@titan-design/session-read@0.14.0(zod@4.4.3)':
-    dependencies:
-      '@titan-design/agent-protocol': 0.7.0(zod@4.4.3)
-      '@titan-design/anthropic-account': 0.3.0(zod@4.4.3)
-      '@titan-design/locator': 0.2.1
     transitivePeerDependencies:
       - zod
 
