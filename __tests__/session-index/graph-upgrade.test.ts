@@ -62,13 +62,15 @@ function priceColumns(): string[] {
 }
 
 describe('openGraph on a graph left at session-graph version 8', () => {
-  it('applies the package migrations 9 through 13', () => {
+  it('applies the package migrations 9 through 15', () => {
     seedVersionEightGraph();
     expect(appliedVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 1001, 1002]);
 
     openGraph(dbPath).db.close();
 
-    expect(appliedVersions()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 1001, 1002]);
+    expect(appliedVersions()).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1001, 1002,
+    ]);
     expect(priceColumns().some((c) => c.startsWith('long_'))).toBe(true);
   });
 

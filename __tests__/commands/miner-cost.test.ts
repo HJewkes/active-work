@@ -304,9 +304,9 @@ describe('miner cost', () => {
       await runRefresh({ root: transcripts, skipPrOutcomes: true, skipWorkspace: true });
       const result = await minerCost.run({ since: '2026-10-23' }, ctx('json'));
 
-      expect(result.priceTableVersion).toBe(4);
+      expect(result.priceTableVersion).toBe(PRICE_TABLE_VERSION);
       expect(result.totals.unpricedRequests).toBe(0);
-      // Opus 5.5 at v4: input 4, cache read 0.2, output 20 $/Mtok.
+      // Opus 5.5 list price: input 4, cache read 0.2, output 20 $/Mtok.
       expect(result.totals.costUsd).toBeCloseTo((1000 * 4 + 10000 * 0.2 + 1000 * 20) / 1e6, 9);
     });
   });

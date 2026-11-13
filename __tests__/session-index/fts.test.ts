@@ -24,13 +24,17 @@ afterEach(() => {
 async function index(): Promise<void> {
   const absolutePath = path.join(dir, 'session.jsonl');
   writeFileSync(absolutePath, renderTranscript(FIXTURE_LINES), 'utf8');
-  await indexTranscript(graph, {
-    projectDir: 'demo',
-    absolutePath,
-    displayPath: '~/demo/session.jsonl',
-    subagentId: null,
-    account: null,
-  });
+  await indexTranscript(
+    graph,
+    {
+      projectDir: 'demo',
+      absolutePath,
+      displayPath: '~/demo/session.jsonl',
+      subagentId: null,
+      account: null,
+    },
+    { indexToolSpans: true },
+  );
 }
 
 /** The same transcript applied as two chunks, so span ids are assigned in two batches. */

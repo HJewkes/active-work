@@ -16,7 +16,7 @@ import { refreshWorkspace, type WorkspaceRefreshSummary } from '../workspace-ind
 import { resetWorkspaceIndex } from '../workspace-index/write.js';
 import { preserveUnreachable, replayPreserved, type ReplaySummary } from './preserve.js';
 import { refreshEpisodes, snapshotOffsets } from './episodes.js';
-import { runDeltaPass } from './delta-pass.js';
+import { SPAN_POLICY, runDeltaPass } from './delta-pass.js';
 import { bytesAdvanced, lapTimer } from './pass-metrics.js';
 import { restoreUnvisited, retiredSessions, sealedFilter, unvisitedOk } from './retired.js';
 import { rollupUnfinishedTurns } from './unfinished-turns.js';
@@ -343,6 +343,7 @@ export async function runRefresh(options: RefreshOptions = {}): Promise<RefreshS
     phases.discover = lap();
     const prErrors: string[] = [];
     const summary = await refreshCorpus(graph, visiting, {
+      ...SPAN_POLICY,
       full: options.full,
       verifyHash: verify,
       withContentHash: verify,
