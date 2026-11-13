@@ -46,8 +46,8 @@ importers:
         specifier: 0.4.0
         version: 0.4.0(zod@4.4.3)
       '@titan-design/session-analytics':
-        specifier: ^0.18.0
-        version: 0.18.0(zod@4.4.3)
+        specifier: ^0.19.0
+        version: 0.19.0(zod@4.4.3)
       '@titan-design/session-graph':
         specifier: ^0.19.0
         version: 0.19.0(zod@4.4.3)
@@ -800,8 +800,8 @@ packages:
     resolution: {integrity: sha512-zGognqTTscRy4c1oLZDDh5ALvIwB0o+cbmCVdN2Qk5eMyzblJDxjxfcIP8HD+PBDMZ+hy4Qm5uwRaY98pO5aYg==}
     engines: {node: '>=20'}
 
-  '@titan-design/session-analytics@0.18.0':
-    resolution: {integrity: sha512-81YOOYSa2rtEP/H0qICWxTYeC6cPV0vbe5yDxCsgv8xyIrTCLbMvywpNgngOwwxBmpfa9Z4msGOYORW8TgbRtw==}
+  '@titan-design/session-analytics@0.19.0':
+    resolution: {integrity: sha512-/s0FMTfZOsWaqxswpO4sSLVp+iS+E/WAOy8n6IKr/oUrGH9gfrC+CqXCHrH0CtuqURGib5coPNibWGP2kQUbhw==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -3002,7 +3002,7 @@ snapshots:
 
   '@titan-design/rpc-protocol@0.4.0': {}
 
-  '@titan-design/session-analytics@0.18.0(zod@4.4.3)':
+  '@titan-design/session-analytics@0.19.0(zod@4.4.3)':
     dependencies:
       '@titan-design/agent-protocol': 0.10.0(zod@4.4.3)
       '@titan-design/review-panel': 0.9.0(zod@4.4.3)
