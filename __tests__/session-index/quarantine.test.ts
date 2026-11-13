@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { indexTranscript } from '@titan-design/session-graph';
 import type { DiscoveredTranscript } from '@titan-design/session-read';
 import { openGraph, type SessionGraph } from '../../src/session-index/graph.js';
-import { FIXTURE_LINES, renderTranscript } from './fixture.js';
+import { FIXTURE_FACTS, FIXTURE_LINES, renderTranscript } from './fixture.js';
 
 let dir: string;
 let graph: SessionGraph;
@@ -52,7 +52,7 @@ describe('indexTranscript', () => {
 
     expect(badOutcome.status).toBe('quarantined');
     expect(badOutcome).toHaveProperty('reason', expect.stringMatching(/malformed JSON/));
-    expect(goodOutcome).toMatchObject({ status: 'indexed', facts: FIXTURE_LINES.length });
+    expect(goodOutcome).toMatchObject({ status: 'indexed', facts: FIXTURE_FACTS });
     expect(statusOf(good.displayPath)?.status).toBe('ok');
   });
 
@@ -106,7 +106,7 @@ describe('indexTranscript', () => {
 
     expect(second).toMatchObject({ status: 'unchanged', facts: 0 });
     expect(graph.db.prepare('SELECT COUNT(*) AS n FROM fact').get()).toEqual({
-      n: FIXTURE_LINES.length,
+      n: FIXTURE_FACTS,
     });
   });
 

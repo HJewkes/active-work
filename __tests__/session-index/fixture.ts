@@ -161,6 +161,9 @@ export const FIXTURE_LINES: Record<string, unknown>[] = [
   userPrompt('p2', '2026-07-01T00:00:19Z', 'ship it'),
 ];
 
+/** Facts the fixture yields: every line but `last-prompt`, which session-read emits no fact for. */
+export const FIXTURE_FACTS = FIXTURE_LINES.length - 1;
+
 export function renderTranscript(lines: Record<string, unknown>[]): string {
   return lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
 }

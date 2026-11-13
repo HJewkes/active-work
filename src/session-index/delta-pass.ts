@@ -24,6 +24,9 @@ type IndexStatus = 'indexed' | 'unchanged' | 'rewound' | 'missing' | 'quarantine
 /** An unknown root only re-checks rows modified this recently; older ones are settled. */
 export const UNKNOWN_ROOT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/** Search ranks tool inputs and results (`TRANSCRIPT_FIELDS`); session-graph stores them only on request. */
+export const SPAN_POLICY = { indexToolSpans: true } as const;
+
 export interface DeltaPassOptions {
   graph: WorkspaceGraph;
   transcripts: readonly DiscoveredTranscript[];
@@ -95,7 +98,7 @@ async function scanTranscripts(
   let facts = 0;
   try {
     for (const transcript of transcripts) {
-      const outcome = await indexTranscript(graph, transcript);
+      const outcome = await indexTranscript(graph, transcript, SPAN_POLICY);
       counts[outcome.status] += 1;
       facts += outcome.facts;
       touched.push(...outcome.sessionIds);
