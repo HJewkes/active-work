@@ -37,8 +37,8 @@ importers:
         specifier: ^0.2.2
         version: 0.2.2
       '@titan-design/pm':
-        specifier: ^0.5.0
-        version: 0.5.0(zod@4.4.3)
+        specifier: ^0.10.0
+        version: 0.10.0(zod@4.4.3)
       '@titan-design/registry':
         specifier: ^0.6.0
         version: 0.6.0(zod@4.4.3)
@@ -768,8 +768,8 @@ packages:
     peerDependencies:
       zod: ^4.0.0
 
-  '@titan-design/pm@0.5.0':
-    resolution: {integrity: sha512-lxbPuEFMv+zG3qYowbVv/DZa8gloh6PSEdu2aecrUgnQJp/JxR083qjbvvnzu1or6rezwmtKOFl5H8zIaoG/BA==}
+  '@titan-design/pm@0.10.0':
+    resolution: {integrity: sha512-JuqYqz4WJ1ZaAk75k8NBw4TIE3OFbnzhEo0KCrhvPew9pi3YwK0mKTHAdVfgafLv9trzCVaSszBuwcQsXDmyjQ==}
     engines: {node: '>=20'}
     peerDependencies:
       zod: ^4.0.0
@@ -2975,8 +2975,11 @@ snapshots:
     transitivePeerDependencies:
       - '@huggingface/transformers'
 
-  '@titan-design/pm@0.5.0(zod@4.4.3)':
+  '@titan-design/pm@0.10.0(zod@4.4.3)':
     dependencies:
+      '@titan-design/locator': 0.2.2
+      proper-lockfile: 4.1.2
+      yaml: 2.9.1
       zod: 4.4.3
 
   '@titan-design/registry@0.6.0(zod@4.4.3)':
