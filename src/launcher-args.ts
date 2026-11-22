@@ -75,12 +75,21 @@ export function buildClaudeArgs(
 
 /**
  * Assemble the `claude --resume` argv for `aw resume`. A resumed session is a
- * primary session, so it gets Remote Control on the same terms as a launch.
- * The flag goes last, where no following token can be read as its name.
+ * primary session, so it gets Remote Control on the same terms as a launch, and the same channels. Channel flags are variadic,
+ * so they come right after the session id and `--remote-control` goes last,
+ * where no following token can be read as a channel target or its name.
  */
-export function buildResumeArgs(sessionId: string, opts: ClaudeArgsOptions = {}): string[] {
+export function buildResumeArgs(
+  sessionId: string,
+  opts: ClaudeArgsOptions & { channels?: string[] } = {},
+): string[] {
   const remoteControl = opts.remoteControl ?? true;
-  return ['--resume', sessionId, ...(remoteControl ? ['--remote-control'] : [])];
+  return [
+    '--resume',
+    sessionId,
+    ...buildChannelArgs(opts.channels),
+    ...(remoteControl ? ['--remote-control'] : []),
+  ];
 }
 
 /**

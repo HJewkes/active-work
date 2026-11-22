@@ -179,6 +179,22 @@ describe('buildResumeArgs', () => {
     expect(buildResumeArgs('abc-123')).toEqual(['--resume', 'abc-123', '--remote-control']);
     expect(buildResumeArgs('abc-123', { remoteControl: false })).toEqual(['--resume', 'abc-123']);
   });
+
+  it('carries the channel flags the launch path uses, ahead of --remote-control', () => {
+    const channels = ['plugin:foo@market', 'voltras'];
+    expect(buildResumeArgs('abc-123', { channels })).toEqual([
+      '--resume',
+      'abc-123',
+      ...buildChannelArgs(channels),
+      '--remote-control',
+    ]);
+    expect(buildResumeArgs('abc-123', { channels: DEFAULTS, remoteControl: false })).toEqual([
+      '--resume',
+      'abc-123',
+      '--channels',
+      'plugin:agent-chat@agent-chat-local',
+    ]);
+  });
 });
 
 describe('parseLauncherFlags', () => {
