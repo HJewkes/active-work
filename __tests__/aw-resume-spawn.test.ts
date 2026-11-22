@@ -51,4 +51,18 @@ describe('spawnClaudeResume', () => {
     );
     expect(calls[0]?.env?.CLAUDE_CONFIG_DIR).toBe('/synthetic/agents');
   });
+
+  it('passes the resolved channels through to claude', async () => {
+    const calls: SpawnCall[] = [];
+    await spawnClaudeResume('sess-4', '/synthetic/cwd', true, undefined, fakeSpawn(calls), [
+      'plugin:agent-chat@agent-chat-local',
+    ]);
+    expect(calls[0]?.args).toEqual([
+      '--resume',
+      'sess-4',
+      '--channels',
+      'plugin:agent-chat@agent-chat-local',
+      '--remote-control',
+    ]);
+  });
 });

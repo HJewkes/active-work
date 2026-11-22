@@ -20,6 +20,7 @@ import newCommand from './commands/new.js';
 import openCommand from './commands/open.js';
 import resumeCommand from './commands/resume.js';
 import { resolveLaunchCwd } from './commands/_open-helpers.js';
+import { resolveResumeChannels } from './resume-channels.js';
 import {
   buildClaudeArgs,
   buildResumeArgs,
@@ -214,9 +215,10 @@ export function spawnClaudeResume(
   remoteControl: boolean,
   configDir?: string,
   spawnFn: typeof spawn = spawn,
+  channels?: string[],
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawnFn('claude', buildResumeArgs(sessionId, { remoteControl }), {
+    const child = spawnFn('claude', buildResumeArgs(sessionId, { remoteControl, channels }), {
       cwd,
       stdio: 'inherit',
       env: resumeEnv(process.env, configDir),
@@ -268,6 +270,7 @@ async function runResume(argv: string[]): Promise<void> {
     const resolved = (await resumeCommand.run(parsed, ctx)) as {
       cwd: string;
       source: string;
+      slug?: string;
       configDir?: string;
     };
     const configDir = profileDir ?? resolved.configDir;
@@ -276,7 +279,15 @@ async function runResume(argv: string[]): Promise<void> {
         `Resuming ${sessionId} in ${resolved.cwd} (found via ${resolved.source}${configDir ? `, config dir ${configDir}` : ''}).\n`,
       ),
     );
-    const code = await spawnClaudeResume(sessionId, resolved.cwd, remoteControl, configDir);
+    const channels = await resolveResumeChannels(ctx.activeRoot, resolved);
+    const code = await spawnClaudeResume(
+      sessionId,
+      resolved.cwd,
+      remoteControl,
+      configDir,
+      spawn,
+      channels,
+    );
     return exitAfterFlush(code);
   } catch (err) {
     const { message, code } = formatError(err);
